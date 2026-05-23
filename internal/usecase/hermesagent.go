@@ -130,10 +130,11 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Args:            []string{"gateway", "run"},
 			WorkingDir:      "/opt/hermes",
-			Env: []corev1.EnvVar{
+			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
 				{Name: "HOME", Value: "/opt/data/home"},
-			},
+			}, ha.GetHermesEnv()...),
+			EnvFrom: ha.GetHermesEnvFrom(),
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("2"),
