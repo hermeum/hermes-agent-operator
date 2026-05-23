@@ -122,6 +122,34 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 	sizeLimit := resource.MustParse("1Gi")
 
 	initContainers := []corev1.Container{}
+	containers := []corev1.Container{
+		// The main container runs the Hermes Agent.
+		{
+			Name:            "hermes-agent",
+			Image:           "nousresearch/hermes-agent:latest",
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Args:            []string{"gateway", "run"},
+			WorkingDir:      "/opt/hermes",
+			Env: []corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "HOME", Value: "/opt/data/home"},
+			},
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "dshm", MountPath: "/dev/shm"},
+				{Name: "data", MountPath: "/opt/data"},
+			},
+		},
+	}
 	volumes := []corev1.Volume{
 		{
 			Name: "dshm",
@@ -187,7 +215,7 @@ cp "/bootstrap/config.yaml" "/opt/data/config.yaml"
 	}
 
 	// If workspace files are provided, add an init container to copy them to the shared volume.
-	// The file keys in the ConfigMap are in the format "workspace.<path>" where "/" in the path is replaced with "__" to be a valid ConfigMap key.
+	// The file keys in the ConfigMap are in the format "workspace.<path>" where "/" in the path is replaced with "--" to be a valid ConfigMap key.
 	if hw := ha.GetHermesWorkspace(); hw != nil && len(hw.Files) > 0 {
 		initContainers = append(initContainers, corev1.Container{
 			Name:            "init-workspace",
@@ -230,34 +258,8 @@ done
 				},
 				Spec: corev1.PodSpec{
 					InitContainers: initContainers,
-					Containers: []corev1.Container{
-						{
-							Name:            "hermes-agent",
-							Image:           "nousresearch/hermes-agent:latest",
-							ImagePullPolicy: corev1.PullIfNotPresent,
-							Args:            []string{"gateway", "run"},
-							WorkingDir:      "/opt/hermes",
-							Env: []corev1.EnvVar{
-								{Name: "HERMES_HOME", Value: "/opt/data"},
-								{Name: "HOME", Value: "/opt/data/home"},
-							},
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("2"),
-									corev1.ResourceMemory: resource.MustParse("4Gi"),
-								},
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("500m"),
-									corev1.ResourceMemory: resource.MustParse("1Gi"),
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{Name: "dshm", MountPath: "/dev/shm"},
-								{Name: "data", MountPath: "/opt/data"},
-							},
-						},
-					},
-					Volumes: volumes,
+					Containers:     containers,
+					Volumes:        volumes,
 				},
 			},
 			VolumeClaimTemplates: pvc,
