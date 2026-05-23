@@ -133,12 +133,12 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 			},
 		},
 		{
-		Name: "bootstrap",
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetConfigMapName()},
+			Name: "bootstrap",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetConfigMapName()},
+				},
 			},
-		},
 		},
 	}
 	pvc := []corev1.PersistentVolumeClaim{}
@@ -186,7 +186,7 @@ cp "/bootstrap/config.yaml" "/opt/data/config.yaml"
 		})
 	}
 
-	// If workspace files are provided, add an init container to copy them to the shared volume. 
+	// If workspace files are provided, add an init container to copy them to the shared volume.
 	// The file keys in the ConfigMap are in the format "workspace.<path>" where "/" in the path is replaced with "__" to be a valid ConfigMap key.
 	if hw := ha.GetHermesWorkspace(); hw != nil && len(hw.Files) > 0 {
 		initContainers = append(initContainers, corev1.Container{
