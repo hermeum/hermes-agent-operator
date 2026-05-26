@@ -252,6 +252,32 @@ spec:
                           x-kubernetes-map-type: atomic
                       type: object
                     type: array
+                  skills:
+                    description: skills is a list of skills to install via hermes
+                      skills install.
+                    items:
+                      description: HermesSkill defines a skill to install via hermes
+                        skills install.
+                      properties:
+                        category:
+                          description: category is the category folder to install
+                            into.
+                          type: string
+                        force:
+                          description: force installs despite a blocked scan verdict.
+                          type: boolean
+                        identifier:
+                          description: identifier is the skill identifier (e.g. openai/skills/skill-creator)
+                            or HTTP(S) URL to a SKILL.md file.
+                          type: string
+                        name:
+                          description: name overrides the skill name (useful when
+                            the SKILL.md has no name frontmatter).
+                          type: string
+                      required:
+                      - identifier
+                      type: object
+                    type: array
                   storage:
                     description: storage configures persistent storage for the agent.
                     properties:
