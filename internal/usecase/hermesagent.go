@@ -286,18 +286,19 @@ cp "/bootstrap/config.yaml" "/opt/data/config.yaml"
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args: []string{fmt.Sprintf(`set -eu
-MANIFEST="/opt/data/.hermes-workspace-manifest"
-NEW_MANIFEST=""
+mkdir -p "/opt/data/.hermes-agent-operator"
+MANIFEST_FILE="/opt/data/.hermes-agent-operator/workspace-files"
+UPDATED_MANIFEST=""
 
 # delete files that were previously managed but are no longer in workspace.files
-if [ -f "$MANIFEST" ]; then
+if [ -f "$MANIFEST_FILE" ]; then
   while IFS= read -r managed; do
     [ -z "$managed" ] && continue
     key="workspace.$(echo "$managed" | sed 's|/|%s|g')"
     if [ ! -f "/bootstrap/$key" ]; then
       rm -f "/opt/data/$managed"
     fi
-  done < "$MANIFEST"
+  done < "$MANIFEST_FILE"
 fi
 
 for f in /bootstrap/workspace.*; do
@@ -306,11 +307,11 @@ for f in /bootstrap/workspace.*; do
   target="/opt/data/$relpath"
   mkdir -p "$(dirname "$target")"
   cp "$f" "$target"
-  NEW_MANIFEST="$NEW_MANIFEST$relpath
+  UPDATED_MANIFEST="$UPDATED_MANIFEST$relpath
 "
 done
 
-printf '%%s' "$NEW_MANIFEST" > "$MANIFEST"
+printf '%%s' "$UPDATED_MANIFEST" > "$MANIFEST_FILE"
 `, workspacePathSeparator, workspacePathSeparator)},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
