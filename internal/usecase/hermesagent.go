@@ -21,27 +21,6 @@ const (
 	workspacePathSeparator = "--"
 )
 
-func skillName(s agentsv1alpha1.HermesSkill) string {
-	if s.Name != "" {
-		return s.Name
-	}
-	parts := strings.Split(s.Identifier, "/")
-	return strings.TrimSuffix(parts[len(parts)-1], ".md")
-}
-
-func configMapDataHash(data map[string]string) string {
-	keys := make([]string, 0, len(data))
-	for k := range data {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	h := sha256.New()
-	for _, k := range keys {
-		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", k, data[k])
-	}
-	return fmt.Sprintf("%x", h.Sum(nil))[:16]
-}
-
 type HermesAgentUseCase struct {
 	kube Kubernetes
 }
@@ -140,6 +119,19 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		HermesAgent: ha,
 		StatefulSet: desired,
 	})
+}
+
+func configMapDataHash(data map[string]string) string {
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	h := sha256.New()
+	for _, k := range keys {
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", k, data[k])
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
 
 func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
@@ -380,6 +372,18 @@ printf '%%s' "$UPDATED_MANIFEST" > "$MANIFEST_FILE"
 `, workspacePathSeparator, workspacePathSeparator)
 }
 
+// pluginDirName derives the plugin directory name from a Git URL or owner/repo shorthand.
+// e.g. "owner/hermes-plugin-foo" or "https://github.com/owner/hermes-plugin-foo.git" → "hermes-plugin-foo".
+func pluginDirName(identifier string) string {
+	s := strings.TrimRight(identifier, "/")
+	s = strings.TrimSuffix(s, ".git")
+	s = strings.TrimRight(s, "/")
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		return s[i+1:]
+	}
+	return s
+}
+
 func (u *HermesAgentUseCase) buildPluginsScript(plugins []agentsv1alpha1.HermesPlugin) string {
 	desiredNames := make([]string, 0, len(plugins))
 	installLines := make([]string, 0, len(plugins))
@@ -428,16 +432,12 @@ PLUGINS_EOF
 	return script
 }
 
-// pluginDirName derives the plugin directory name from a Git URL or owner/repo shorthand.
-// e.g. "owner/hermes-plugin-foo" or "https://github.com/owner/hermes-plugin-foo.git" → "hermes-plugin-foo".
-func pluginDirName(identifier string) string {
-	s := strings.TrimRight(identifier, "/")
-	s = strings.TrimSuffix(s, ".git")
-	s = strings.TrimRight(s, "/")
-	if i := strings.LastIndex(s, "/"); i >= 0 {
-		return s[i+1:]
+func skillName(s agentsv1alpha1.HermesSkill) string {
+	if s.Name != "" {
+		return s.Name
 	}
-	return s
+	parts := strings.Split(s.Identifier, "/")
+	return strings.TrimSuffix(parts[len(parts)-1], ".md")
 }
 
 func (u *HermesAgentUseCase) buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
