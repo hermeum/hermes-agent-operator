@@ -2,8 +2,10 @@ package usecase
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
+	"sort"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -14,7 +16,23 @@ import (
 	sigsyaml "sigs.k8s.io/yaml"
 )
 
-const workspacePathSeparator = "--"
+const (
+	domain                 = "hermes-agent-operator.xyz"
+	workspacePathSeparator = "--"
+)
+
+func configMapDataHash(data map[string]string) string {
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	h := sha256.New()
+	for _, k := range keys {
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", k, data[k])
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16]
+}
 
 type HermesAgentUseCase struct {
 	kube Kubernetes
@@ -120,6 +138,10 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 	replicas := int32(1)
 
+	// The config hash annotation is used to trigger a rolling update of the StatefulSet when the config changes.
+	cm, _ := u.buildConfigMap(ha)
+	configHash := configMapDataHash(cm.Data)
+
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.Name,
@@ -133,6 +155,9 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"app": ha.Name},
+					Annotations: map[string]string{
+						domain + "/config-hash": configHash,
+					},
 				},
 			},
 		},
