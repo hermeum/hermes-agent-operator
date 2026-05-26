@@ -286,11 +286,10 @@ cp "/bootstrap/config.yaml" "/opt/data/config.yaml"
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args: []string{fmt.Sprintf(`set -eu
-mkdir -p "/opt/data/home"
 for f in /bootstrap/workspace.*; do
   [ -f "$f" ] || continue
   relpath=$(basename "$f" | sed 's/^workspace\.//' | sed 's/%s/\//g')
-  target="/opt/data/home/$relpath"
+  target="/opt/data/$relpath"
   mkdir -p "$(dirname "$target")"
   cp "$f" "$target"
 done
