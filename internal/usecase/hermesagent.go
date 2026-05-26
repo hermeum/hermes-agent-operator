@@ -333,8 +333,8 @@ printf '%%s' "$UPDATED_MANIFEST" > "$MANIFEST_FILE"
 	// plugins: init container installs desired plugins and removes stale ones.
 	if plugins := ha.GetHermes().GetPlugins(); len(plugins) > 0 {
 		initContainers = append(initContainers, u.buildPluginsInitContainer(plugins))
-  }
-  
+	}
+
 	// skills: init container installs/uninstalls skills via the hermes CLI.
 	if skills := ha.GetHermes().GetSkills(); len(skills) > 0 {
 		// Build the new manifest content (skill names, one per line).
