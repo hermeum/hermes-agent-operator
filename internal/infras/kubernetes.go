@@ -52,7 +52,10 @@ func (k *KubernetesClient) CreateConfigMapOwnedByHermesAgent(ctx context.Context
 	return k.client.Create(ctx, param.ConfigMap)
 }
 
-func (k *KubernetesClient) UpdateConfigMap(ctx context.Context, param usecase.UpdateConfigMapParam) error {
+func (k *KubernetesClient) UpdateConfigMapOwnedByHermesAgent(ctx context.Context, param usecase.UpdateConfigMapParam) error {
+	if err := ctrl.SetControllerReference(param.HermesAgent, param.ConfigMap, k.scheme); err != nil {
+		return err
+	}
 	return k.client.Update(ctx, param.ConfigMap)
 }
 
@@ -74,6 +77,9 @@ func (k *KubernetesClient) CreateStatefulSetOwnedByHermesAgent(ctx context.Conte
 	return k.client.Create(ctx, param.StatefulSet)
 }
 
-func (k *KubernetesClient) UpdateStatefulSet(ctx context.Context, param usecase.UpdateStatefulSetParam) error {
+func (k *KubernetesClient) UpdateStatefulSetOwnedByHermesAgent(ctx context.Context, param usecase.UpdateStatefulSetParam) error {
+	if err := ctrl.SetControllerReference(param.HermesAgent, param.StatefulSet, k.scheme); err != nil {
+		return err
+	}
 	return k.client.Update(ctx, param.StatefulSet)
 }

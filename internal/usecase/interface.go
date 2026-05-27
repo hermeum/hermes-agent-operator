@@ -14,11 +14,11 @@ type Kubernetes interface {
 
 	GetConfigMap(ctx context.Context, param GetConfigMapParam) (*corev1.ConfigMap, error)
 	CreateConfigMapOwnedByHermesAgent(ctx context.Context, param CreateConfigMapOfHermesAgentParam) error
-	UpdateConfigMap(ctx context.Context, param UpdateConfigMapParam) error
+	UpdateConfigMapOwnedByHermesAgent(ctx context.Context, param UpdateConfigMapParam) error
 
 	GetStatefulSet(ctx context.Context, param GetStatefulSetParam) (*appsv1.StatefulSet, error)
 	CreateStatefulSetOwnedByHermesAgent(ctx context.Context, param CreateStatefulSetOfHermesAgentParam) error
-	UpdateStatefulSet(ctx context.Context, param UpdateStatefulSetParam) error
+	UpdateStatefulSetOwnedByHermesAgent(ctx context.Context, param UpdateStatefulSetParam) error
 }
 
 type GetHermesAgentParam struct {
@@ -35,7 +35,8 @@ type CreateConfigMapOfHermesAgentParam struct {
 }
 
 type UpdateConfigMapParam struct {
-	ConfigMap *corev1.ConfigMap
+	HermesAgent *agentsv1alpha1.HermesAgent
+	ConfigMap   *corev1.ConfigMap
 }
 
 type GetStatefulSetParam struct {
@@ -48,5 +49,6 @@ type CreateStatefulSetOfHermesAgentParam struct {
 }
 
 type UpdateStatefulSetParam struct {
+	HermesAgent *agentsv1alpha1.HermesAgent
 	StatefulSet *appsv1.StatefulSet
 }

@@ -70,7 +70,7 @@ func (u *HermesAgentUseCase) reconcileConfigMap(ctx context.Context, ha *agentsv
 
 	if cm != nil {
 		desired.ResourceVersion = cm.ResourceVersion
-		return u.kube.UpdateConfigMap(ctx, UpdateConfigMapParam{ConfigMap: desired})
+		return u.kube.UpdateConfigMapOwnedByHermesAgent(ctx, UpdateConfigMapParam{HermesAgent: ha, ConfigMap: desired})
 	}
 
 	return u.kube.CreateConfigMapOwnedByHermesAgent(ctx, CreateConfigMapOfHermesAgentParam{
@@ -115,7 +115,7 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	if sts != nil {
 		desired.ResourceVersion = sts.ResourceVersion
-		return u.kube.UpdateStatefulSet(ctx, UpdateStatefulSetParam{StatefulSet: desired})
+		return u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
 	}
 
 	return u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{
@@ -343,6 +343,15 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 		})
 	}
 
+	uid := hermesUID
+	gid := hermesGID
+	ra := false
+	sts.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+		RunAsUser:    &uid,
+		RunAsGroup:   &gid,
+		FSGroup:      &gid,
+		RunAsNonRoot: &ra,
+	}
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, containers...)
 	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, volumes...)
@@ -578,8 +587,8 @@ PY
 # Remove crons present in manifest but no longer desired
 if [ -f "$MANIFEST" ]; then
   while IFS= read -r name; do
-    [ -z "$managed" ] && continue
-    id=$(get_job_id "$managed")
+    [ -z "$name" ] && continue
+    id=$(get_job_id "$name")
     [ -z "$id" ] && continue
     hermes cron remove "$id" || true
   done < "$MANIFEST"
