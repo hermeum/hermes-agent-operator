@@ -180,64 +180,6 @@ type Hermes struct {
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
-// HermesAgentSpec defines the desired state of HermesAgent
-type HermesAgentSpec struct {
-	// hermes defines the Hermes agent configuration.
-	// +optional
-	Hermes *Hermes `json:"hermes,omitempty"`
-}
-
-// HermesAgentStatus defines the observed state of HermesAgent.
-type HermesAgentStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the HermesAgent resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
-}
-
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-
-// HermesAgent is the Schema for the hermesagents API
-type HermesAgent struct {
-	metav1.TypeMeta `json:",inline"`
-
-	// metadata is a standard object metadata
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
-
-	// spec defines the desired state of HermesAgent
-	// +required
-	Spec HermesAgentSpec `json:"spec"`
-
-	// status defines the observed state of HermesAgent
-	// +optional
-	Status HermesAgentStatus `json:"status,omitzero"`
-}
-
-func (h *HermesAgent) GetConfigMapName() string {
-	return h.Name + "-config"
-}
-
-func (h *HermesAgent) GetHermes() *Hermes {
-	return h.Spec.Hermes
-}
-
 func (h *Hermes) GetConfig() *apiextensionsv1.JSON {
 	if h == nil {
 		return nil
@@ -322,6 +264,64 @@ func (h *Hermes) GetImage() string {
 		}
 	}
 	return repo + ":" + tag
+}
+
+// HermesAgentSpec defines the desired state of HermesAgent
+type HermesAgentSpec struct {
+	// hermes defines the Hermes agent configuration.
+	// +optional
+	Hermes *Hermes `json:"hermes,omitempty"`
+}
+
+// HermesAgentStatus defines the observed state of HermesAgent.
+type HermesAgentStatus struct {
+	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+	// Important: Run "make" to regenerate code after modifying this file
+
+	// For Kubernetes API conventions, see:
+	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+
+	// conditions represent the current state of the HermesAgent resource.
+	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
+	//
+	// Standard condition types include:
+	// - "Available": the resource is fully functional
+	// - "Progressing": the resource is being created or updated
+	// - "Degraded": the resource failed to reach or maintain its desired state
+	//
+	// The status of each condition is one of True, False, or Unknown.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+
+// HermesAgent is the Schema for the hermesagents API
+type HermesAgent struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// metadata is a standard object metadata
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitzero"`
+
+	// spec defines the desired state of HermesAgent
+	// +required
+	Spec HermesAgentSpec `json:"spec"`
+
+	// status defines the observed state of HermesAgent
+	// +optional
+	Status HermesAgentStatus `json:"status,omitzero"`
+}
+
+func (h *HermesAgent) GetConfigMapName() string {
+	return h.Name + "-config"
+}
+
+func (h *HermesAgent) GetHermes() *Hermes {
+	return h.Spec.Hermes
 }
 
 // +kubebuilder:object:root=true
