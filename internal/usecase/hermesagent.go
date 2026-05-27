@@ -20,6 +20,8 @@ const (
 	domain                 = "hermes-agent-operator.xyz"
 	workspacePathSeparator = "--"
 	defaultPathEnv         = "/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	hermesUID              = int64(10000)
+	hermesGID              = int64(10000)
 )
 
 type HermesAgentUseCase struct {
@@ -353,6 +355,7 @@ func (u *HermesAgentUseCase) buildConfigScript() string {
 	return `set -eu
 mkdir -p "/opt/data/home"
 cp "/bootstrap/config.yaml" "/opt/data/config.yaml"
+echo "Config file copied"
 `
 }
 
@@ -369,6 +372,7 @@ if [ -f "$MANIFEST_FILE" ]; then
     key="workspace.$(echo "$managed" | sed 's|/|%s|g')"
     if [ ! -f "/bootstrap/$key" ]; then
       rm -f "/opt/data/$managed"
+			echo "Removed outdated workspace file: $managed"
     fi
   done < "$MANIFEST_FILE"
 fi
@@ -379,6 +383,7 @@ for f in /bootstrap/workspace.*; do
   target="/opt/data/$relpath"
   mkdir -p "$(dirname "$target")"
   cp "$f" "$target"
+	echo "Copied workspace file: $relpath"
   UPDATED_MANIFEST="$UPDATED_MANIFEST$relpath
 "
 done
@@ -548,7 +553,6 @@ func (u *HermesAgentUseCase) buildCronsScript(crons []agentsv1alpha1.HermesCron)
 		createLines = append(createLines, cmd.String())
 	}
 
-	casePattern := `"` + strings.Join(desiredNames, `"|"`) + `"`
 	createScript := strings.Join(createLines, "\n")
 	manifestContent := strings.Join(desiredNames, "\n")
 
@@ -574,14 +578,10 @@ PY
 # Remove crons present in manifest but no longer desired
 if [ -f "$MANIFEST" ]; then
   while IFS= read -r name; do
-    [ -z "$name" ] && continue
-    case "$name" in
-      %s) ;;
-      *)
-        id=$(get_job_id "$name")
-        [ -n "$id" ] && hermes cron remove "$id" || true
-        ;;
-    esac
+    [ -z "$managed" ] && continue
+    id=$(get_job_id "$managed")
+    [ -z "$id" ] && continue
+    hermes cron remove "$id" || true
   done < "$MANIFEST"
 fi
 
@@ -592,5 +592,5 @@ fi
 cat > "$MANIFEST" << 'CRONS_EOF'
 %s
 CRONS_EOF
-`, casePattern, createScript, manifestContent)
+`, createScript, manifestContent)
 }
