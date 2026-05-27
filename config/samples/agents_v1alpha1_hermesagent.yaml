@@ -30,8 +30,13 @@ spec:
     envFrom:
       - secretRef:
           name: ollama-api-secret
+    skills:
+      - identifier: official/finance/stocks
+      - identifier: skills-sh/doany-ai/skills/ai-music
     crons:
-      - name: Check server status
+      - name: Check server status - 2h
         schedule: every 2h
         prompt: Check server status
-        deliver: local
+      - name: Check server status - 4h
+        schedule: every 4h
+        prompt: Check server status

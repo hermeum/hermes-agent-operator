@@ -19,6 +19,7 @@ import (
 const (
 	domain                 = "hermes-agent-operator.xyz"
 	workspacePathSeparator = "--"
+	defaultPathEnv         = "/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 )
 
 type HermesAgentUseCase struct {
@@ -185,6 +186,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
 				{Name: "HOME", Value: "/opt/data/home"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			}, ha.GetHermes().GetEnv()...),
 			EnvFrom:   ha.GetHermes().GetEnvFrom(),
 			Resources: ha.GetHermes().GetResources(),
@@ -256,6 +258,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Args:            []string{u.buildConfigScript()},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
@@ -275,6 +278,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Args:            []string{u.buildWorkspaceScript()},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
@@ -293,6 +297,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Args:            []string{u.buildPluginsScript(plugins)},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
@@ -310,6 +315,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Args:            []string{u.buildSkillsScript(skills)},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
@@ -327,6 +333,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Args:            []string{u.buildCronsScript(crons)},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
@@ -423,7 +430,7 @@ if [ -f "$MANIFEST" ]; then
     [ -z "$name" ] && continue
     case "$name" in
       %s) ;;
-      *) hermes plugins remove "$name" || true ;;
+      *) /hermes plugins remove "$name" || true ;;
     esac
   done < "$MANIFEST"
 fi
@@ -449,92 +456,104 @@ func skillName(s agentsv1alpha1.HermesSkill) string {
 }
 
 func (u *HermesAgentUseCase) buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
-	names := make([]string, len(skills))
-	for i, s := range skills {
-		names[i] = skillName(s)
-	}
-	newManifest := strings.Join(names, "\n")
+	desiredNames := make([]string, 0, len(skills))
+	installLines := make([]string, 0, len(skills))
 
-	var installCmds strings.Builder
 	for _, s := range skills {
-		installCmds.WriteString("hermes skills install --yes")
+		name := skillName(s)
+		desiredNames = append(desiredNames, name)
+
+		var cmd strings.Builder
+		cmd.WriteString("hermes skills install --yes")
 		if s.Category != "" {
-			installCmds.WriteString(" --category ")
-			installCmds.WriteString(s.Category)
+			cmd.WriteString(" --category ")
+			cmd.WriteString(s.Category)
 		}
 		if s.Name != "" {
-			installCmds.WriteString(" --name ")
-			installCmds.WriteString(s.Name)
+			cmd.WriteString(" --name ")
+			cmd.WriteString(s.Name)
 		}
 		if s.Force {
-			installCmds.WriteString(" --force")
+			cmd.WriteString(" --force")
 		}
-		installCmds.WriteString(" ")
-		installCmds.WriteString(s.Identifier)
-		installCmds.WriteString("\n")
+		cmd.WriteString(" ")
+		cmd.WriteString(s.Identifier)
+		installLines = append(installLines, cmd.String())
 	}
 
+	casePattern := `"` + strings.Join(desiredNames, `"|"`) + `"`
+	installScript := strings.Join(installLines, "\n")
+	manifestContent := strings.Join(desiredNames, "\n")
+
 	return fmt.Sprintf(`set -eu
-UPDATED_MANIFEST=%q
-MANIFEST_FILE="/opt/data/.hermes-agent-operator/skills"
+MANIFEST="/opt/data/.hermes-agent-operator/skills"
 mkdir -p "/opt/data/.hermes-agent-operator"
 
-if [ -f "$MANIFEST_FILE" ]; then
-  while IFS= read -r managed; do
-    [ -z "$managed" ] && continue
-    if ! printf '%%s\n' "$UPDATED_MANIFEST" | grep -qxF "$managed"; then
-      hermes skills uninstall "$managed"
-    fi
-  done < "$MANIFEST_FILE"
+# Remove skills present in manifest but no longer desired
+if [ -f "$MANIFEST" ]; then
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    case "$name" in
+      %s) ;;
+      *) hermes skills uninstall "$name" || true ;;
+    esac
+  done < "$MANIFEST"
 fi
 
+# Install desired skills
 %s
-printf '%%s\n' "$UPDATED_MANIFEST" > "$MANIFEST_FILE"
-`, newManifest, installCmds.String())
+
+# Update manifest
+cat > "$MANIFEST" << 'SKILLS_EOF'
+%s
+SKILLS_EOF
+`, casePattern, installScript, manifestContent)
 }
 
 func (u *HermesAgentUseCase) buildCronsScript(crons []agentsv1alpha1.HermesCron) string {
-	names := make([]string, len(crons))
-	for i, c := range crons {
-		names[i] = c.Name
-	}
-	newManifest := strings.Join(names, "\n")
+	desiredNames := make([]string, 0, len(crons))
+	createLines := make([]string, 0, len(crons))
 
-	var createCmds strings.Builder
 	for _, c := range crons {
-		createCmds.WriteString("hermes cron create")
-		fmt.Fprintf(&createCmds, " --name %q", c.Name)
+		desiredNames = append(desiredNames, c.Name)
+
+		var cmd strings.Builder
+		cmd.WriteString("hermes cron create")
+		fmt.Fprintf(&cmd, " --name %q", c.Name)
 		if c.Deliver != "" {
-			fmt.Fprintf(&createCmds, " --deliver %q", c.Deliver)
+			fmt.Fprintf(&cmd, " --deliver %q", c.Deliver)
 		}
 		if c.Repeat != nil {
-			fmt.Fprintf(&createCmds, " --repeat %d", *c.Repeat)
+			fmt.Fprintf(&cmd, " --repeat %d", *c.Repeat)
 		}
 		for _, s := range c.Skills {
-			fmt.Fprintf(&createCmds, " --skill %q", s)
+			fmt.Fprintf(&cmd, " --skill %q", s)
 		}
 		if c.Script != "" {
-			fmt.Fprintf(&createCmds, " --script %q", c.Script)
+			fmt.Fprintf(&cmd, " --script %q", c.Script)
 		}
 		if c.NoAgent {
-			createCmds.WriteString(" --no-agent")
+			cmd.WriteString(" --no-agent")
 		}
 		if c.Workdir != "" {
-			fmt.Fprintf(&createCmds, " --workdir %q", c.Workdir)
+			fmt.Fprintf(&cmd, " --workdir %q", c.Workdir)
 		}
 		if c.Profile != "" {
-			fmt.Fprintf(&createCmds, " --profile %q", c.Profile)
+			fmt.Fprintf(&cmd, " --profile %q", c.Profile)
 		}
-		fmt.Fprintf(&createCmds, " %q", c.Schedule)
+		fmt.Fprintf(&cmd, " %q", c.Schedule)
 		if c.Prompt != "" {
-			fmt.Fprintf(&createCmds, " %q", c.Prompt)
+			fmt.Fprintf(&cmd, " %q", c.Prompt)
 		}
-		createCmds.WriteString("\n")
+		createLines = append(createLines, cmd.String())
 	}
 
+	casePattern := `"` + strings.Join(desiredNames, `"|"`) + `"`
+	createScript := strings.Join(createLines, "\n")
+	manifestContent := strings.Join(desiredNames, "\n")
+
 	return fmt.Sprintf(`set -eu
-UPDATED_MANIFEST=%q
-MANIFEST_FILE="/opt/data/.hermes-agent-operator/crons"
+MANIFEST="/opt/data/.hermes-agent-operator/crons"
 mkdir -p "/opt/data/.hermes-agent-operator"
 
 get_job_id() {
@@ -552,17 +571,26 @@ for j in data.get("jobs", []):
 PY
 }
 
-# Remove all previously managed jobs by looking up their IDs in jobs.json.
-if [ -f "$MANIFEST_FILE" ]; then
-  while IFS= read -r managed; do
-    [ -z "$managed" ] && continue
-    id=$(get_job_id "$managed")
-    [ -z "$id" ] && continue
-    hermes cron remove "$id" || true
-  done < "$MANIFEST_FILE"
+# Remove crons present in manifest but no longer desired
+if [ -f "$MANIFEST" ]; then
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    case "$name" in
+      %s) ;;
+      *)
+        id=$(get_job_id "$name")
+        [ -n "$id" ] && hermes cron remove "$id" || true
+        ;;
+    esac
+  done < "$MANIFEST"
 fi
 
+# Create desired crons
 %s
-printf '%%s\n' "$UPDATED_MANIFEST" > "$MANIFEST_FILE"
-`, newManifest, createCmds.String())
+
+# Update manifest
+cat > "$MANIFEST" << 'CRONS_EOF'
+%s
+CRONS_EOF
+`, casePattern, createScript, manifestContent)
 }
