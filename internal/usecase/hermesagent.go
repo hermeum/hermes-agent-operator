@@ -139,6 +139,9 @@ func configMapDataHash(data map[string]string) string {
 
 func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 	replicas := int32(1)
+	if ha.IsSuspended() {
+		replicas = int32(0)
+	}
 
 	// The config hash annotation is used to trigger a rolling update of the StatefulSet when the config changes.
 	cm, _ := u.buildConfigMap(ha)

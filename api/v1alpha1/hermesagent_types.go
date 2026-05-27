@@ -268,6 +268,11 @@ func (h *Hermes) GetImage() string {
 
 // HermesAgentSpec defines the desired state of HermesAgent
 type HermesAgentSpec struct {
+	// suspend pauses the agent by scaling its StatefulSet to 0 replicas.
+	// Set to true to pause; false or omit to run normally.
+	// +optional
+	Suspend *bool `json:"suspend,omitempty"`
+
 	// hermes defines the Hermes agent configuration.
 	// +optional
 	Hermes *Hermes `json:"hermes,omitempty"`
@@ -314,6 +319,10 @@ type HermesAgent struct {
 	// status defines the observed state of HermesAgent
 	// +optional
 	Status HermesAgentStatus `json:"status,omitzero"`
+}
+
+func (h *HermesAgent) IsSuspended() bool {
+	return h.Spec.Suspend != nil && *h.Spec.Suspend
 }
 
 func (h *HermesAgent) GetConfigMapName() string {
