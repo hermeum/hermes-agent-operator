@@ -20,6 +20,8 @@ type PrometheusTelemetry struct {
 	serviceAccountOps *prometheus.CounterVec
 	roleOps           *prometheus.CounterVec
 	roleBindingOps    *prometheus.CounterVec
+	serviceOps        *prometheus.CounterVec
+	ingressOps        *prometheus.CounterVec
 	notFoundTotal     prometheus.Counter
 }
 
@@ -54,6 +56,14 @@ func NewPrometheusTelemetry() *PrometheusTelemetry {
 			Name: "hermesagent_rolebinding_operations_total",
 			Help: "Total number of RoleBinding create/update/delete operations.",
 		}, []string{"operation", "result"}),
+		serviceOps: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "hermesagent_service_operations_total",
+			Help: "Total number of Service create/update operations.",
+		}, []string{"operation", "result"}),
+		ingressOps: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "hermesagent_ingress_operations_total",
+			Help: "Total number of Ingress create/update/delete operations.",
+		}, []string{"operation", "result"}),
 		notFoundTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "hermesagent_not_found_total",
 			Help: "Total number of reconciliations where the HermesAgent was not found.",
@@ -68,6 +78,8 @@ func NewPrometheusTelemetry() *PrometheusTelemetry {
 		m.serviceAccountOps,
 		m.roleOps,
 		m.roleBindingOps,
+		m.serviceOps,
+		m.ingressOps,
 		m.notFoundTotal,
 	)
 
@@ -116,6 +128,14 @@ func (m *PrometheusTelemetry) IncRoleOperation(_ context.Context, param usecase.
 
 func (m *PrometheusTelemetry) IncRoleBindingOperation(_ context.Context, param usecase.IncRoleBindingOperationParam) {
 	m.roleBindingOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+}
+
+func (m *PrometheusTelemetry) IncServiceOperation(_ context.Context, param usecase.IncServiceOperationParam) {
+	m.serviceOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+}
+
+func (m *PrometheusTelemetry) IncIngressOperation(_ context.Context, param usecase.IncIngressOperationParam) {
+	m.ingressOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) IncNotFound(_ context.Context, _ usecase.IncNotFoundParam) {

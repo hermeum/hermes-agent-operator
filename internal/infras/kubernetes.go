@@ -8,6 +8,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -189,4 +190,64 @@ func (k *KubernetesClient) DeleteRoleBinding(ctx context.Context, param usecase.
 		},
 	}
 	return client.IgnoreNotFound(k.client.Delete(ctx, rb))
+}
+
+func (k *KubernetesClient) GetService(ctx context.Context, param usecase.GetServiceParam) (*corev1.Service, error) {
+	svc := &corev1.Service{}
+	if err := k.client.Get(ctx, param.NamespacedName, svc); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return svc, nil
+}
+
+func (k *KubernetesClient) CreateServiceOwnedByHermesAgent(ctx context.Context, param usecase.CreateServiceOfHermesAgentParam) error {
+	if err := ctrl.SetControllerReference(param.HermesAgent, param.Service, k.scheme); err != nil {
+		return err
+	}
+	return k.client.Create(ctx, param.Service)
+}
+
+func (k *KubernetesClient) UpdateServiceOwnedByHermesAgent(ctx context.Context, param usecase.UpdateServiceParam) error {
+	if err := ctrl.SetControllerReference(param.HermesAgent, param.Service, k.scheme); err != nil {
+		return err
+	}
+	return k.client.Update(ctx, param.Service)
+}
+
+func (k *KubernetesClient) GetIngress(ctx context.Context, param usecase.GetIngressParam) (*networkingv1.Ingress, error) {
+	ing := &networkingv1.Ingress{}
+	if err := k.client.Get(ctx, param.NamespacedName, ing); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return ing, nil
+}
+
+func (k *KubernetesClient) CreateIngressOwnedByHermesAgent(ctx context.Context, param usecase.CreateIngressOfHermesAgentParam) error {
+	if err := ctrl.SetControllerReference(param.HermesAgent, param.Ingress, k.scheme); err != nil {
+		return err
+	}
+	return k.client.Create(ctx, param.Ingress)
+}
+
+func (k *KubernetesClient) UpdateIngressOwnedByHermesAgent(ctx context.Context, param usecase.UpdateIngressParam) error {
+	if err := ctrl.SetControllerReference(param.HermesAgent, param.Ingress, k.scheme); err != nil {
+		return err
+	}
+	return k.client.Update(ctx, param.Ingress)
+}
+
+func (k *KubernetesClient) DeleteIngress(ctx context.Context, param usecase.DeleteIngressParam) error {
+	ing := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      param.NamespacedName.Name,
+			Namespace: param.NamespacedName.Namespace,
+		},
+	}
+	return client.IgnoreNotFound(k.client.Delete(ctx, ing))
 }

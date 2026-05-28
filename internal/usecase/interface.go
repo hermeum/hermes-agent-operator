@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -48,6 +49,8 @@ type Telemetry interface {
 	IncServiceAccountOperation(ctx context.Context, param IncServiceAccountOperationParam)
 	IncRoleOperation(ctx context.Context, param IncRoleOperationParam)
 	IncRoleBindingOperation(ctx context.Context, param IncRoleBindingOperationParam)
+	IncServiceOperation(ctx context.Context, param IncServiceOperationParam)
+	IncIngressOperation(ctx context.Context, param IncIngressOperationParam)
 	IncNotFound(ctx context.Context, param IncNotFoundParam)
 }
 
@@ -84,6 +87,16 @@ type IncRoleBindingOperationParam struct {
 	Result    Result
 }
 
+type IncServiceOperationParam struct {
+	Operation Operation
+	Result    Result
+}
+
+type IncIngressOperationParam struct {
+	Operation Operation
+	Result    Result
+}
+
 type IncNotFoundParam struct{}
 
 type Kubernetes interface {
@@ -111,6 +124,15 @@ type Kubernetes interface {
 	CreateRoleBindingOwnedByHermesAgent(ctx context.Context, param CreateRoleBindingOfHermesAgentParam) error
 	UpdateRoleBindingOwnedByHermesAgent(ctx context.Context, param UpdateRoleBindingParam) error
 	DeleteRoleBinding(ctx context.Context, param DeleteRoleBindingParam) error
+
+	GetService(ctx context.Context, param GetServiceParam) (*corev1.Service, error)
+	CreateServiceOwnedByHermesAgent(ctx context.Context, param CreateServiceOfHermesAgentParam) error
+	UpdateServiceOwnedByHermesAgent(ctx context.Context, param UpdateServiceParam) error
+
+	GetIngress(ctx context.Context, param GetIngressParam) (*networkingv1.Ingress, error)
+	CreateIngressOwnedByHermesAgent(ctx context.Context, param CreateIngressOfHermesAgentParam) error
+	UpdateIngressOwnedByHermesAgent(ctx context.Context, param UpdateIngressParam) error
+	DeleteIngress(ctx context.Context, param DeleteIngressParam) error
 }
 
 type GetHermesAgentParam struct {
@@ -196,5 +218,37 @@ type UpdateRoleBindingParam struct {
 }
 
 type DeleteRoleBindingParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type GetServiceParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type CreateServiceOfHermesAgentParam struct {
+	HermesAgent *agentsv1alpha1.HermesAgent
+	Service     *corev1.Service
+}
+
+type UpdateServiceParam struct {
+	HermesAgent *agentsv1alpha1.HermesAgent
+	Service     *corev1.Service
+}
+
+type GetIngressParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type CreateIngressOfHermesAgentParam struct {
+	HermesAgent *agentsv1alpha1.HermesAgent
+	Ingress     *networkingv1.Ingress
+}
+
+type UpdateIngressParam struct {
+	HermesAgent *agentsv1alpha1.HermesAgent
+	Ingress     *networkingv1.Ingress
+}
+
+type DeleteIngressParam struct {
 	NamespacedName types.NamespacedName
 }

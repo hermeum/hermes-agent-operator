@@ -109,6 +109,13 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Args:            []string{"gateway", "run"},
 			WorkingDir:      "/opt/hermes",
+			Ports: []corev1.ContainerPort{
+				{
+					Name:          gatewayPortName,
+					ContainerPort: gatewayPort,
+					Protocol:      corev1.ProtocolTCP,
+				},
+			},
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
 				{Name: "HOME", Value: "/opt/data/home"},

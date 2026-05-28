@@ -374,6 +374,150 @@ func (h *Hermes) GetImage() string {
 	return repo + ":" + tag
 }
 
+// Networking defines network-related configuration.
+type Networking struct {
+	// service configures the Kubernetes Service.
+	// +optional
+	Service Service `json:"service,omitempty"`
+
+	// ingress configures the Kubernetes Ingress.
+	// +optional
+	Ingress Ingress `json:"ingress,omitempty"`
+}
+
+// Service defines the Service configuration.
+type Service struct {
+	// type is the Kubernetes Service type.
+	// +kubebuilder:validation:Enum=ClusterIP;LoadBalancer;NodePort
+	// +kubebuilder:default="ClusterIP"
+	// +optional
+	Type corev1.ServiceType `json:"type,omitempty"`
+
+	// annotations to add to the Service.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// ports defines custom ports exposed on the Service.
+	// When set, these replace the default gateway port.
+	// When empty, the operator creates the default gateway port (8642).
+	// +kubebuilder:validation:MaxItems=20
+	// +optional
+	Ports []ServicePort `json:"ports,omitempty"`
+}
+
+// ServicePort defines a port exposed by the Service.
+type ServicePort struct {
+	// name is the name of the port.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// port is the port number exposed on the Service.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port"`
+
+	// targetPort is the port on the container to route to (defaults to port).
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	TargetPort *int32 `json:"targetPort,omitempty"`
+
+	// protocol is the protocol for the port.
+	// +kubebuilder:validation:Enum=TCP;UDP;SCTP
+	// +kubebuilder:default="TCP"
+	// +optional
+	Protocol corev1.Protocol `json:"protocol,omitempty"`
+}
+
+// Ingress defines the Ingress configuration.
+type Ingress struct {
+	// enabled enables Ingress creation.
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// className is the name of the IngressClass to use.
+	// +optional
+	ClassName *string `json:"className,omitempty"`
+
+	// annotations to add to the Ingress.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// hosts is a list of hosts to route traffic for.
+	// +optional
+	Hosts []IngressHost `json:"hosts,omitempty"`
+
+	// tls configuration.
+	// +optional
+	TLS []IngressTLS `json:"tls,omitempty"`
+}
+
+// IngressHost defines a host for the Ingress.
+type IngressHost struct {
+	// host is the fully qualified domain name.
+	Host string `json:"host"`
+
+	// paths is a list of paths to route.
+	// +optional
+	Paths []IngressPath `json:"paths,omitempty"`
+}
+
+// IngressPath defines a path for the Ingress.
+type IngressPath struct {
+	// path is the path to route.
+	// +kubebuilder:default="/"
+	// +optional
+	Path string `json:"path,omitempty"`
+
+	// pathType determines how the path should be matched.
+	// +kubebuilder:validation:Enum=Prefix;Exact;ImplementationSpecific
+	// +kubebuilder:default="Prefix"
+	// +optional
+	PathType string `json:"pathType,omitempty"`
+
+	// port is the backend service port number to route traffic to.
+	// Defaults to the gateway port (8642) when not set.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	Port *int32 `json:"port,omitempty"`
+}
+
+// IngressTLS defines TLS configuration for the Ingress.
+type IngressTLS struct {
+	// hosts are a list of hosts included in the TLS certificate.
+	Hosts []string `json:"hosts,omitempty"`
+
+	// secretName is the name of the secret containing the TLS certificate.
+	SecretName string `json:"secretName,omitempty"`
+}
+
+func (n *Networking) GetService() *Service {
+	if n == nil {
+		return nil
+	}
+	return &n.Service
+}
+
+func (n *Networking) GetIngress() *Ingress {
+	if n == nil {
+		return nil
+	}
+	return &n.Ingress
+}
+
+func (s *Service) GetType() corev1.ServiceType {
+	if s == nil || s.Type == "" {
+		return corev1.ServiceTypeClusterIP
+	}
+	return s.Type
+}
+
+func (i *Ingress) IsEnabled() bool {
+	return i != nil && i.Enabled
+}
+
 // HermesAgentSpec defines the desired state of HermesAgent
 type HermesAgentSpec struct {
 	// suspend pauses the agent by scaling its StatefulSet to 0 replicas.
@@ -387,6 +531,9 @@ type HermesAgentSpec struct {
 	// security configures the pod and container security contexts.
 	// +optional
 	Security *HermesSecurity `json:"security,omitempty"`
+	// networking configures the Service and Ingress.
+	// +optional
+	Networking *Networking `json:"networking,omitempty"`
 }
 
 // HermesAgentStatus defines the observed state of HermesAgent.
@@ -457,6 +604,10 @@ func (h *HermesAgent) GetHermes() *Hermes {
 
 func (h *HermesAgent) GetSecurity() *HermesSecurity {
 	return h.Spec.Security
+}
+
+func (h *HermesAgent) GetNetworking() *Networking {
+	return h.Spec.Networking
 }
 
 // +kubebuilder:object:root=true

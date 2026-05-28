@@ -468,6 +468,142 @@ spec:
                         type: object
                     type: object
                 type: object
+              networking:
+                description: networking configures the Service and Ingress.
+                properties:
+                  ingress:
+                    description: ingress configures the Kubernetes Ingress.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: annotations to add to the Ingress.
+                        type: object
+                      className:
+                        description: className is the name of the IngressClass to
+                          use.
+                        type: string
+                      enabled:
+                        default: false
+                        description: enabled enables Ingress creation.
+                        type: boolean
+                      hosts:
+                        description: hosts is a list of hosts to route traffic for.
+                        items:
+                          description: IngressHost defines a host for the Ingress.
+                          properties:
+                            host:
+                              description: host is the fully qualified domain name.
+                              type: string
+                            paths:
+                              description: paths is a list of paths to route.
+                              items:
+                                description: IngressPath defines a path for the Ingress.
+                                properties:
+                                  path:
+                                    default: /
+                                    description: path is the path to route.
+                                    type: string
+                                  pathType:
+                                    default: Prefix
+                                    description: pathType determines how the path
+                                      should be matched.
+                                    enum:
+                                    - Prefix
+                                    - Exact
+                                    - ImplementationSpecific
+                                    type: string
+                                  port:
+                                    description: |-
+                                      port is the backend service port number to route traffic to.
+                                      Defaults to the gateway port (8642) when not set.
+                                    format: int32
+                                    maximum: 65535
+                                    minimum: 1
+                                    type: integer
+                                type: object
+                              type: array
+                          required:
+                          - host
+                          type: object
+                        type: array
+                      tls:
+                        description: tls configuration.
+                        items:
+                          description: IngressTLS defines TLS configuration for the
+                            Ingress.
+                          properties:
+                            hosts:
+                              description: hosts are a list of hosts included in the
+                                TLS certificate.
+                              items:
+                                type: string
+                              type: array
+                            secretName:
+                              description: secretName is the name of the secret containing
+                                the TLS certificate.
+                              type: string
+                          type: object
+                        type: array
+                    type: object
+                  service:
+                    description: service configures the Kubernetes Service.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: annotations to add to the Service.
+                        type: object
+                      ports:
+                        description: |-
+                          ports defines custom ports exposed on the Service.
+                          When set, these replace the default gateway port.
+                          When empty, the operator creates the default gateway port (8642).
+                        items:
+                          description: ServicePort defines a port exposed by the Service.
+                          properties:
+                            name:
+                              description: name is the name of the port.
+                              minLength: 1
+                              type: string
+                            port:
+                              description: port is the port number exposed on the
+                                Service.
+                              format: int32
+                              maximum: 65535
+                              minimum: 1
+                              type: integer
+                            protocol:
+                              default: TCP
+                              description: protocol is the protocol for the port.
+                              enum:
+                              - TCP
+                              - UDP
+                              - SCTP
+                              type: string
+                            targetPort:
+                              description: targetPort is the port on the container
+                                to route to (defaults to port).
+                              format: int32
+                              maximum: 65535
+                              minimum: 1
+                              type: integer
+                          required:
+                          - name
+                          - port
+                          type: object
+                        maxItems: 20
+                        type: array
+                      type:
+                        default: ClusterIP
+                        description: type is the Kubernetes Service type.
+                        enum:
+                        - ClusterIP
+                        - LoadBalancer
+                        - NodePort
+                        type: string
+                    type: object
+                type: object
               security:
                 description: security configures the pod and container security contexts.
                 properties:
