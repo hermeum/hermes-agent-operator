@@ -156,11 +156,11 @@ type HermesSecurity struct {
 	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 	// rbac configures the ServiceAccount and Role used by the HermesAgent pod.
 	// +optional
-	RBAC *RBACSpec `json:"rbac,omitempty"`
+	RBAC *RBAC `json:"rbac,omitempty"`
 }
 
-// RBACSpec configures RBAC for the HermesAgent instance.
-type RBACSpec struct {
+// RBAC configures RBAC for the HermesAgent instance.
+type RBAC struct {
 	// CreateServiceAccount creates a dedicated ServiceAccount for the instance.
 	// +kubebuilder:default=true
 	// +optional
@@ -181,7 +181,7 @@ type RBACSpec struct {
 	AdditionalRules []RBACRule `json:"additionalRules,omitempty"`
 }
 
-func (r *RBACSpec) ShouldCreateServiceAccount() bool {
+func (r *RBAC) ShouldCreateServiceAccount() bool {
 	if r == nil {
 		return false
 	}
@@ -191,7 +191,7 @@ func (r *RBACSpec) ShouldCreateServiceAccount() bool {
 	return *r.CreateServiceAccount
 }
 
-func (r *RBACSpec) GetAdditionalRules() []RBACRule {
+func (r *RBAC) GetAdditionalRules() []RBACRule {
 	if r == nil {
 		return nil
 	}
@@ -246,7 +246,7 @@ func (s *HermesSecurity) GetContainerSecurityContext() *corev1.SecurityContext {
 	}
 }
 
-func (s *HermesSecurity) GetRBAC() *RBACSpec {
+func (s *HermesSecurity) GetRBAC() *RBAC {
 	if s == nil {
 		return nil
 	}
