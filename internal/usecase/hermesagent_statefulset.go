@@ -1,0 +1,536 @@
+package usecase
+
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
+	"sort"
+	"strings"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+)
+
+func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
+	sts, err := u.kube.GetStatefulSet(ctx, GetStatefulSetParam{
+		NamespacedName: types.NamespacedName{Name: ha.Name, Namespace: ha.Namespace},
+	})
+	if err != nil {
+		return err
+	}
+
+	desired := u.buildStatefulSet(ha)
+
+	if sts != nil {
+		desired.ResourceVersion = sts.ResourceVersion
+		err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
+		u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		return err
+	}
+
+	err = u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{
+		HermesAgent: ha,
+		StatefulSet: desired,
+	})
+	u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+	return err
+}
+
+func configMapDataHash(data map[string]string) string {
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	h := sha256.New()
+	for _, k := range keys {
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", k, data[k])
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16]
+}
+
+func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
+	replicas := int32(1)
+	if ha.IsSuspended() {
+		replicas = int32(0)
+	}
+
+	// The config hash annotation is used to trigger a rolling update of the StatefulSet when the config changes.
+	cm, _ := u.buildConfigMap(ha)
+	configHash := configMapDataHash(cm.Data)
+
+	sts := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ha.Name,
+			Namespace: ha.Namespace,
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": ha.Name},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": ha.Name},
+					Annotations: map[string]string{
+						domain + "/config-hash": configHash,
+					},
+				},
+				Spec: corev1.PodSpec{
+					ServiceAccountName: ha.GetServiceAccountName(),
+					SecurityContext:    ha.GetSecurity().GetPodSecurityContext(),
+				},
+			},
+		},
+	}
+
+	sts = u.buildHermesContainer(ha, sts)
+
+	return sts
+}
+
+// buildHermesContainer populates the StatefulSet with all resources driven by the hermes spec:
+// the main hermes-agent container (env, envFrom), init containers for config and workspace,
+// and volumes/PVCs for persistence, bootstrap config, and shared memory.
+func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
+	sts = sts.DeepCopy()
+	sizeLimit := resource.MustParse("1Gi")
+	sec := ha.GetSecurity()
+
+	initContainers := []corev1.Container{}
+	containers := []corev1.Container{
+		{
+			Name:            "hermes-agent",
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Args:            []string{"gateway", "run"},
+			WorkingDir:      "/opt/hermes",
+			Env: append([]corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "HOME", Value: "/opt/data/home"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+			}, ha.GetHermes().GetEnv()...),
+			EnvFrom:         ha.GetHermes().GetEnvFrom(),
+			Resources:       ha.GetHermes().GetResources(),
+			SecurityContext: sec.GetContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "dshm", MountPath: "/dev/shm"},
+				{Name: "data", MountPath: "/opt/data"},
+				{Name: "tmp", MountPath: "/tmp"},
+			},
+		},
+	}
+	volumes := []corev1.Volume{
+		{
+			Name: "dshm",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{
+					Medium:    corev1.StorageMediumMemory,
+					SizeLimit: &sizeLimit,
+				},
+			},
+		},
+		{
+			Name:         "tmp",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		},
+		{
+			Name: "bootstrap",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetConfigMapName()},
+				},
+			},
+		},
+	}
+	pvc := []corev1.PersistentVolumeClaim{}
+
+	// persistence: existingClaim > enabled PVC > emptyDir fallback.
+	hp := ha.GetHermes().GetPersistence()
+	if ec := hp.GetExistingClaim(); ec != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name: "data",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: ec,
+				},
+			},
+		})
+	} else if hp != nil && hp.Enabled {
+		pvc = append(pvc, corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: "data"},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: hp.GetSize(),
+					},
+				},
+				StorageClassName: hp.StorageClassName,
+			},
+		})
+	} else {
+		volumes = append(volumes, corev1.Volume{
+			Name:         "data",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
+
+	// config: init container copies config.yaml from the bootstrap ConfigMap to the data volume.
+	if hc := ha.GetHermes().GetConfig(); hc != nil {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "init-config",
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{u.buildConfigScript()},
+			Env: []corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+			},
+			SecurityContext: sec.GetContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "data", MountPath: "/opt/data"},
+				{Name: "bootstrap", MountPath: "/bootstrap", ReadOnly: true},
+				{Name: "tmp", MountPath: "/tmp"},
+			},
+		})
+	}
+
+	// workspace: init container copies workspace files from the bootstrap ConfigMap.
+	// ConfigMap keys use the format "workspace.<path>" with "/" replaced by "--".
+	if hw := ha.GetHermes().GetWorkspace(); hw != nil && len(hw.Files) > 0 {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "init-workspace",
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{u.buildWorkspaceScript()},
+			Env: []corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+			},
+			SecurityContext: sec.GetContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "data", MountPath: "/opt/data"},
+				{Name: "bootstrap", MountPath: "/bootstrap", ReadOnly: true},
+				{Name: "tmp", MountPath: "/tmp"},
+			},
+		})
+	}
+
+	// plugins: init container installs desired plugins and removes stale ones.
+	if plugins := ha.GetHermes().GetPlugins(); len(plugins) > 0 {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "init-plugins",
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{u.buildPluginsScript(plugins)},
+			Env: []corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+			},
+			SecurityContext: sec.GetContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "data", MountPath: "/opt/data"},
+				{Name: "tmp", MountPath: "/tmp"},
+			},
+		})
+	}
+
+	// skills: init container installs/uninstalls skills via the hermes CLI.
+	if skills := ha.GetHermes().GetSkills(); len(skills) > 0 {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "init-skills",
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{u.buildSkillsScript(skills)},
+			Env: []corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+			},
+			SecurityContext: sec.GetContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "data", MountPath: "/opt/data"},
+				{Name: "tmp", MountPath: "/tmp"},
+			},
+		})
+	}
+
+	// crons: init container reconciles scheduled jobs via the hermes CLI.
+	if crons := ha.GetHermes().GetCrons(); len(crons) > 0 {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "init-crons",
+			Image:           "nousresearch/hermes-agent:latest",
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{u.buildCronsScript(crons)},
+			Env: []corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+			},
+			SecurityContext: sec.GetContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "data", MountPath: "/opt/data"},
+				{Name: "tmp", MountPath: "/tmp"},
+			},
+		})
+	}
+
+	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
+	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, containers...)
+	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, volumes...)
+	sts.Spec.VolumeClaimTemplates = append(sts.Spec.VolumeClaimTemplates, pvc...)
+
+	return sts
+}
+
+func (u *HermesAgentUseCase) buildConfigScript() string {
+	return `set -eu
+mkdir -p "/opt/data/home"
+cp "/bootstrap/config.yaml" "/opt/data/config.yaml"
+echo "Config file copied"
+`
+}
+
+func (u *HermesAgentUseCase) buildWorkspaceScript() string {
+	return fmt.Sprintf(`set -eu
+MANIFEST_FILE="/opt/data/.hermes-agent-operator/workspace-files"
+UPDATED_MANIFEST=""
+mkdir -p "/opt/data/.hermes-agent-operator"
+
+# delete files that were previously managed but are no longer in workspace.files
+if [ -f "$MANIFEST_FILE" ]; then
+  while IFS= read -r managed; do
+    [ -z "$managed" ] && continue
+    key="workspace.$(echo "$managed" | sed 's|/|%s|g')"
+    if [ ! -f "/bootstrap/$key" ]; then
+      rm -f "/opt/data/$managed"
+			echo "Removed outdated workspace file: $managed"
+    fi
+  done < "$MANIFEST_FILE"
+fi
+
+for f in /bootstrap/workspace.*; do
+  [ -f "$f" ] || continue
+  relpath=$(basename "$f" | sed 's/^workspace\.//' | sed 's/%s/\//g')
+  target="/opt/data/$relpath"
+  mkdir -p "$(dirname "$target")"
+  cp "$f" "$target"
+	echo "Copied workspace file: $relpath"
+  UPDATED_MANIFEST="$UPDATED_MANIFEST$relpath
+"
+done
+
+printf '%%s' "$UPDATED_MANIFEST" > "$MANIFEST_FILE"
+`, workspacePathSeparator, workspacePathSeparator)
+}
+
+// pluginDirName derives the plugin directory name from a Git URL or owner/repo shorthand.
+// e.g. "owner/hermes-plugin-foo" or "https://github.com/owner/hermes-plugin-foo.git" → "hermes-plugin-foo".
+func pluginDirName(identifier string) string {
+	s := strings.TrimRight(identifier, "/")
+	s = strings.TrimSuffix(s, ".git")
+	s = strings.TrimRight(s, "/")
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		return s[i+1:]
+	}
+	return s
+}
+
+func (u *HermesAgentUseCase) buildPluginsScript(plugins []agentsv1alpha1.HermesPlugin) string {
+	desiredNames := make([]string, 0, len(plugins))
+	installLines := make([]string, 0, len(plugins))
+
+	for _, p := range plugins {
+		name := pluginDirName(p.Identifier)
+		desiredNames = append(desiredNames, name)
+
+		enableFlag := "--enable"
+		if p.Enable != nil && !*p.Enable {
+			enableFlag = "--no-enable"
+		}
+		installLines = append(installLines,
+			fmt.Sprintf("hermes plugins install --force %s %q", enableFlag, p.Identifier))
+	}
+
+	// case pattern: "name1"|"name2" — safe because plugin names are GitHub repo names
+	casePattern := `"` + strings.Join(desiredNames, `"|"`) + `"`
+	installScript := strings.Join(installLines, "\n")
+	manifestContent := strings.Join(desiredNames, "\n")
+
+	script := fmt.Sprintf(`set -eu
+MANIFEST="/opt/data/.hermes-agent-operator/plugins"
+mkdir -p "/opt/data/.hermes-agent-operator"
+
+# Remove plugins present in manifest but no longer desired
+if [ -f "$MANIFEST" ]; then
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    case "$name" in
+      %s) ;;
+      *) /hermes plugins remove "$name" || true ;;
+    esac
+  done < "$MANIFEST"
+fi
+
+# Install desired plugins
+%s
+
+# Update manifest
+cat > "$MANIFEST" << 'PLUGINS_EOF'
+%s
+PLUGINS_EOF
+`, casePattern, installScript, manifestContent)
+
+	return script
+}
+
+func skillName(s agentsv1alpha1.HermesSkill) string {
+	if s.Name != "" {
+		return s.Name
+	}
+	parts := strings.Split(s.Identifier, "/")
+	return strings.TrimSuffix(parts[len(parts)-1], ".md")
+}
+
+func (u *HermesAgentUseCase) buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
+	desiredNames := make([]string, 0, len(skills))
+	installLines := make([]string, 0, len(skills))
+
+	for _, s := range skills {
+		name := skillName(s)
+		desiredNames = append(desiredNames, name)
+
+		var cmd strings.Builder
+		cmd.WriteString("hermes skills install --yes")
+		if s.Category != "" {
+			cmd.WriteString(" --category ")
+			cmd.WriteString(s.Category)
+		}
+		if s.Name != "" {
+			cmd.WriteString(" --name ")
+			cmd.WriteString(s.Name)
+		}
+		if s.Force {
+			cmd.WriteString(" --force")
+		}
+		cmd.WriteString(" ")
+		cmd.WriteString(s.Identifier)
+		installLines = append(installLines, cmd.String())
+	}
+
+	casePattern := `"` + strings.Join(desiredNames, `"|"`) + `"`
+	installScript := strings.Join(installLines, "\n")
+	manifestContent := strings.Join(desiredNames, "\n")
+
+	return fmt.Sprintf(`set -eu
+MANIFEST="/opt/data/.hermes-agent-operator/skills"
+mkdir -p "/opt/data/.hermes-agent-operator"
+
+# Remove skills present in manifest but no longer desired
+if [ -f "$MANIFEST" ]; then
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    case "$name" in
+      %s) ;;
+      *) hermes skills uninstall "$name" || true ;;
+    esac
+  done < "$MANIFEST"
+fi
+
+# Install desired skills
+%s
+
+# Update manifest
+cat > "$MANIFEST" << 'SKILLS_EOF'
+%s
+SKILLS_EOF
+`, casePattern, installScript, manifestContent)
+}
+
+func (u *HermesAgentUseCase) buildCronsScript(crons []agentsv1alpha1.HermesCron) string {
+	desiredNames := make([]string, 0, len(crons))
+	createLines := make([]string, 0, len(crons))
+
+	for _, c := range crons {
+		desiredNames = append(desiredNames, c.Name)
+
+		var cmd strings.Builder
+		cmd.WriteString("hermes cron create")
+		fmt.Fprintf(&cmd, " --name %q", c.Name)
+		if c.Deliver != "" {
+			fmt.Fprintf(&cmd, " --deliver %q", c.Deliver)
+		}
+		if c.Repeat != nil {
+			fmt.Fprintf(&cmd, " --repeat %d", *c.Repeat)
+		}
+		for _, s := range c.Skills {
+			fmt.Fprintf(&cmd, " --skill %q", s)
+		}
+		if c.Script != "" {
+			fmt.Fprintf(&cmd, " --script %q", c.Script)
+		}
+		if c.NoAgent {
+			cmd.WriteString(" --no-agent")
+		}
+		if c.Workdir != "" {
+			fmt.Fprintf(&cmd, " --workdir %q", c.Workdir)
+		}
+		if c.Profile != "" {
+			fmt.Fprintf(&cmd, " --profile %q", c.Profile)
+		}
+		fmt.Fprintf(&cmd, " %q", c.Schedule)
+		if c.Prompt != "" {
+			fmt.Fprintf(&cmd, " %q", c.Prompt)
+		}
+		createLines = append(createLines, cmd.String())
+	}
+
+	createScript := strings.Join(createLines, "\n")
+	manifestContent := strings.Join(desiredNames, "\n")
+
+	return fmt.Sprintf(`set -eu
+MANIFEST="/opt/data/.hermes-agent-operator/crons"
+mkdir -p "/opt/data/.hermes-agent-operator"
+
+get_job_id() {
+  python3 - "$1" <<'PY'
+import json, os, sys
+p = "/opt/data/cron/jobs.json"
+if not os.path.exists(p):
+    sys.exit(0)
+with open(p) as f:
+    data = json.load(f)
+for j in data.get("jobs", []):
+    if j.get("name") == sys.argv[1]:
+        print(j.get("id", ""))
+        break
+PY
+}
+
+# Remove crons present in manifest but no longer desired
+if [ -f "$MANIFEST" ]; then
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    id=$(get_job_id "$name")
+    [ -z "$id" ] && continue
+    hermes cron remove "$id" || true
+  done < "$MANIFEST"
+fi
+
+# Create desired crons
+%s
+
+# Update manifest
+cat > "$MANIFEST" << 'CRONS_EOF'
+%s
+CRONS_EOF
+`, createScript, manifestContent)
+}
