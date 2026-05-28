@@ -145,6 +145,54 @@ type HermesImage struct {
 	Tag string `json:"tag,omitempty"`
 }
 
+// HermesSecurity configures the security context for the pod and container.
+type HermesSecurity struct {
+	// podSecurityContext overrides the pod-level security context.
+	// +optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+	// containerSecurityContext overrides the container-level security context
+	// applied to the hermes-agent container and all init containers.
+	// +optional
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
+}
+
+func (s *HermesSecurity) GetPodSecurityContext() *corev1.PodSecurityContext {
+	if s != nil && s.PodSecurityContext != nil {
+		return s.PodSecurityContext
+	}
+	uid, gid := int64(1000), int64(1000)
+	rnt := true
+	pol := corev1.FSGroupChangeOnRootMismatch
+	return &corev1.PodSecurityContext{
+		FSGroup:             &gid,
+		FSGroupChangePolicy: &pol,
+		RunAsGroup:          &gid,
+		RunAsNonRoot:        &rnt,
+		RunAsUser:           &uid,
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+}
+
+func (s *HermesSecurity) GetContainerSecurityContext() *corev1.SecurityContext {
+	if s != nil && s.ContainerSecurityContext != nil {
+		return s.ContainerSecurityContext
+	}
+	apeFalse := false
+	roTrue := true
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &apeFalse,
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+		ReadOnlyRootFilesystem: &roTrue,
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+}
+
 // Hermes defines the hermes-specific section of the spec.
 type Hermes struct {
 	// image overrides the container image used for the hermes-agent container
@@ -276,6 +324,9 @@ type HermesAgentSpec struct {
 	// hermes defines the Hermes agent configuration.
 	// +optional
 	Hermes *Hermes `json:"hermes,omitempty"`
+	// security configures the pod and container security contexts.
+	// +optional
+	Security *HermesSecurity `json:"security,omitempty"`
 }
 
 // HermesAgentStatus defines the observed state of HermesAgent.
@@ -331,6 +382,10 @@ func (h *HermesAgent) GetConfigMapName() string {
 
 func (h *HermesAgent) GetHermes() *Hermes {
 	return h.Spec.Hermes
+}
+
+func (h *HermesAgent) GetSecurity() *HermesSecurity {
+	return h.Spec.Security
 }
 
 // +kubebuilder:object:root=true

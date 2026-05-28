@@ -20,8 +20,6 @@ const (
 	domain                 = "hermes-agent-operator.xyz"
 	workspacePathSeparator = "--"
 	defaultPathEnv         = "/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-	hermesUID              = int64(10000)
-	hermesGID              = int64(10000)
 )
 
 type HermesAgentUseCase struct {
@@ -164,6 +162,9 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 						domain + "/config-hash": configHash,
 					},
 				},
+				Spec: corev1.PodSpec{
+					SecurityContext: ha.GetSecurity().GetPodSecurityContext(),
+				},
 			},
 		},
 	}
@@ -179,6 +180,7 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
 	sts = sts.DeepCopy()
 	sizeLimit := resource.MustParse("1Gi")
+	sec := ha.GetSecurity()
 
 	initContainers := []corev1.Container{}
 	containers := []corev1.Container{
@@ -193,8 +195,9 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 				{Name: "HOME", Value: "/opt/data/home"},
 				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			}, ha.GetHermes().GetEnv()...),
-			EnvFrom:   ha.GetHermes().GetEnvFrom(),
-			Resources: ha.GetHermes().GetResources(),
+			EnvFrom:         ha.GetHermes().GetEnvFrom(),
+			Resources:       ha.GetHermes().GetResources(),
+			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "dshm", MountPath: "/dev/shm"},
 				{Name: "data", MountPath: "/opt/data"},
@@ -265,6 +268,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 				{Name: "HERMES_HOME", Value: "/opt/data"},
 				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
+			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
 				{Name: "bootstrap", MountPath: "/bootstrap", ReadOnly: true},
@@ -285,6 +289,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 				{Name: "HERMES_HOME", Value: "/opt/data"},
 				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
+			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
 				{Name: "bootstrap", MountPath: "/bootstrap", ReadOnly: true},
@@ -304,6 +309,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 				{Name: "HERMES_HOME", Value: "/opt/data"},
 				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
+			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
 			},
@@ -322,6 +328,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 				{Name: "HERMES_HOME", Value: "/opt/data"},
 				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
+			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
 			},
@@ -340,21 +347,13 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 				{Name: "HERMES_HOME", Value: "/opt/data"},
 				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
 			},
+			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "data", MountPath: "/opt/data"},
 			},
 		})
 	}
 
-	uid := hermesUID
-	gid := hermesGID
-	ra := false
-	sts.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-		RunAsUser:    &uid,
-		RunAsGroup:   &gid,
-		FSGroup:      &gid,
-		RunAsNonRoot: &ra,
-	}
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, containers...)
 	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, volumes...)
