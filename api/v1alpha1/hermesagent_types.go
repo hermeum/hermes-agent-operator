@@ -595,6 +595,27 @@ type HermesAgentSpec struct {
 	// networking configures the Service and Ingress.
 	// +optional
 	Networking *Networking `json:"networking,omitempty"`
+
+	// InitContainers is a list of additional init containers to run before the main container.
+	// They run after the operator-managed init-config and init-skills containers.
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	InitContainers []corev1.Container `json:"initContainers,omitempty"`
+
+	// Sidecars is a list of additional sidecar containers to inject into the pod.
+	// Use this for custom sidecars like database proxies, log forwarders, or service meshes.
+	// +optional
+	Sidecars []corev1.Container `json:"sidecars,omitempty"`
+
+	// ExtraVolumes is a list of additional volumes to make available to the pod's containers.
+	// +optional
+	ExtraVolumes []corev1.Volume `json:"extraVolumes,omitempty"`
+
+	// ExtraVolumeMounts adds additional volume mounts to the main container.
+	// Use with ExtraVolumes to mount ConfigMaps, Secrets, NFS shares, or CSI volumes.
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty"`
 }
 
 // HermesAgentStatus defines the observed state of HermesAgent.
@@ -669,6 +690,22 @@ func (h *HermesAgent) GetSecurity() *HermesSecurity {
 
 func (h *HermesAgent) GetNetworking() *Networking {
 	return h.Spec.Networking
+}
+
+func (h *HermesAgent) GetInitContainers() []corev1.Container {
+	return h.Spec.InitContainers
+}
+
+func (h *HermesAgent) GetSidecars() []corev1.Container {
+	return h.Spec.Sidecars
+}
+
+func (h *HermesAgent) GetExtraVolumes() []corev1.Volume {
+	return h.Spec.ExtraVolumes
+}
+
+func (h *HermesAgent) GetExtraVolumeMounts() []corev1.VolumeMount {
+	return h.Spec.ExtraVolumeMounts
 }
 
 // +kubebuilder:object:root=true

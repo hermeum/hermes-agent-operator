@@ -90,6 +90,15 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 
 	sts = u.buildHermesContainer(ha, sts)
 
+	// additional user-provided init containers run after the operator-managed ones.
+	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, ha.GetInitContainers()...)
+
+	// additional user-provided sidecar containers run alongside the hermes-agent container.
+	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, ha.GetSidecars()...)
+
+	// additional user-provided volumes.
+	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, ha.GetExtraVolumes()...)
+
 	return sts
 }
 
@@ -124,11 +133,11 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			EnvFrom:         ha.GetHermes().GetEnvFrom(),
 			Resources:       ha.GetHermes().GetResources(),
 			SecurityContext: sec.GetContainerSecurityContext(),
-			VolumeMounts: []corev1.VolumeMount{
+			VolumeMounts: append([]corev1.VolumeMount{
 				{Name: "dshm", MountPath: "/dev/shm"},
 				{Name: "data", MountPath: "/opt/data"},
 				{Name: "tmp", MountPath: "/tmp"},
-			},
+			}, ha.GetExtraVolumeMounts()...),
 		},
 	}
 	volumes := []corev1.Volume{
