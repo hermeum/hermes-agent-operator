@@ -512,12 +512,16 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 				},
 			})
 		case sp.IsEnabled():
-			volumes = append(volumes, corev1.Volume{
-				Name: searxngCacheVolume,
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: ha.GetSearXNGName(),
+			pvc = append(pvc, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: searxngCacheVolume},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: sp.GetSize(),
+						},
 					},
+					StorageClassName: sp.StorageClassName,
 				},
 			})
 		default:
