@@ -51,6 +51,7 @@ func (u *HermesAgentUseCase) buildServiceAccount(ha *agentsv1alpha1.HermesAgent)
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        ha.Name,
 			Namespace:   ha.Namespace,
+			Labels:      resourceLabels(ha),
 			Annotations: annotations,
 		},
 	}

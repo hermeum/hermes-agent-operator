@@ -44,6 +44,7 @@ func (u *HermesAgentUseCase) buildSearXNGConfigMap(ha *agentsv1alpha1.HermesAgen
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.GetSearXNGName(),
 			Namespace: ha.Namespace,
+			Labels:    resourceLabels(ha),
 		},
 		Data: ha.GetSearXNG().GetConfigFiles(),
 	}

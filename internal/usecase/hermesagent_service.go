@@ -46,11 +46,12 @@ func (u *HermesAgentUseCase) buildService(ha *agentsv1alpha1.HermesAgent) *corev
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        ha.Name,
 			Namespace:   ha.Namespace,
+			Labels:      resourceLabels(ha),
 			Annotations: annotations,
 		},
 		Spec: corev1.ServiceSpec{
 			Type:     svc.GetType(),
-			Selector: map[string]string{"app": ha.Name},
+			Selector: selectorLabels(ha),
 			Ports:    buildServicePorts(svc),
 		},
 	}

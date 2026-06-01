@@ -95,6 +95,7 @@ func (u *HermesAgentUseCase) buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.GetHermesName(),
 			Namespace: ha.Namespace,
+			Labels:    resourceLabels(ha),
 		},
 		Data: data,
 	}, nil
