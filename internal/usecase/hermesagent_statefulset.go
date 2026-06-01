@@ -413,6 +413,26 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 		})
 	}
 
+	// bundles: init container reconciles bundles via the hermes CLI.
+	if bundles := ha.GetHermes().GetBundles(); len(bundles) > 0 {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "init-bundles",
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{u.buildBundlesScript(bundles)},
+			Env: []corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: hermesPathEnv},
+			},
+			SecurityContext: sec.GetContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "data", MountPath: "/opt/data"},
+				{Name: "tmp", MountPath: "/tmp"},
+			},
+		})
+	}
+
 	// crons: init container reconciles scheduled jobs via the hermes CLI.
 	if crons := ha.GetHermes().GetCrons(); len(crons) > 0 {
 		initContainers = append(initContainers, corev1.Container{
@@ -506,26 +526,6 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 			})
 		}
-	}
-
-	// bundles: init container reconciles bundles via the hermes CLI.
-	if bundles := ha.GetHermes().GetBundles(); len(bundles) > 0 {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "init-bundles",
-			Image:           ha.GetHermes().GetImage(),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{u.buildBundlesScript(bundles)},
-			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: "/opt/data"},
-				{Name: "PATH", Value: hermesPathEnv},
-			},
-			SecurityContext: sec.GetContainerSecurityContext(),
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: "data", MountPath: "/opt/data"},
-				{Name: "tmp", MountPath: "/tmp"},
-			},
-		})
 	}
 
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
