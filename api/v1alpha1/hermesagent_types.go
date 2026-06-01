@@ -29,6 +29,24 @@ import (
 
 const defaultImageTag = "latest"
 
+// HermesAgentPhase represents the lifecycle phase of a HermesAgent, mirroring Pod phase with an added Suspended state.
+type HermesAgentPhase string
+
+const (
+	// PhasePending means the pod has not been scheduled yet, or is waiting to start.
+	PhasePending HermesAgentPhase = "Pending"
+	// PhaseRunning means the pod is running.
+	PhaseRunning HermesAgentPhase = "Running"
+	// PhaseSucceeded means the pod has terminated successfully.
+	PhaseSucceeded HermesAgentPhase = "Succeeded"
+	// PhaseFailed means the pod has terminated with a failure.
+	PhaseFailed HermesAgentPhase = "Failed"
+	// PhaseUnknown means the pod phase cannot be determined.
+	PhaseUnknown HermesAgentPhase = "Unknown"
+	// PhaseSuspended means the agent has been suspended via Spec.Suspend.
+	PhaseSuspended HermesAgentPhase = "Suspended"
+)
+
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
@@ -1042,11 +1060,10 @@ type HermesAgentSpec struct {
 
 // HermesAgentStatus defines the observed state of HermesAgent.
 type HermesAgentStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// phase is the current lifecycle phase of the HermesAgent, mirroring the underlying pod phase.
+	// One of Pending, Running, Succeeded, Failed, Unknown, or Suspended.
+	// +optional
+	Phase HermesAgentPhase `json:"phase,omitempty"`
 
 	// conditions represent the current state of the HermesAgent resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
@@ -1065,6 +1082,8 @@ type HermesAgentStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // HermesAgent is the Schema for the hermesagents API
 type HermesAgent struct {

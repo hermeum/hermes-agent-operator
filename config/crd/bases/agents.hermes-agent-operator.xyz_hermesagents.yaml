@@ -14,7 +14,14 @@ spec:
     singular: hermesagent
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: HermesAgent is the Schema for the hermesagents API
@@ -7085,6 +7092,11 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              phase:
+                description: |-
+                  phase is the current lifecycle phase of the HermesAgent, mirroring the underlying pod phase.
+                  One of Pending, Running, Succeeded, Failed, Unknown, or Suspended.
+                type: string
             type: object
         required:
         - spec

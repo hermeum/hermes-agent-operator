@@ -119,6 +119,9 @@ type IncNotFoundParam struct {
 
 type Kubernetes interface {
 	GetHermesAgent(ctx context.Context, param GetHermesAgentParam) (*agentsv1alpha1.HermesAgent, error)
+	UpdateHermesAgentStatus(ctx context.Context, param UpdateHermesAgentStatusParam) error
+
+	GetPod(ctx context.Context, param GetPodParam) (*corev1.Pod, error)
 
 	GetConfigMap(ctx context.Context, param GetConfigMapParam) (*corev1.ConfigMap, error)
 	CreateConfigMapOwnedByHermesAgent(ctx context.Context, param CreateConfigMapOfHermesAgentParam) error
@@ -160,6 +163,14 @@ type Kubernetes interface {
 }
 
 type GetHermesAgentParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type UpdateHermesAgentStatusParam struct {
+	HermesAgent *agentsv1alpha1.HermesAgent
+}
+
+type GetPodParam struct {
 	NamespacedName types.NamespacedName
 }
 

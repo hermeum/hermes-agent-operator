@@ -51,17 +51,18 @@ type HermesAgentReconciler struct {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 
 func (r *HermesAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	kube := infras.NewKubernetesClient(r.Client, r.Scheme)
 	uc := usecase.NewHermesAgentUseCase(kube, telemetry)
-	if err := uc.Reconcile(ctx, usecase.ReconcileParam{
+	result, err := uc.Reconcile(ctx, usecase.ReconcileParam{
 		NamespacedName: req.NamespacedName,
-	}); err != nil {
+	})
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-
-	return ctrl.Result{}, nil
+	return result, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

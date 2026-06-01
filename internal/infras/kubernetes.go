@@ -37,6 +37,21 @@ func (k *KubernetesClient) GetHermesAgent(ctx context.Context, param usecase.Get
 	return ha, nil
 }
 
+func (k *KubernetesClient) UpdateHermesAgentStatus(ctx context.Context, param usecase.UpdateHermesAgentStatusParam) error {
+	return k.client.Status().Update(ctx, param.HermesAgent)
+}
+
+func (k *KubernetesClient) GetPod(ctx context.Context, param usecase.GetPodParam) (*corev1.Pod, error) {
+	pod := &corev1.Pod{}
+	if err := k.client.Get(ctx, param.NamespacedName, pod); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pod, nil
+}
+
 func (k *KubernetesClient) GetConfigMap(ctx context.Context, param usecase.GetConfigMapParam) (*corev1.ConfigMap, error) {
 	cm := &corev1.ConfigMap{}
 	if err := k.client.Get(ctx, param.NamespacedName, cm); err != nil {
