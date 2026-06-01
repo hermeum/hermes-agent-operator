@@ -137,6 +137,25 @@ type HermesCron struct {
 	Profile string `json:"profile,omitempty"`
 }
 
+// HermesBundle defines a bundle (slash command) managed via hermes bundles.
+type HermesBundle struct {
+	// name is the bundle name and becomes the /slash command; the reconciliation key.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// skills are the skill names to include in the bundle (--skill, repeatable).
+	// +optional
+	Skills []string `json:"skills,omitempty"`
+	// description is the human-readable description shown in /help and bundles list.
+	// +optional
+	Description string `json:"description,omitempty"`
+	// instruction is extra guidance prepended to the loaded skill content.
+	// +optional
+	Instruction string `json:"instruction,omitempty"`
+	// force overwrites an existing bundle with the same name.
+	// +optional
+	Force bool `json:"force,omitempty"`
+}
+
 // HermesImage specifies the container image repository and tag.
 type HermesImage struct {
 	// repository is the image repository (e.g. "nousresearch/hermes-agent").
@@ -340,6 +359,9 @@ type Hermes struct {
 	// crons is a list of scheduled jobs to manage via hermes cron.
 	// +optional
 	Crons []HermesCron `json:"crons,omitempty"`
+	// bundles is a list of bundles to manage via hermes bundles.
+	// +optional
+	Bundles []HermesBundle `json:"bundles,omitempty"`
 	// env is a list of environment variables to inject into the hermes-agent container.
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
@@ -391,6 +413,13 @@ func (h *Hermes) GetCrons() []HermesCron {
 		return nil
 	}
 	return h.Crons
+}
+
+func (h *Hermes) GetBundles() []HermesBundle {
+	if h == nil {
+		return nil
+	}
+	return h.Bundles
 }
 
 func (h *Hermes) GetEnv() []corev1.EnvVar {

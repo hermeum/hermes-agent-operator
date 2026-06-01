@@ -141,6 +141,62 @@ func TestBuildSkillsScript(t *testing.T) {
 	})
 }
 
+func TestBuildBundlesScript(t *testing.T) {
+	u := &HermesAgentUseCase{}
+
+	t.Run("minimal", func(t *testing.T) {
+		got := u.buildBundlesScript([]agentsv1alpha1.HermesBundle{
+			{Name: "finance"},
+		})
+
+		wantCmd := `hermes bundles create "finance"`
+		if !strings.Contains(got, wantCmd) {
+			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
+		}
+	})
+
+	t.Run("all options", func(t *testing.T) {
+		got := u.buildBundlesScript([]agentsv1alpha1.HermesBundle{
+			{
+				Name:        "finance",
+				Skills:      []string{"a", "b"},
+				Description: "d",
+				Instruction: "i",
+				Force:       true,
+			},
+		})
+
+		wantCmd := `hermes bundles create --skill "a" --skill "b" --description "d" --instruction "i" --force "finance"`
+		if !strings.Contains(got, wantCmd) {
+			t.Errorf("expected:\n%s\n\nin script:\n%s", wantCmd, got)
+		}
+	})
+
+	t.Run("delete command present", func(t *testing.T) {
+		got := u.buildBundlesScript([]agentsv1alpha1.HermesBundle{
+			{Name: "finance"},
+		})
+		if !strings.Contains(got, `hermes bundles delete "$name" || true`) {
+			t.Errorf("expected delete command in script, got:\n%s", got)
+		}
+	})
+
+	t.Run("multiple bundles manifest order", func(t *testing.T) {
+		got := u.buildBundlesScript([]agentsv1alpha1.HermesBundle{
+			{Name: "a"},
+			{Name: "b"},
+		})
+
+		wantCase := `"a"|"b"`
+		if !strings.Contains(got, wantCase) {
+			t.Errorf("expected case pattern %q, got:\n%s", wantCase, got)
+		}
+		if !strings.Contains(got, "a\nb") {
+			t.Errorf("expected manifest content, got:\n%s", got)
+		}
+	})
+}
+
 func TestBuildCronsScript(t *testing.T) {
 	u := &HermesAgentUseCase{}
 

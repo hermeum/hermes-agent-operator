@@ -396,6 +396,26 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 		}
 	}
 
+	// bundles: init container reconciles bundles via the hermes CLI.
+	if bundles := ha.GetHermes().GetBundles(); len(bundles) > 0 {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "init-bundles",
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{u.buildBundlesScript(bundles)},
+			Env: []corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: "/opt/data"},
+				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+			},
+			SecurityContext: sec.GetContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "data", MountPath: "/opt/data"},
+				{Name: "tmp", MountPath: "/tmp"},
+			},
+		})
+	}
+
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, containers...)
 	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, volumes...)
@@ -566,6 +586,60 @@ cat > "$MANIFEST" << 'SKILLS_EOF'
 %s
 SKILLS_EOF
 `, casePattern, installScript, manifestContent)
+}
+
+func (u *HermesAgentUseCase) buildBundlesScript(bundles []agentsv1alpha1.HermesBundle) string {
+	desiredNames := make([]string, 0, len(bundles))
+	createLines := make([]string, 0, len(bundles))
+
+	for _, b := range bundles {
+		desiredNames = append(desiredNames, b.Name)
+
+		var cmd strings.Builder
+		cmd.WriteString("hermes bundles create")
+		for _, s := range b.Skills {
+			fmt.Fprintf(&cmd, " --skill %q", s)
+		}
+		if b.Description != "" {
+			fmt.Fprintf(&cmd, " --description %q", b.Description)
+		}
+		if b.Instruction != "" {
+			fmt.Fprintf(&cmd, " --instruction %q", b.Instruction)
+		}
+		if b.Force {
+			cmd.WriteString(" --force")
+		}
+		fmt.Fprintf(&cmd, " %q", b.Name)
+		createLines = append(createLines, cmd.String())
+	}
+
+	casePattern := `"` + strings.Join(desiredNames, `"|"`) + `"`
+	createScript := strings.Join(createLines, "\n")
+	manifestContent := strings.Join(desiredNames, "\n")
+
+	return fmt.Sprintf(`set -eu
+MANIFEST="/opt/data/.hermes-agent-operator/bundles"
+mkdir -p "/opt/data/.hermes-agent-operator"
+
+# Remove bundles present in manifest but no longer desired
+if [ -f "$MANIFEST" ]; then
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    case "$name" in
+      %s) ;;
+      *) hermes bundles delete "$name" || true ;;
+    esac
+  done < "$MANIFEST"
+fi
+
+# Create desired bundles
+%s
+
+# Update manifest
+cat > "$MANIFEST" << 'BUNDLES_EOF'
+%s
+BUNDLES_EOF
+`, casePattern, createScript, manifestContent)
 }
 
 func (u *HermesAgentUseCase) buildCronsScript(crons []agentsv1alpha1.HermesCron) string {

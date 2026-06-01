@@ -2012,6 +2012,39 @@ spec:
               hermes:
                 description: hermes defines the Hermes agent configuration.
                 properties:
+                  bundles:
+                    description: bundles is a list of bundles to manage via hermes
+                      bundles.
+                    items:
+                      description: HermesBundle defines a bundle (slash command) managed
+                        via hermes bundles.
+                      properties:
+                        description:
+                          description: description is the human-readable description
+                            shown in /help and bundles list.
+                          type: string
+                        force:
+                          description: force overwrites an existing bundle with the
+                            same name.
+                          type: boolean
+                        instruction:
+                          description: instruction is extra guidance prepended to
+                            the loaded skill content.
+                          type: string
+                        name:
+                          description: name is the bundle name and becomes the /slash
+                            command; the reconciliation key.
+                          type: string
+                        skills:
+                          description: skills are the skill names to include in the
+                            bundle (--skill, repeatable).
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - name
+                      type: object
+                    type: array
                   config:
                     description: config holds the Hermes agent config.yml configuration.
                     x-kubernetes-preserve-unknown-fields: true

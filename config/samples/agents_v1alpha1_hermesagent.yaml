@@ -40,3 +40,8 @@ spec:
       - name: Check server status - 4h
         schedule: every 4h
         prompt: Check server status
+    bundles:
+      - name: finance
+        description: Finance helpers
+        skills:
+          - stocks
