@@ -22,7 +22,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 			return nil
 		}
 		err := u.kube.DeleteConfigMap(ctx, DeleteConfigMapParam{NamespacedName: nsName})
-		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{Operation: OperationDelete, Result: resultOf(err)})
+		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
 		return err
 	}
 
@@ -30,12 +30,12 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateConfigMapOwnedByHermesAgent(ctx, UpdateConfigMapParam{HermesAgent: ha, ConfigMap: desired})
-		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
 		return err
 	}
 
 	err = u.kube.CreateConfigMapOwnedByHermesAgent(ctx, CreateConfigMapOfHermesAgentParam{HermesAgent: ha, ConfigMap: desired})
-	u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+	u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
 	return err
 }
 

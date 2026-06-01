@@ -25,12 +25,12 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 		// ClusterIP is immutable; carry it over from the existing Service.
 		desired.Spec.ClusterIP = existing.Spec.ClusterIP
 		err := u.kube.UpdateServiceOwnedByHermesAgent(ctx, UpdateServiceParam{HermesAgent: ha, Service: desired})
-		u.tel.IncServiceOperation(ctx, IncServiceOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncServiceOperation(ctx, IncServiceOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
 		return err
 	}
 
 	err = u.kube.CreateServiceOwnedByHermesAgent(ctx, CreateServiceOfHermesAgentParam{HermesAgent: ha, Service: desired})
-	u.tel.IncServiceOperation(ctx, IncServiceOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+	u.tel.IncServiceOperation(ctx, IncServiceOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
 	return err
 }
 

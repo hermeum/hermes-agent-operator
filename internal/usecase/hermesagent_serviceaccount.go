@@ -24,7 +24,7 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 			return nil
 		}
 		err := u.kube.DeleteServiceAccount(ctx, DeleteServiceAccountParam{NamespacedName: nsName})
-		u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{Operation: OperationDelete, Result: resultOf(err)})
+		u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
 		return err
 	}
 
@@ -32,12 +32,12 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateServiceAccountOwnedByHermesAgent(ctx, UpdateServiceAccountParam{HermesAgent: ha, ServiceAccount: desired})
-		u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
 		return err
 	}
 
 	err = u.kube.CreateServiceAccountOwnedByHermesAgent(ctx, CreateServiceAccountOfHermesAgentParam{HermesAgent: ha, ServiceAccount: desired})
-	u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+	u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
 	return err
 }
 

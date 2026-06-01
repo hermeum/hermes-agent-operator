@@ -27,7 +27,7 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 			return nil
 		}
 		err := u.kube.DeleteNetworkPolicy(ctx, DeleteNetworkPolicyParam{NamespacedName: nsName})
-		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{Operation: OperationDelete, Result: resultOf(err)})
+		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
 		return err
 	}
 
@@ -35,12 +35,12 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateNetworkPolicyOwnedByHermesAgent(ctx, UpdateNetworkPolicyParam{HermesAgent: ha, NetworkPolicy: desired})
-		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
 		return err
 	}
 
 	err = u.kube.CreateNetworkPolicyOwnedByHermesAgent(ctx, CreateNetworkPolicyOfHermesAgentParam{HermesAgent: ha, NetworkPolicy: desired})
-	u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+	u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
 	return err
 }
 

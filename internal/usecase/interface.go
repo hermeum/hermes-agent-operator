@@ -56,54 +56,66 @@ type Telemetry interface {
 }
 
 type IncReconcileParam struct {
-	Result Result
+	NamespacedName types.NamespacedName
+	Result         Result
 }
 
 type ObserveReconcileDurationParam struct {
-	Seconds float64
+	NamespacedName types.NamespacedName
+	Seconds        float64
 }
 
 type IncConfigMapOperationParam struct {
-	Operation Operation
-	Result    Result
+	NamespacedName types.NamespacedName
+	Operation      Operation
+	Result         Result
 }
 
 type IncStatefulSetOperationParam struct {
-	Operation Operation
-	Result    Result
+	NamespacedName types.NamespacedName
+	Operation      Operation
+	Result         Result
 }
 
 type IncServiceAccountOperationParam struct {
-	Operation Operation
-	Result    Result
+	NamespacedName types.NamespacedName
+	Operation      Operation
+	Result         Result
 }
 
 type IncRoleOperationParam struct {
-	Operation Operation
-	Result    Result
+	NamespacedName types.NamespacedName
+	Operation      Operation
+	Result         Result
 }
 
 type IncRoleBindingOperationParam struct {
-	Operation Operation
-	Result    Result
+	NamespacedName types.NamespacedName
+	Operation      Operation
+	Result         Result
 }
 
 type IncServiceOperationParam struct {
-	Operation Operation
-	Result    Result
+	NamespacedName types.NamespacedName
+	Operation      Operation
+	Result         Result
 }
 
 type IncIngressOperationParam struct {
-	Operation Operation
-	Result    Result
+	NamespacedName types.NamespacedName
+	Operation      Operation
+	Result         Result
 }
 
 type IncNetworkPolicyOperationParam struct {
-	Operation Operation
-	Result    Result
+	NamespacedName types.NamespacedName
+	Operation      Operation
+	Result         Result
 }
 
-type IncNotFoundParam struct{}
+type IncNotFoundParam struct {
+	NamespacedName types.NamespacedName
+}
 
 type Kubernetes interface {
 	GetHermesAgent(ctx context.Context, param GetHermesAgentParam) (*agentsv1alpha1.HermesAgent, error)

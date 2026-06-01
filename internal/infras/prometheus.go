@@ -14,7 +14,7 @@ const telemetryLoggerName = "hermesagent"
 
 type PrometheusTelemetry struct {
 	reconcileTotal    *prometheus.CounterVec
-	reconcileDuration prometheus.Histogram
+	reconcileDuration *prometheus.HistogramVec
 	configMapOps      *prometheus.CounterVec
 	statefulSetOps    *prometheus.CounterVec
 	serviceAccountOps *prometheus.CounterVec
@@ -23,7 +23,7 @@ type PrometheusTelemetry struct {
 	serviceOps        *prometheus.CounterVec
 	ingressOps        *prometheus.CounterVec
 	networkPolicyOps  *prometheus.CounterVec
-	notFoundTotal     prometheus.Counter
+	notFoundTotal     *prometheus.CounterVec
 }
 
 func NewPrometheusTelemetry() *PrometheusTelemetry {
@@ -31,48 +31,48 @@ func NewPrometheusTelemetry() *PrometheusTelemetry {
 		reconcileTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_reconcile_total",
 			Help: "Total number of HermesAgent reconciliations.",
-		}, []string{"result"}),
-		reconcileDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+		}, []string{"namespace", "name", "result"}),
+		reconcileDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "hermesagent_reconcile_duration_seconds",
 			Help:    "Duration of HermesAgent reconciliations in seconds.",
 			Buckets: prometheus.DefBuckets,
-		}),
+		}, []string{"namespace", "name"}),
 		configMapOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_configmap_operations_total",
 			Help: "Total number of ConfigMap create/update operations.",
-		}, []string{"operation", "result"}),
+		}, []string{"namespace", "name", "operation", "result"}),
 		statefulSetOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_statefulset_operations_total",
 			Help: "Total number of StatefulSet create/update operations.",
-		}, []string{"operation", "result"}),
+		}, []string{"namespace", "name", "operation", "result"}),
 		serviceAccountOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_serviceaccount_operations_total",
 			Help: "Total number of ServiceAccount create/update/delete operations.",
-		}, []string{"operation", "result"}),
+		}, []string{"namespace", "name", "operation", "result"}),
 		roleOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_role_operations_total",
 			Help: "Total number of Role create/update/delete operations.",
-		}, []string{"operation", "result"}),
+		}, []string{"namespace", "name", "operation", "result"}),
 		roleBindingOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_rolebinding_operations_total",
 			Help: "Total number of RoleBinding create/update/delete operations.",
-		}, []string{"operation", "result"}),
+		}, []string{"namespace", "name", "operation", "result"}),
 		serviceOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_service_operations_total",
 			Help: "Total number of Service create/update operations.",
-		}, []string{"operation", "result"}),
+		}, []string{"namespace", "name", "operation", "result"}),
 		ingressOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_ingress_operations_total",
 			Help: "Total number of Ingress create/update/delete operations.",
-		}, []string{"operation", "result"}),
+		}, []string{"namespace", "name", "operation", "result"}),
 		networkPolicyOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_networkpolicy_operations_total",
 			Help: "Total number of NetworkPolicy create/update/delete operations.",
-		}, []string{"operation", "result"}),
-		notFoundTotal: prometheus.NewCounter(prometheus.CounterOpts{
+		}, []string{"namespace", "name", "operation", "result"}),
+		notFoundTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_not_found_total",
 			Help: "Total number of reconciliations where the HermesAgent was not found.",
-		}),
+		}, []string{"namespace", "name"}),
 	}
 
 	metrics.Registry.MustRegister(
@@ -109,45 +109,45 @@ func (m *PrometheusTelemetry) Error(ctx context.Context, err error, msg string, 
 }
 
 func (m *PrometheusTelemetry) IncReconcile(_ context.Context, param usecase.IncReconcileParam) {
-	m.reconcileTotal.WithLabelValues(param.Result.String()).Inc()
+	m.reconcileTotal.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) ObserveReconcileDuration(_ context.Context, param usecase.ObserveReconcileDurationParam) {
-	m.reconcileDuration.Observe(param.Seconds)
+	m.reconcileDuration.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name).Observe(param.Seconds)
 }
 
 func (m *PrometheusTelemetry) IncConfigMapOperation(_ context.Context, param usecase.IncConfigMapOperationParam) {
-	m.configMapOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+	m.configMapOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) IncStatefulSetOperation(_ context.Context, param usecase.IncStatefulSetOperationParam) {
-	m.statefulSetOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+	m.statefulSetOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) IncServiceAccountOperation(_ context.Context, param usecase.IncServiceAccountOperationParam) {
-	m.serviceAccountOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+	m.serviceAccountOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) IncRoleOperation(_ context.Context, param usecase.IncRoleOperationParam) {
-	m.roleOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+	m.roleOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) IncRoleBindingOperation(_ context.Context, param usecase.IncRoleBindingOperationParam) {
-	m.roleBindingOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+	m.roleBindingOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) IncServiceOperation(_ context.Context, param usecase.IncServiceOperationParam) {
-	m.serviceOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+	m.serviceOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) IncIngressOperation(_ context.Context, param usecase.IncIngressOperationParam) {
-	m.ingressOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+	m.ingressOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) IncNetworkPolicyOperation(_ context.Context, param usecase.IncNetworkPolicyOperationParam) {
-	m.networkPolicyOps.WithLabelValues(param.Operation.String(), param.Result.String()).Inc()
+	m.networkPolicyOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
 }
 
-func (m *PrometheusTelemetry) IncNotFound(_ context.Context, _ usecase.IncNotFoundParam) {
-	m.notFoundTotal.Inc()
+func (m *PrometheusTelemetry) IncNotFound(_ context.Context, param usecase.IncNotFoundParam) {
+	m.notFoundTotal.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name).Inc()
 }

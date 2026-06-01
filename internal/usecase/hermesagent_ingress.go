@@ -24,7 +24,7 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 			return nil
 		}
 		err := u.kube.DeleteIngress(ctx, DeleteIngressParam{NamespacedName: nsName})
-		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{Operation: OperationDelete, Result: resultOf(err)})
+		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
 		return err
 	}
 
@@ -32,12 +32,12 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateIngressOwnedByHermesAgent(ctx, UpdateIngressParam{HermesAgent: ha, Ingress: desired})
-		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
 		return err
 	}
 
 	err = u.kube.CreateIngressOwnedByHermesAgent(ctx, CreateIngressOfHermesAgentParam{HermesAgent: ha, Ingress: desired})
-	u.tel.IncIngressOperation(ctx, IncIngressOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+	u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
 	return err
 }
 

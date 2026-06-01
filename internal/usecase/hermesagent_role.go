@@ -28,14 +28,14 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 	if len(rules) == 0 || saName == "" {
 		if existingRB != nil {
 			err := u.kube.DeleteRoleBinding(ctx, DeleteRoleBindingParam{NamespacedName: nsName})
-			u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{Operation: OperationDelete, Result: resultOf(err)})
+			u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
 			if err != nil {
 				return err
 			}
 		}
 		if existingRole != nil {
 			err := u.kube.DeleteRole(ctx, DeleteRoleParam{NamespacedName: nsName})
-			u.tel.IncRoleOperation(ctx, IncRoleOperationParam{Operation: OperationDelete, Result: resultOf(err)})
+			u.tel.IncRoleOperation(ctx, IncRoleOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
 			if err != nil {
 				return err
 			}
@@ -47,13 +47,13 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 	if existingRole != nil {
 		desiredRole.ResourceVersion = existingRole.ResourceVersion
 		err := u.kube.UpdateRoleOwnedByHermesAgent(ctx, UpdateRoleParam{HermesAgent: ha, Role: desiredRole})
-		u.tel.IncRoleOperation(ctx, IncRoleOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncRoleOperation(ctx, IncRoleOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
 		if err != nil {
 			return err
 		}
 	} else {
 		err := u.kube.CreateRoleOwnedByHermesAgent(ctx, CreateRoleOfHermesAgentParam{HermesAgent: ha, Role: desiredRole})
-		u.tel.IncRoleOperation(ctx, IncRoleOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+		u.tel.IncRoleOperation(ctx, IncRoleOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
 		if err != nil {
 			return err
 		}
@@ -63,11 +63,11 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 	if existingRB != nil {
 		desiredRB.ResourceVersion = existingRB.ResourceVersion
 		err := u.kube.UpdateRoleBindingOwnedByHermesAgent(ctx, UpdateRoleBindingParam{HermesAgent: ha, RoleBinding: desiredRB})
-		u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
 		return err
 	}
 	err = u.kube.CreateRoleBindingOwnedByHermesAgent(ctx, CreateRoleBindingOfHermesAgentParam{HermesAgent: ha, RoleBinding: desiredRB})
-	u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+	u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
 	return err
 }
 

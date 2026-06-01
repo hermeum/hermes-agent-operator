@@ -30,7 +30,7 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 	if cm != nil {
 		desired.ResourceVersion = cm.ResourceVersion
 		err := u.kube.UpdateConfigMapOwnedByHermesAgent(ctx, UpdateConfigMapParam{HermesAgent: ha, ConfigMap: desired})
-		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
 		return err
 	}
 
@@ -38,7 +38,7 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 		HermesAgent: ha,
 		ConfigMap:   desired,
 	})
-	u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+	u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
 	return err
 }
 

@@ -35,7 +35,7 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	if sts != nil {
 		desired.ResourceVersion = sts.ResourceVersion
 		err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
-		u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
 		return err
 	}
 
@@ -43,7 +43,7 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		HermesAgent: ha,
 		StatefulSet: desired,
 	})
-	u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{Operation: OperationCreate, Result: resultOf(err)})
+	u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
 	return err
 }
 
