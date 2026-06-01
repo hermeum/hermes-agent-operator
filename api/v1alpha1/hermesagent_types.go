@@ -26,6 +26,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const defaultImageTag = "latest"
+
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
@@ -528,7 +530,7 @@ func (p *Probe) IsEnabled() bool {
 
 func (h *Hermes) GetImage() string {
 	repo := "nousresearch/hermes-agent"
-	tag := "latest"
+	tag := defaultImageTag
 	if h != nil && h.Image != nil {
 		if h.Image.Repository != "" {
 			repo = h.Image.Repository
@@ -791,7 +793,7 @@ func (s *SearXNG) IsEnabled() bool {
 // GetImage returns the fully qualified SearXNG image reference.
 func (s *SearXNG) GetImage() string {
 	repo := "searxng/searxng"
-	tag := "latest"
+	tag := defaultImageTag
 	if s != nil && s.Image != nil {
 		if s.Image.Repository != "" {
 			repo = s.Image.Repository
@@ -834,6 +836,126 @@ func (p *SearXNGPersistence) GetExistingClaim() string {
 
 // GetSize returns the storage request for the SearXNG cache PVC.
 func (p *SearXNGPersistence) GetSize() resource.Quantity {
+	if p != nil && p.Size != nil {
+		return *p.Size
+	}
+	return resource.MustParse("1Gi")
+}
+
+// Camofox configures an optional Camofox sidecar that backs the Hermes browser
+// automation tool. When enabled, the operator runs Camofox alongside the
+// hermes-agent container and injects the CAMOFOX_URL environment variable into
+// the hermes-agent container.
+type Camofox struct {
+	// Enabled enables the Camofox sidecar for browser automation
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// Image configures the Camofox container image
+	// +optional
+	Image CamofoxImageSpec `json:"image,omitempty"`
+	// Resources specifies compute resources for the Camofox container
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// Persistence configures persistent storage located at /root/.camofox.
+	// When enabled, container state (cookies, etc.) survives
+	// pod restarts.
+	// When disabled (default), an emptyDir is used and all browser
+	// state is lost on restart.
+	// +optional
+	Persistence CamofoxPersistenceSpec `json:"persistence,omitempty"`
+	// ExtraEnv specifies additional environment variables for the Camofox
+	// sidecar container, merged with the operator-managed variables.
+	// +optional
+	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+}
+
+// IsEnabled reports whether the Camofox sidecar should be created.
+func (c *Camofox) IsEnabled() bool {
+	return c != nil && c.Enabled
+}
+
+// GetImage returns the fully qualified Camofox image reference.
+func (c *Camofox) GetImage() string {
+	repo := "ghcr.io/jo-inc/camofox-browser"
+	tag := defaultImageTag
+	if c != nil {
+		if c.Image.Repository != "" {
+			repo = c.Image.Repository
+		}
+		if c.Image.Tag != "" {
+			tag = c.Image.Tag
+		}
+	}
+	return repo + ":" + tag
+}
+
+// GetResources returns the Camofox container resource requirements.
+func (c *Camofox) GetResources() corev1.ResourceRequirements {
+	if c != nil && c.Resources != nil {
+		return *c.Resources
+	}
+	return corev1.ResourceRequirements{}
+}
+
+// GetExtraEnv returns the additional environment variables for the Camofox container.
+func (c *Camofox) GetExtraEnv() []corev1.EnvVar {
+	if c == nil {
+		return nil
+	}
+	return c.ExtraEnv
+}
+
+// GetPersistence returns a pointer to the Camofox persistence configuration.
+func (c *Camofox) GetPersistence() *CamofoxPersistenceSpec {
+	if c == nil {
+		return nil
+	}
+	return &c.Persistence
+}
+
+// CamofoxImageSpec specifies the Camofox container image repository and tag.
+type CamofoxImageSpec struct {
+	// repository is the image repository. Defaults to "ghcr.io/jo-inc/camofox-browser".
+	// +optional
+	Repository string `json:"repository,omitempty"`
+	// tag is the image tag. Defaults to "latest".
+	// +optional
+	Tag string `json:"tag,omitempty"`
+}
+
+// CamofoxPersistenceSpec configures a PersistentVolumeClaim for the Camofox data directory.
+type CamofoxPersistenceSpec struct {
+	// enabled turns on a PersistentVolumeClaim for /root/.camofox.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// size is the storage request for the PVC (e.g. "1Gi"). Defaults to 1Gi.
+	// +optional
+	Size *resource.Quantity `json:"size,omitempty"`
+	// storageClassName selects the StorageClass; omit to use the cluster default.
+	// +optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+	// existingClaim mounts a pre-existing PVC by name instead of provisioning a new one.
+	// When set, enabled/size/storageClassName are ignored.
+	// +optional
+	ExistingClaim *string `json:"existingClaim,omitempty"`
+}
+
+// IsEnabled reports whether the Camofox PVC should be provisioned.
+func (p *CamofoxPersistenceSpec) IsEnabled() bool {
+	return p != nil && p.Enabled
+}
+
+// GetExistingClaim returns the name of a pre-existing PVC to mount, if set.
+func (p *CamofoxPersistenceSpec) GetExistingClaim() string {
+	if p != nil && p.ExistingClaim != nil {
+		return *p.ExistingClaim
+	}
+	return ""
+}
+
+// GetSize returns the storage request for the Camofox data PVC.
+func (p *CamofoxPersistenceSpec) GetSize() resource.Quantity {
 	if p != nil && p.Size != nil {
 		return *p.Size
 	}
@@ -883,6 +1005,10 @@ type HermesAgentSpec struct {
 	// SearXNG configures an optional SearXNG sidecar used by the web_search tool.
 	// +optional
 	SearXNG *SearXNG `json:"searxng,omitempty"`
+
+	// Camofox configures an optional Camofox sidecar used by the browser automation tool.
+	// +optional
+	Camofox *Camofox `json:"camofox,omitempty"`
 }
 
 // HermesAgentStatus defines the observed state of HermesAgent.
@@ -983,6 +1109,16 @@ func (h *HermesAgent) GetSearXNG() *SearXNG {
 // ConfigMap and the SearXNG cache PersistentVolumeClaim.
 func (h *HermesAgent) GetSearXNGName() string {
 	return h.Name + "-searxng"
+}
+
+// GetCamofox returns the Camofox sidecar configuration, if any.
+func (h *HermesAgent) GetCamofox() *Camofox {
+	return h.Spec.Camofox
+}
+
+// GetCamofoxName returns the name used for the Camofox PersistentVolumeClaim.
+func (h *HermesAgent) GetCamofoxName() string {
+	return h.Name + "-camofox"
 }
 
 // +kubebuilder:object:root=true

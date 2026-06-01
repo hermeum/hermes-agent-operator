@@ -8,7 +8,6 @@ rules:
   - ""
   resources:
   - configmaps
-  - persistentvolumeclaims
   - serviceaccounts
   - services
   verbs:
@@ -18,6 +17,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - agents.hermes-agent-operator.xyz

@@ -65,6 +65,35 @@ func applySearXNGConfigDefaults(raw []byte) ([]byte, error) {
 	return out, nil
 }
 
+// applyCamofoxConfigDefaults injects browser.camofox.managed_persistence: true into
+// the Hermes config when Camofox managed persistence is active, unless already set.
+func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
+	cfg := map[string]any{}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("unmarshaling config: %w", err)
+	}
+
+	browser, _ := cfg["browser"].(map[string]any)
+	if browser == nil {
+		browser = map[string]any{}
+		cfg["browser"] = browser
+	}
+	camofox, _ := browser["camofox"].(map[string]any)
+	if camofox == nil {
+		camofox = map[string]any{}
+		browser["camofox"] = camofox
+	}
+	if _, ok := camofox["managed_persistence"]; !ok {
+		camofox["managed_persistence"] = true
+	}
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling config: %w", err)
+	}
+	return out, nil
+}
+
 func (u *HermesAgentUseCase) buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, error) {
 	data := map[string]string{}
 	if hc := ha.GetHermes().GetConfig(); hc != nil {
@@ -72,6 +101,14 @@ func (u *HermesAgentUseCase) buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent
 		if ha.GetSearXNG().IsEnabled() {
 			var err error
 			raw, err = applySearXNGConfigDefaults(raw)
+			if err != nil {
+				return nil, err
+			}
+		}
+		cx := ha.GetCamofox()
+		if cx.IsEnabled() && cx.GetPersistence().IsEnabled() && cx.GetPersistence().GetExistingClaim() == "" {
+			var err error
+			raw, err = applyCamofoxConfigDefaults(raw)
 			if err != nil {
 				return nil, err
 			}
