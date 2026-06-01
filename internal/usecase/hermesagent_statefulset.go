@@ -121,7 +121,7 @@ func (u *HermesAgentUseCase) buildLivenessProbe(spec *agentsv1alpha1.Probe) *cor
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/health",
-				Port: intstr.FromString(gatewayPortName),
+				Port: intstr.FromString(hermesGatewayPortName),
 			},
 		},
 		InitialDelaySeconds: 15,
@@ -157,7 +157,7 @@ func (u *HermesAgentUseCase) buildReadinessProbe(spec *agentsv1alpha1.Probe) *co
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/health",
-				Port: intstr.FromString(gatewayPortName),
+				Port: intstr.FromString(hermesGatewayPortName),
 			},
 		},
 		InitialDelaySeconds: 5,
@@ -193,7 +193,7 @@ func (u *HermesAgentUseCase) buildStartupProbe(spec *agentsv1alpha1.Probe) *core
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Path: "/health",
-				Port: intstr.FromString(gatewayPortName),
+				Port: intstr.FromString(hermesGatewayPortName),
 			},
 		},
 		InitialDelaySeconds: 0,
@@ -518,7 +518,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Args:            []string{u.buildBundlesScript(bundles)},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
-				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+				{Name: "PATH", Value: hermesPathEnv},
 			},
 			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
