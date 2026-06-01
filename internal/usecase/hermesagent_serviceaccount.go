@@ -28,7 +28,7 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 		return err
 	}
 
-	desired := u.buildServiceAccount(ha)
+	desired := buildServiceAccount(ha)
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateServiceAccountOwnedByHermesAgent(ctx, UpdateServiceAccountParam{HermesAgent: ha, ServiceAccount: desired})
@@ -41,7 +41,7 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 	return err
 }
 
-func (u *HermesAgentUseCase) buildServiceAccount(ha *agentsv1alpha1.HermesAgent) *corev1.ServiceAccount {
+func buildServiceAccount(ha *agentsv1alpha1.HermesAgent) *corev1.ServiceAccount {
 	var annotations map[string]string
 	if r := ha.GetSecurity().GetRBAC(); r != nil && len(r.ServiceAccountAnnotations) > 0 {
 		annotations = make(map[string]string, len(r.ServiceAccountAnnotations))

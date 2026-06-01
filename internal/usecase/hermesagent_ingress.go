@@ -28,7 +28,7 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 		return err
 	}
 
-	desired := u.buildIngress(ha, ing)
+	desired := buildIngress(ha, ing)
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateIngressOwnedByHermesAgent(ctx, UpdateIngressParam{HermesAgent: ha, Ingress: desired})
@@ -41,7 +41,7 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 	return err
 }
 
-func (u *HermesAgentUseCase) buildIngress(ha *agentsv1alpha1.HermesAgent, ing *agentsv1alpha1.Ingress) *networkingv1.Ingress {
+func buildIngress(ha *agentsv1alpha1.HermesAgent, ing *agentsv1alpha1.Ingress) *networkingv1.Ingress {
 	rules := make([]networkingv1.IngressRule, 0, len(ing.Hosts))
 	for _, h := range ing.Hosts {
 		paths := buildIngressPaths(ha, h.Paths)

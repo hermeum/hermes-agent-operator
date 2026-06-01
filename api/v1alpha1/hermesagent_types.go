@@ -24,6 +24,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const defaultImageTag = "latest"
@@ -526,6 +527,34 @@ func (p *Probe) IsEnabled() bool {
 		return true
 	}
 	return *p.Enabled
+}
+
+// GetProbe returns a configured corev1.Probe from the spec, applying overrides on top of defaults.
+// Returns nil if the probe is disabled or the spec is nil.
+func (p *Probe) GetProbe(path string, portName string, defaults corev1.Probe) *corev1.Probe {
+	if p == nil || !p.IsEnabled() {
+		return nil
+	}
+	probe := defaults
+	probe.ProbeHandler = corev1.ProbeHandler{
+		HTTPGet: &corev1.HTTPGetAction{
+			Path: path,
+			Port: intstr.FromString(portName),
+		},
+	}
+	if p.InitialDelaySeconds != nil {
+		probe.InitialDelaySeconds = *p.InitialDelaySeconds
+	}
+	if p.PeriodSeconds != nil {
+		probe.PeriodSeconds = *p.PeriodSeconds
+	}
+	if p.TimeoutSeconds != nil {
+		probe.TimeoutSeconds = *p.TimeoutSeconds
+	}
+	if p.FailureThreshold != nil {
+		probe.FailureThreshold = *p.FailureThreshold
+	}
+	return &probe
 }
 
 func (h *Hermes) GetImage() string {

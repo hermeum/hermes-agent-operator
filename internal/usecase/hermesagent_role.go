@@ -43,7 +43,7 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 		return nil
 	}
 
-	desiredRole := u.buildRole(ha, rules)
+	desiredRole := buildRole(ha, rules)
 	if existingRole != nil {
 		desiredRole.ResourceVersion = existingRole.ResourceVersion
 		err := u.kube.UpdateRoleOwnedByHermesAgent(ctx, UpdateRoleParam{HermesAgent: ha, Role: desiredRole})
@@ -59,7 +59,7 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 		}
 	}
 
-	desiredRB := u.buildRoleBinding(ha, saName)
+	desiredRB := buildRoleBinding(ha, saName)
 	if existingRB != nil {
 		desiredRB.ResourceVersion = existingRB.ResourceVersion
 		err := u.kube.UpdateRoleBindingOwnedByHermesAgent(ctx, UpdateRoleBindingParam{HermesAgent: ha, RoleBinding: desiredRB})
@@ -71,7 +71,7 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 	return err
 }
 
-func (u *HermesAgentUseCase) buildRole(ha *agentsv1alpha1.HermesAgent, rules []agentsv1alpha1.RBACRule) *rbacv1.Role {
+func buildRole(ha *agentsv1alpha1.HermesAgent, rules []agentsv1alpha1.RBACRule) *rbacv1.Role {
 	policyRules := make([]rbacv1.PolicyRule, 0, len(rules))
 	for _, r := range rules {
 		policyRules = append(policyRules, rbacv1.PolicyRule{
@@ -90,7 +90,7 @@ func (u *HermesAgentUseCase) buildRole(ha *agentsv1alpha1.HermesAgent, rules []a
 	}
 }
 
-func (u *HermesAgentUseCase) buildRoleBinding(ha *agentsv1alpha1.HermesAgent, saName string) *rbacv1.RoleBinding {
+func buildRoleBinding(ha *agentsv1alpha1.HermesAgent, saName string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.Name,

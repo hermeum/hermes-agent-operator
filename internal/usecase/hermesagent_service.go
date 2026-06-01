@@ -19,7 +19,7 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 		return err
 	}
 
-	desired := u.buildService(ha)
+	desired := buildService(ha)
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		// ClusterIP is immutable; carry it over from the existing Service.
@@ -34,7 +34,7 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 	return err
 }
 
-func (u *HermesAgentUseCase) buildService(ha *agentsv1alpha1.HermesAgent) *corev1.Service {
+func buildService(ha *agentsv1alpha1.HermesAgent) *corev1.Service {
 	svc := ha.GetNetworking().GetService()
 
 	var annotations map[string]string

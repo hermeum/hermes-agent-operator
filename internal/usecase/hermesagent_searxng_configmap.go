@@ -26,7 +26,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 		return err
 	}
 
-	desired := u.buildSearXNGConfigMap(ha)
+	desired := buildSearXNGConfigMap(ha)
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateConfigMapOwnedByHermesAgent(ctx, UpdateConfigMapParam{HermesAgent: ha, ConfigMap: desired})
@@ -39,7 +39,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 	return err
 }
 
-func (u *HermesAgentUseCase) buildSearXNGConfigMap(ha *agentsv1alpha1.HermesAgent) *corev1.ConfigMap {
+func buildSearXNGConfigMap(ha *agentsv1alpha1.HermesAgent) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.GetSearXNGName(),

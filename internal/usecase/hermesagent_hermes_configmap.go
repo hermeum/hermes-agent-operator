@@ -22,7 +22,7 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 		return err
 	}
 
-	desired, err := u.buildHermesConfigMap(ha)
+	desired, err := buildHermesConfigMap(ha)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
 	return out, nil
 }
 
-func (u *HermesAgentUseCase) buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, error) {
+func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, error) {
 	data := map[string]string{}
 	if hc := ha.GetHermes().GetConfig(); hc != nil {
 		raw := hc.Raw

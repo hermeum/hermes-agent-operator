@@ -31,7 +31,7 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 		return err
 	}
 
-	desired := u.buildNetworkPolicy(ha, np)
+	desired := buildNetworkPolicy(ha, np)
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateNetworkPolicyOwnedByHermesAgent(ctx, UpdateNetworkPolicyParam{HermesAgent: ha, NetworkPolicy: desired})
@@ -44,7 +44,7 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	return err
 }
 
-func (u *HermesAgentUseCase) buildNetworkPolicy(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha1.NetworkPolicy) *networkingv1.NetworkPolicy {
+func buildNetworkPolicy(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha1.NetworkPolicy) *networkingv1.NetworkPolicy {
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.Name,

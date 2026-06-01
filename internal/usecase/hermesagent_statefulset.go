@@ -13,10 +13,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const (
+	hermesContainerName          = "hermes-agent"
 	hermesGatewayPortName        = "gateway"
 	hermesGatewayPort            = int32(8642)
 	hermesWorkspacePathSeparator = "--"
@@ -30,7 +30,7 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		return err
 	}
 
-	desired := u.buildStatefulSet(ha)
+	desired := buildStatefulSet(ha)
 
 	if sts != nil {
 		desired.ResourceVersion = sts.ResourceVersion
@@ -60,14 +60,14 @@ func configMapDataHash(data map[string]string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
 
-func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
+func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if ha.IsSuspended() {
 		replicas = int32(0)
 	}
 
 	// The config hash annotation is used to trigger a rolling update of the StatefulSet when the config changes.
-	cm, _ := u.buildHermesConfigMap(ha)
+	cm, _ := buildHermesConfigMap(ha)
 	configHash := configMapDataHash(cm.Data)
 
 	sts := &appsv1.StatefulSet{
@@ -96,7 +96,9 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 		},
 	}
 
-	sts = u.buildHermesContainer(ha, sts)
+	sts = buildHermesContainer(ha, sts)
+	sts = buildSearXNGContainer(ha, sts)
+	sts = buildCamofoxContainer(ha, sts)
 
 	// additional user-provided init containers run after the operator-managed ones.
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, ha.GetInitContainers()...)
@@ -110,122 +112,11 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 	return sts
 }
 
-func (u *HermesAgentUseCase) buildLivenessProbe(spec *agentsv1alpha1.Probe) *corev1.Probe {
-	if spec == nil {
-		return nil
-	}
-	if !spec.IsEnabled() {
-		return nil
-	}
-
-	probe := &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Path: "/health",
-				Port: intstr.FromString(hermesGatewayPortName),
-			},
-		},
-		InitialDelaySeconds: 15,
-		PeriodSeconds:       20,
-		TimeoutSeconds:      1,
-		FailureThreshold:    3,
-	}
-	if spec.InitialDelaySeconds != nil {
-		probe.InitialDelaySeconds = *spec.InitialDelaySeconds
-	}
-	if spec.PeriodSeconds != nil {
-		probe.PeriodSeconds = *spec.PeriodSeconds
-	}
-	if spec.TimeoutSeconds != nil {
-		probe.TimeoutSeconds = *spec.TimeoutSeconds
-	}
-	if spec.FailureThreshold != nil {
-		probe.FailureThreshold = *spec.FailureThreshold
-	}
-
-	return probe
-}
-
-func (u *HermesAgentUseCase) buildReadinessProbe(spec *agentsv1alpha1.Probe) *corev1.Probe {
-	if spec == nil {
-		return nil
-	}
-	if !spec.IsEnabled() {
-		return nil
-	}
-
-	probe := &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Path: "/health",
-				Port: intstr.FromString(hermesGatewayPortName),
-			},
-		},
-		InitialDelaySeconds: 5,
-		PeriodSeconds:       10,
-		TimeoutSeconds:      1,
-		FailureThreshold:    3,
-	}
-	if spec.InitialDelaySeconds != nil {
-		probe.InitialDelaySeconds = *spec.InitialDelaySeconds
-	}
-	if spec.PeriodSeconds != nil {
-		probe.PeriodSeconds = *spec.PeriodSeconds
-	}
-	if spec.TimeoutSeconds != nil {
-		probe.TimeoutSeconds = *spec.TimeoutSeconds
-	}
-	if spec.FailureThreshold != nil {
-		probe.FailureThreshold = *spec.FailureThreshold
-	}
-
-	return probe
-}
-
-func (u *HermesAgentUseCase) buildStartupProbe(spec *agentsv1alpha1.Probe) *corev1.Probe {
-	if spec == nil {
-		return nil
-	}
-	if !spec.IsEnabled() {
-		return nil
-	}
-
-	probe := &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Path: "/health",
-				Port: intstr.FromString(hermesGatewayPortName),
-			},
-		},
-		InitialDelaySeconds: 0,
-		PeriodSeconds:       10,
-		TimeoutSeconds:      1,
-		FailureThreshold:    10,
-	}
-	if spec.InitialDelaySeconds != nil {
-		probe.InitialDelaySeconds = *spec.InitialDelaySeconds
-	}
-	if spec.PeriodSeconds != nil {
-		probe.PeriodSeconds = *spec.PeriodSeconds
-	}
-	if spec.TimeoutSeconds != nil {
-		probe.TimeoutSeconds = *spec.TimeoutSeconds
-	}
-	if spec.FailureThreshold != nil {
-		probe.FailureThreshold = *spec.FailureThreshold
-	}
-
-	return probe
-}
-
 // buildHermesContainer populates the StatefulSet with all resources driven by the hermes spec:
 // the main hermes-agent container (env, envFrom), init containers for config and workspace,
 // and volumes/PVCs for persistence, bootstrap config, and shared memory.
-func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
+func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
 	const (
-		hermesContainerName   = "hermes-agent"
-		hermesGatewayPortName = hermesGatewayPortName
-		hermesGatewayPort     = hermesGatewayPort
 		hermesDefaultPathEnv  = "/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 		hermesPathEnv         = hermesDefaultPathEnv + ":/opt/hermes/.venv/bin"
 		hermesHomeVolume      = "hermes-data"
@@ -265,9 +156,15 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			EnvFrom:         ha.GetHermes().GetEnvFrom(),
 			Resources:       ha.GetHermes().GetResources(),
 			SecurityContext: sec.GetContainerSecurityContext(),
-			LivenessProbe:   u.buildLivenessProbe(ha.GetHermes().GetProbes().GetLiveness()),
-			ReadinessProbe:  u.buildReadinessProbe(ha.GetHermes().GetProbes().GetReadiness()),
-			StartupProbe:    u.buildStartupProbe(ha.GetHermes().GetProbes().GetStartup()),
+			LivenessProbe: ha.GetHermes().GetProbes().GetLiveness().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
+				InitialDelaySeconds: 15, PeriodSeconds: 20, TimeoutSeconds: 1, FailureThreshold: 3,
+			}),
+			ReadinessProbe: ha.GetHermes().GetProbes().GetReadiness().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
+				InitialDelaySeconds: 5, PeriodSeconds: 10, TimeoutSeconds: 1, FailureThreshold: 3,
+			}),
+			StartupProbe: ha.GetHermes().GetProbes().GetStartup().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
+				InitialDelaySeconds: 0, PeriodSeconds: 10, TimeoutSeconds: 1, FailureThreshold: 10,
+			}),
 			VolumeMounts: append([]corev1.VolumeMount{
 				{Name: hermesDSHMVolume, MountPath: hermesDSHMMount},
 				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
@@ -338,7 +235,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Image:           ha.GetHermes().GetImage(),
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{u.buildConfigScript()},
+			Args:            []string{buildConfigScript()},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "PATH", Value: hermesPathEnv},
@@ -360,7 +257,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Image:           ha.GetHermes().GetImage(),
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{u.buildWorkspaceScript()},
+			Args:            []string{buildWorkspaceScript()},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "PATH", Value: hermesPathEnv},
@@ -381,7 +278,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Image:           ha.GetHermes().GetImage(),
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{u.buildPluginsScript(plugins)},
+			Args:            []string{buildPluginsScript(plugins)},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "PATH", Value: hermesPathEnv},
@@ -401,7 +298,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Image:           ha.GetHermes().GetImage(),
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{u.buildSkillsScript(skills)},
+			Args:            []string{buildSkillsScript(skills)},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "PATH", Value: hermesPathEnv},
@@ -421,7 +318,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Image:           ha.GetHermes().GetImage(),
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{u.buildBundlesScript(bundles)},
+			Args:            []string{buildBundlesScript(bundles)},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: "/opt/data"},
 				{Name: "PATH", Value: hermesPathEnv},
@@ -441,7 +338,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Image:           "nousresearch/hermes-agent:latest",
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{u.buildCronsScript(crons)},
+			Args:            []string{buildCronsScript(crons)},
 			Env: []corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "PATH", Value: hermesPathEnv},
@@ -454,146 +351,6 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 		})
 	}
 
-	// searxng: optional sidecar backing the web_search tool.
-	if sx := ha.GetSearXNG(); sx.IsEnabled() {
-		const (
-			seaxngContainerName = "searxng"
-			searxngPortName     = "searxng"
-			searxngPort         = int32(8080)
-			searxngConfigVolume = "searxng-config"
-			searxngConfigMount  = "/etc/searxng"
-			searxngCacheVolume  = "searxng-cache"
-			searxngCacheMount   = "/var/cache/searxng"
-			searxngURL          = "http://localhost:8080"
-		)
-
-		// Inject SEARXNG_URL into the hermes-agent container env so that the web_search tool can find it.
-		containers[0].Env = append(containers[0].Env, corev1.EnvVar{Name: "SEARXNG_URL", Value: searxngURL})
-
-		containers = append(containers, corev1.Container{
-			Name:            seaxngContainerName,
-			Image:           sx.GetImage(),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Ports: []corev1.ContainerPort{
-				{
-					Name:          searxngPortName,
-					ContainerPort: searxngPort,
-					Protocol:      corev1.ProtocolTCP,
-				},
-			},
-			Env: append([]corev1.EnvVar{
-				{Name: "SEARXNG_BASE_URL", Value: searxngURL + "/"},
-			}, sx.GetExtraEnv()...),
-			Resources: sx.GetResources(),
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: searxngConfigVolume, MountPath: searxngConfigMount},
-				{Name: searxngCacheVolume, MountPath: searxngCacheMount},
-			},
-		})
-
-		volumes = append(volumes, corev1.Volume{
-			Name: searxngConfigVolume,
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetSearXNGName()},
-				},
-			},
-		})
-
-		// cache: existingClaim > managed PVC (<id>-searxng) > emptyDir fallback.
-		sp := sx.GetPersistence()
-		switch {
-		case sp.GetExistingClaim() != "":
-			volumes = append(volumes, corev1.Volume{
-				Name: searxngCacheVolume,
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: sp.GetExistingClaim(),
-					},
-				},
-			})
-		case sp.IsEnabled():
-			pvc = append(pvc, corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{Name: searxngCacheVolume},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: sp.GetSize(),
-						},
-					},
-					StorageClassName: sp.StorageClassName,
-				},
-			})
-		default:
-			volumes = append(volumes, corev1.Volume{
-				Name:         searxngCacheVolume,
-				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-			})
-		}
-	}
-
-	// camofox: optional sidecar backing the browser automation tool.
-	if cx := ha.GetCamofox(); cx.IsEnabled() {
-		const (
-			camofoxContainerName = "camofox"
-			camofoxPortName      = "camofox"
-			camofoxPort          = int32(9377)
-			camofoxDataVolume    = "camofox-data"
-			camofoxDataMount     = "/root/.camofox"
-			camofoxURL           = "http://localhost:9377"
-		)
-
-		// Inject CAMOFOX_URL into the hermes-agent container env so that the browser tool can find it.
-		containers[0].Env = append(containers[0].Env, corev1.EnvVar{Name: "CAMOFOX_URL", Value: camofoxURL})
-
-		containers = append(containers, corev1.Container{
-			Name:            camofoxContainerName,
-			Image:           cx.GetImage(),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Ports: []corev1.ContainerPort{
-				{
-					Name:          camofoxPortName,
-					ContainerPort: camofoxPort,
-					Protocol:      corev1.ProtocolTCP,
-				},
-			},
-			Env:       cx.GetExtraEnv(),
-			Resources: cx.GetResources(),
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: camofoxDataVolume, MountPath: camofoxDataMount},
-			},
-		})
-
-		// data: existingClaim > managed PVC (<id>-camofox) > emptyDir fallback.
-		cp := cx.GetPersistence()
-		switch {
-		case cp.GetExistingClaim() != "":
-			volumes = append(volumes, corev1.Volume{
-				Name: camofoxDataVolume,
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: cp.GetExistingClaim(),
-					},
-				},
-			})
-		case cp.IsEnabled():
-			volumes = append(volumes, corev1.Volume{
-				Name: camofoxDataVolume,
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: ha.GetCamofoxName(),
-					},
-				},
-			})
-		default:
-			volumes = append(volumes, corev1.Volume{
-				Name:         camofoxDataVolume,
-				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-			})
-		}
-	}
-
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, containers...)
 	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, volumes...)
@@ -602,7 +359,160 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 	return sts
 }
 
-func (u *HermesAgentUseCase) buildConfigScript() string {
+func findContainer(sts *appsv1.StatefulSet, name string) *corev1.Container {
+	for i := range sts.Spec.Template.Spec.Containers {
+		if sts.Spec.Template.Spec.Containers[i].Name == name {
+			return &sts.Spec.Template.Spec.Containers[i]
+		}
+	}
+	return nil
+}
+
+func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
+	sts = sts.DeepCopy()
+
+	sx := ha.GetSearXNG()
+	if !sx.IsEnabled() {
+		return sts
+	}
+
+	const (
+		searxngContainerName = "searxng"
+		searxngPortName      = "searxng"
+		searxngPort          = int32(8080)
+		searxngConfigVolume  = "searxng-config"
+		searxngConfigMount   = "/etc/searxng"
+		searxngCacheVolume   = "searxng-cache"
+		searxngCacheMount    = "/var/cache/searxng"
+		searxngURL           = "http://localhost:8080"
+	)
+
+	// Inject SEARXNG_URL into the hermes-agent container env so that the web_search tool can find it.
+	if c := findContainer(sts, hermesContainerName); c != nil {
+		c.Env = append(c.Env, corev1.EnvVar{Name: "SEARXNG_URL", Value: searxngURL})
+	}
+
+	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
+		Name:            searxngContainerName,
+		Image:           sx.GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Ports: []corev1.ContainerPort{
+			{Name: searxngPortName, ContainerPort: searxngPort, Protocol: corev1.ProtocolTCP},
+		},
+		Env: append([]corev1.EnvVar{
+			{Name: "SEARXNG_BASE_URL", Value: searxngURL + "/"},
+		}, sx.GetExtraEnv()...),
+		Resources: sx.GetResources(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: searxngConfigVolume, MountPath: searxngConfigMount},
+			{Name: searxngCacheVolume, MountPath: searxngCacheMount},
+		},
+	})
+
+	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+		Name: searxngConfigVolume,
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetSearXNGName()},
+			},
+		},
+	})
+
+	// cache: existingClaim > managed PVC > emptyDir fallback.
+	sp := sx.GetPersistence()
+	switch {
+	case sp.GetExistingClaim() != "":
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: searxngCacheVolume,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: sp.GetExistingClaim()},
+			},
+		})
+	case sp.IsEnabled():
+		sts.Spec.VolumeClaimTemplates = append(sts.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: searxngCacheVolume},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceStorage: sp.GetSize()},
+				},
+				StorageClassName: sp.StorageClassName,
+			},
+		})
+	default:
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name:         searxngCacheVolume,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
+
+	return sts
+}
+
+func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
+	sts = sts.DeepCopy()
+
+	cx := ha.GetCamofox()
+	if !cx.IsEnabled() {
+		return sts
+	}
+
+	const (
+		camofoxContainerName = "camofox"
+		camofoxPortName      = "camofox"
+		camofoxPort          = int32(9377)
+		camofoxDataVolume    = "camofox-data"
+		camofoxDataMount     = "/root/.camofox"
+		camofoxURL           = "http://localhost:9377"
+	)
+
+	// Inject CAMOFOX_URL into the hermes-agent container env so that the browser tool can find it.
+	if c := findContainer(sts, hermesContainerName); c != nil {
+		c.Env = append(c.Env, corev1.EnvVar{Name: "CAMOFOX_URL", Value: camofoxURL})
+	}
+
+	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
+		Name:            camofoxContainerName,
+		Image:           cx.GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Ports: []corev1.ContainerPort{
+			{Name: camofoxPortName, ContainerPort: camofoxPort, Protocol: corev1.ProtocolTCP},
+		},
+		Env:       cx.GetExtraEnv(),
+		Resources: cx.GetResources(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: camofoxDataVolume, MountPath: camofoxDataMount},
+		},
+	})
+
+	// data: existingClaim > managed PVC > emptyDir fallback.
+	cp := cx.GetPersistence()
+	switch {
+	case cp.GetExistingClaim() != "":
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: camofoxDataVolume,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: cp.GetExistingClaim()},
+			},
+		})
+	case cp.IsEnabled():
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: camofoxDataVolume,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: ha.GetCamofoxName()},
+			},
+		})
+	default:
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name:         camofoxDataVolume,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
+
+	return sts
+}
+
+func buildConfigScript() string {
 	return `set -eu
 mkdir -p "/opt/data/home"
 cp "/bootstrap/config.yaml" "/opt/data/config.yaml"
@@ -610,7 +520,7 @@ echo "Config file copied"
 `
 }
 
-func (u *HermesAgentUseCase) buildWorkspaceScript() string {
+func buildWorkspaceScript() string {
 	return fmt.Sprintf(`set -eu
 MANIFEST_FILE="/opt/data/.hermes-agent-operator/workspace-files"
 UPDATED_MANIFEST=""
@@ -655,7 +565,7 @@ func pluginDirName(identifier string) string {
 	return s
 }
 
-func (u *HermesAgentUseCase) buildPluginsScript(plugins []agentsv1alpha1.HermesPlugin) string {
+func buildPluginsScript(plugins []agentsv1alpha1.HermesPlugin) string {
 	desiredNames := make([]string, 0, len(plugins))
 	installLines := make([]string, 0, len(plugins))
 
@@ -711,7 +621,7 @@ func skillName(s agentsv1alpha1.HermesSkill) string {
 	return strings.TrimSuffix(parts[len(parts)-1], ".md")
 }
 
-func (u *HermesAgentUseCase) buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
+func buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
 	desiredNames := make([]string, 0, len(skills))
 	installLines := make([]string, 0, len(skills))
 
@@ -766,7 +676,7 @@ SKILLS_EOF
 `, casePattern, installScript, manifestContent)
 }
 
-func (u *HermesAgentUseCase) buildBundlesScript(bundles []agentsv1alpha1.HermesBundle) string {
+func buildBundlesScript(bundles []agentsv1alpha1.HermesBundle) string {
 	desiredNames := make([]string, 0, len(bundles))
 	createLines := make([]string, 0, len(bundles))
 
@@ -820,7 +730,7 @@ BUNDLES_EOF
 `, casePattern, createScript, manifestContent)
 }
 
-func (u *HermesAgentUseCase) buildCronsScript(crons []agentsv1alpha1.HermesCron) string {
+func buildCronsScript(crons []agentsv1alpha1.HermesCron) string {
 	desiredNames := make([]string, 0, len(crons))
 	createLines := make([]string, 0, len(crons))
 

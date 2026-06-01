@@ -11,10 +11,9 @@ func ptrBool(b bool) *bool { return &b }
 func ptrInt(i int) *int    { return &i }
 
 func TestBuildPluginsScript(t *testing.T) {
-	u := &HermesAgentUseCase{}
 
 	t.Run("default enable", func(t *testing.T) {
-		got := u.buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
 			{Identifier: "anpicasso/hermes-plugin-chrome-profiles"},
 		})
 
@@ -30,7 +29,7 @@ func TestBuildPluginsScript(t *testing.T) {
 	})
 
 	t.Run("explicit no-enable", func(t *testing.T) {
-		got := u.buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
 			{Identifier: "https://github.com/owner/hermes-plugin-foo.git", Enable: ptrBool(false)},
 		})
 
@@ -41,7 +40,7 @@ func TestBuildPluginsScript(t *testing.T) {
 	})
 
 	t.Run("explicit enable true", func(t *testing.T) {
-		got := u.buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
 			{Identifier: "owner/repo", Enable: ptrBool(true)},
 		})
 
@@ -52,7 +51,7 @@ func TestBuildPluginsScript(t *testing.T) {
 	})
 
 	t.Run("multiple plugins build case pattern and manifest", func(t *testing.T) {
-		got := u.buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
 			{Identifier: "owner/hermes-plugin-a"},
 			{Identifier: "owner/hermes-plugin-b", Enable: ptrBool(false)},
 		})
@@ -77,10 +76,9 @@ func TestBuildPluginsScript(t *testing.T) {
 }
 
 func TestBuildSkillsScript(t *testing.T) {
-	u := &HermesAgentUseCase{}
 
 	t.Run("identifier only", func(t *testing.T) {
-		got := u.buildSkillsScript([]agentsv1alpha1.HermesSkill{
+		got := buildSkillsScript([]agentsv1alpha1.HermesSkill{
 			{Identifier: "openai/skills/skill-creator"},
 		})
 
@@ -96,7 +94,7 @@ func TestBuildSkillsScript(t *testing.T) {
 	})
 
 	t.Run("with all options", func(t *testing.T) {
-		got := u.buildSkillsScript([]agentsv1alpha1.HermesSkill{
+		got := buildSkillsScript([]agentsv1alpha1.HermesSkill{
 			{
 				Identifier: "https://example.com/SKILL.md",
 				Category:   "writing",
@@ -116,7 +114,7 @@ func TestBuildSkillsScript(t *testing.T) {
 	})
 
 	t.Run("uninstall command present", func(t *testing.T) {
-		got := u.buildSkillsScript([]agentsv1alpha1.HermesSkill{
+		got := buildSkillsScript([]agentsv1alpha1.HermesSkill{
 			{Identifier: "openai/skills/s1"},
 		})
 
@@ -126,7 +124,7 @@ func TestBuildSkillsScript(t *testing.T) {
 	})
 
 	t.Run("multiple skills manifest order", func(t *testing.T) {
-		got := u.buildSkillsScript([]agentsv1alpha1.HermesSkill{
+		got := buildSkillsScript([]agentsv1alpha1.HermesSkill{
 			{Identifier: "openai/skills/alpha"},
 			{Identifier: "openai/skills/beta.md"},
 		})
@@ -142,10 +140,9 @@ func TestBuildSkillsScript(t *testing.T) {
 }
 
 func TestBuildBundlesScript(t *testing.T) {
-	u := &HermesAgentUseCase{}
 
 	t.Run("minimal", func(t *testing.T) {
-		got := u.buildBundlesScript([]agentsv1alpha1.HermesBundle{
+		got := buildBundlesScript([]agentsv1alpha1.HermesBundle{
 			{Name: "finance"},
 		})
 
@@ -156,7 +153,7 @@ func TestBuildBundlesScript(t *testing.T) {
 	})
 
 	t.Run("all options", func(t *testing.T) {
-		got := u.buildBundlesScript([]agentsv1alpha1.HermesBundle{
+		got := buildBundlesScript([]agentsv1alpha1.HermesBundle{
 			{
 				Name:        "finance",
 				Skills:      []string{"a", "b"},
@@ -173,7 +170,7 @@ func TestBuildBundlesScript(t *testing.T) {
 	})
 
 	t.Run("delete command present", func(t *testing.T) {
-		got := u.buildBundlesScript([]agentsv1alpha1.HermesBundle{
+		got := buildBundlesScript([]agentsv1alpha1.HermesBundle{
 			{Name: "finance"},
 		})
 		if !strings.Contains(got, `hermes bundles delete "$name" || true`) {
@@ -182,7 +179,7 @@ func TestBuildBundlesScript(t *testing.T) {
 	})
 
 	t.Run("multiple bundles manifest order", func(t *testing.T) {
-		got := u.buildBundlesScript([]agentsv1alpha1.HermesBundle{
+		got := buildBundlesScript([]agentsv1alpha1.HermesBundle{
 			{Name: "a"},
 			{Name: "b"},
 		})
@@ -198,10 +195,9 @@ func TestBuildBundlesScript(t *testing.T) {
 }
 
 func TestBuildCronsScript(t *testing.T) {
-	u := &HermesAgentUseCase{}
 
 	t.Run("minimal", func(t *testing.T) {
-		got := u.buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript([]agentsv1alpha1.HermesCron{
 			{Name: "daily", Schedule: "0 9 * * *"},
 		})
 
@@ -212,7 +208,7 @@ func TestBuildCronsScript(t *testing.T) {
 	})
 
 	t.Run("with prompt", func(t *testing.T) {
-		got := u.buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript([]agentsv1alpha1.HermesCron{
 			{Name: "p", Schedule: "30m", Prompt: "say hi"},
 		})
 
@@ -223,7 +219,7 @@ func TestBuildCronsScript(t *testing.T) {
 	})
 
 	t.Run("all options", func(t *testing.T) {
-		got := u.buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript([]agentsv1alpha1.HermesCron{
 			{
 				Name:     "full",
 				Schedule: "every 2h",
@@ -245,7 +241,7 @@ func TestBuildCronsScript(t *testing.T) {
 	})
 
 	t.Run("remove uses hermes cron remove", func(t *testing.T) {
-		got := u.buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript([]agentsv1alpha1.HermesCron{
 			{Name: "j", Schedule: "1h"},
 		})
 		if !strings.Contains(got, `hermes cron remove "$id" || true`) {
@@ -254,7 +250,7 @@ func TestBuildCronsScript(t *testing.T) {
 	})
 
 	t.Run("manifest contains names", func(t *testing.T) {
-		got := u.buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript([]agentsv1alpha1.HermesCron{
 			{Name: "a", Schedule: "1h"},
 			{Name: "b", Schedule: "2h"},
 		})
