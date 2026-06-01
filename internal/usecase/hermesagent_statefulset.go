@@ -141,13 +141,13 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Args:            []string{"gateway", "run"},
 			WorkingDir:      "/opt/hermes",
-			Ports: []corev1.ContainerPort{
+			Ports: append([]corev1.ContainerPort{
 				{
 					Name:          hermesGatewayPortName,
 					ContainerPort: hermesGatewayPort,
 					Protocol:      corev1.ProtocolTCP,
 				},
-			},
+			}, ha.GetHermes().GetPorts()...),
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "HOME", Value: hermesHomeMount + "/home"},

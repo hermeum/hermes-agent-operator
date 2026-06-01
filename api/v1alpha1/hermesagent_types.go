@@ -396,6 +396,10 @@ type Hermes struct {
 	// Probes target the GET /health endpoint on the gateway port.
 	// +optional
 	Probes *Probes `json:"probes,omitempty"`
+	// ports declares additional container ports on the hermes-agent container.
+	// The gateway port (8642) is always included and should not be repeated here.
+	// +optional
+	Ports []corev1.ContainerPort `json:"ports,omitempty"`
 }
 
 // Probes defines health probe configuration for the hermes-agent container.
@@ -509,6 +513,13 @@ func (h *Hermes) GetResources() corev1.ResourceRequirements {
 			corev1.ResourceMemory: resource.MustParse("1Gi"),
 		},
 	}
+}
+
+func (h *Hermes) GetPorts() []corev1.ContainerPort {
+	if h == nil {
+		return nil
+	}
+	return h.Ports
 }
 
 func (h *Hermes) GetProbes() *Probes {
