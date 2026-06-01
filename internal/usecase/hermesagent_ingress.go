@@ -95,7 +95,7 @@ func buildIngressPaths(ha *agentsv1alpha1.HermesAgent, specPaths []agentsv1alpha
 		if p.PathType == "" {
 			pathType = networkingv1.PathTypePrefix
 		}
-		port := gatewayPort
+		port := hermesGatewayPort
 		if p.Port != nil {
 			port = *p.Port
 		}

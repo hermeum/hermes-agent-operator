@@ -65,7 +65,7 @@ func (u *HermesAgentUseCase) buildNetworkPolicy(ha *agentsv1alpha1.HermesAgent, 
 }
 
 func buildNetworkPolicyIngress(np *agentsv1alpha1.NetworkPolicy) []networkingv1.NetworkPolicyIngressRule {
-	gateway := intstr.FromInt32(gatewayPort)
+	gateway := intstr.FromInt32(hermesGatewayPort)
 	tcp := corev1.ProtocolTCP
 	ports := []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &gateway}}
 

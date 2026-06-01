@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"maps"
+
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -579,6 +581,162 @@ func (i *Ingress) IsEnabled() bool {
 	return i != nil && i.Enabled
 }
 
+// defaultSearXNGSettings is the settings.yml mounted at /etc/searxng when the
+// user does not provide their own. It enables the JSON response format that
+// Hermes requires to consume SearXNG results.
+// See https://docs.searxng.org/admin/installation-searxng.html#use-default-settings-yml
+const defaultSearXNGSettings = `# settings.yml
+use_default_settings: true
+
+search:
+  formats:
+    - html
+    - json
+`
+
+// SearXNG configures an optional SearXNG sidecar that backs the Hermes
+// web_search tool. When enabled, the operator runs SearXNG alongside the
+// hermes-agent container, sets web.search_backend to "searxng" in the generated
+// Hermes config.yaml (unless already set), and injects the SEARXNG_URL
+// environment variable into the hermes-agent container.
+type SearXNG struct {
+	// Enabled enables the SearXNG sidecar that is used by the web_search tool.
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Image configures the SearXNG container image.
+	// +optional
+	Image *SearXNGImage `json:"image,omitempty"`
+
+	// Resources specifies compute resources for the SearXNG container.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// ConfigFiles mounts configuration files at /etc/searxng. Each entry's key
+	// is the file name and its value is the file contents. When "settings.yml"
+	// is not provided, a default that enables the JSON response format (required
+	// by Hermes) is used.
+	// +optional
+	ConfigFiles map[string]string `json:"configFiles,omitempty"`
+
+	// Persistence configures persistent storage located at /var/cache/searxng.
+	// When enabled, container state (faviconcache.db, etc.) survives pod
+	// restarts. When disabled (default), an emptyDir is used and all state is
+	// lost on restart.
+	// +optional
+	Persistence *SearXNGPersistence `json:"persistence,omitempty"`
+
+	// ExtraEnv specifies additional environment variables for the SearXNG
+	// sidecar container, merged with the operator-managed variables.
+	// +optional
+	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+}
+
+// GetResources returns the SearXNG container resource requirements.
+func (s *SearXNG) GetResources() corev1.ResourceRequirements {
+	if s != nil && s.Resources != nil {
+		return *s.Resources
+	}
+	return corev1.ResourceRequirements{}
+}
+
+// GetExtraEnv returns the additional environment variables for the SearXNG container.
+func (s *SearXNG) GetExtraEnv() []corev1.EnvVar {
+	if s == nil {
+		return nil
+	}
+	return s.ExtraEnv
+}
+
+// GetPersistence returns the SearXNG persistence configuration, if any.
+func (s *SearXNG) GetPersistence() *SearXNGPersistence {
+	if s == nil {
+		return nil
+	}
+	return s.Persistence
+}
+
+// GetConfigFiles returns the configured files to mount at /etc/searxng, with a
+// default settings.yml injected when the user has not supplied one.
+func (s *SearXNG) GetConfigFiles() map[string]string {
+	files := map[string]string{}
+	if s != nil {
+		maps.Copy(files, s.ConfigFiles)
+	}
+	if _, ok := files["settings.yml"]; !ok {
+		files["settings.yml"] = defaultSearXNGSettings
+	}
+	return files
+}
+
+// SearXNGImage specifies the SearXNG container image repository and tag.
+type SearXNGImage struct {
+	// repository is the image repository. Defaults to "searxng/searxng".
+	// +optional
+	Repository string `json:"repository,omitempty"`
+	// tag is the image tag. Defaults to "latest".
+	// +optional
+	Tag string `json:"tag,omitempty"`
+}
+
+// IsEnabled reports whether the SearXNG sidecar should be created.
+func (s *SearXNG) IsEnabled() bool {
+	return s != nil && s.Enabled
+}
+
+// GetImage returns the fully qualified SearXNG image reference.
+func (s *SearXNG) GetImage() string {
+	repo := "searxng/searxng"
+	tag := "latest"
+	if s != nil && s.Image != nil {
+		if s.Image.Repository != "" {
+			repo = s.Image.Repository
+		}
+		if s.Image.Tag != "" {
+			tag = s.Image.Tag
+		}
+	}
+	return repo + ":" + tag
+}
+
+// SearXNGPersistence configures a PersistentVolumeClaim for the SearXNG cache.
+type SearXNGPersistence struct {
+	// enabled turns on a PersistentVolumeClaim for /var/cache/searxng.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// size is the storage request for the PVC (e.g. "1Gi"). Defaults to 1Gi.
+	// +optional
+	Size *resource.Quantity `json:"size,omitempty"`
+	// storageClassName selects the StorageClass; omit to use the cluster default.
+	// +optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+	// existingClaim mounts a pre-existing PVC by name instead of provisioning a new one.
+	// When set, enabled/size/storageClassName are ignored.
+	// +optional
+	ExistingClaim *string `json:"existingClaim,omitempty"`
+}
+
+func (p *SearXNGPersistence) IsEnabled() bool {
+	return p != nil && p.Enabled
+}
+
+// GetExistingClaim returns the name of a pre-existing PVC to mount, if set.
+func (p *SearXNGPersistence) GetExistingClaim() string {
+	if p != nil && p.ExistingClaim != nil {
+		return *p.ExistingClaim
+	}
+	return ""
+}
+
+// GetSize returns the storage request for the SearXNG cache PVC.
+func (p *SearXNGPersistence) GetSize() resource.Quantity {
+	if p != nil && p.Size != nil {
+		return *p.Size
+	}
+	return resource.MustParse("1Gi")
+}
+
 // HermesAgentSpec defines the desired state of HermesAgent
 type HermesAgentSpec struct {
 	// suspend pauses the agent by scaling its StatefulSet to 0 replicas.
@@ -589,9 +747,11 @@ type HermesAgentSpec struct {
 	// hermes defines the Hermes agent configuration.
 	// +optional
 	Hermes *Hermes `json:"hermes,omitempty"`
+
 	// security configures the pod and container security contexts.
 	// +optional
 	Security *HermesSecurity `json:"security,omitempty"`
+
 	// networking configures the Service and Ingress.
 	// +optional
 	Networking *Networking `json:"networking,omitempty"`
@@ -616,6 +776,10 @@ type HermesAgentSpec struct {
 	// +kubebuilder:validation:MaxItems=10
 	// +optional
 	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty"`
+
+	// SearXNG configures an optional SearXNG sidecar used by the web_search tool.
+	// +optional
+	SearXNG *SearXNG `json:"searxng,omitempty"`
 }
 
 // HermesAgentStatus defines the observed state of HermesAgent.
@@ -665,8 +829,8 @@ func (h *HermesAgent) IsSuspended() bool {
 	return h.Spec.Suspend != nil && *h.Spec.Suspend
 }
 
-func (h *HermesAgent) GetConfigMapName() string {
-	return h.Name + "-config"
+func (h *HermesAgent) GetHermesName() string {
+	return h.Name + "-hermes"
 }
 
 func (h *HermesAgent) GetServiceAccountName() string {
@@ -706,6 +870,16 @@ func (h *HermesAgent) GetExtraVolumes() []corev1.Volume {
 
 func (h *HermesAgent) GetExtraVolumeMounts() []corev1.VolumeMount {
 	return h.Spec.ExtraVolumeMounts
+}
+
+func (h *HermesAgent) GetSearXNG() *SearXNG {
+	return h.Spec.SearXNG
+}
+
+// GetSearXNGName returns the name shared by the operator-managed SearXNG
+// ConfigMap and the SearXNG cache PersistentVolumeClaim.
+func (h *HermesAgent) GetSearXNGName() string {
+	return h.Name + "-searxng"
 }
 
 // +kubebuilder:object:root=true

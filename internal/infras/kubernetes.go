@@ -62,6 +62,16 @@ func (k *KubernetesClient) UpdateConfigMapOwnedByHermesAgent(ctx context.Context
 	return k.client.Update(ctx, param.ConfigMap)
 }
 
+func (k *KubernetesClient) DeleteConfigMap(ctx context.Context, param usecase.DeleteConfigMapParam) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      param.NamespacedName.Name,
+			Namespace: param.NamespacedName.Namespace,
+		},
+	}
+	return client.IgnoreNotFound(k.client.Delete(ctx, cm))
+}
+
 func (k *KubernetesClient) GetStatefulSet(ctx context.Context, param usecase.GetStatefulSetParam) (*appsv1.StatefulSet, error) {
 	sts := &appsv1.StatefulSet{}
 	if err := k.client.Get(ctx, param.NamespacedName, sts); err != nil {

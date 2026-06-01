@@ -8,11 +8,7 @@ import (
 )
 
 const (
-	domain                 = "hermes-agent-operator.xyz"
-	workspacePathSeparator = "--"
-	defaultPathEnv         = "/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-	gatewayPortName        = "gateway"
-	gatewayPort            = int32(8642)
+	domain = "hermes-agent-operator.xyz"
 )
 
 type HermesAgentUseCase struct {
@@ -51,12 +47,19 @@ func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam
 		return nil
 	}
 
-	if err := u.reconcileConfigMap(ctx, ha); err != nil {
-		u.tel.Error(ctx, err, "Failed to reconcile ConfigMap", "namespacedName", param.NamespacedName)
+	if err := u.reconcileHermesConfigMap(ctx, ha); err != nil {
+		u.tel.Error(ctx, err, "Failed to reconcile Hermes ConfigMap", "namespacedName", param.NamespacedName)
 		u.tel.IncReconcile(ctx, IncReconcileParam{Result: ResultError})
 		return err
 	}
 	u.tel.Info(ctx, "ConfigMap reconciled successfully", "namespacedName", param.NamespacedName)
+
+	if err := u.reconcileSearXNGConfigMap(ctx, ha); err != nil {
+		u.tel.Error(ctx, err, "Failed to reconcile SearXNG ConfigMap", "namespacedName", param.NamespacedName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{Result: ResultError})
+		return err
+	}
+	u.tel.Info(ctx, "SearXNG ConfigMap reconciled successfully", "namespacedName", param.NamespacedName)
 
 	if err := u.reconcileServiceAccount(ctx, ha); err != nil {
 		u.tel.Error(ctx, err, "Failed to reconcile ServiceAccount", "namespacedName", param.NamespacedName)

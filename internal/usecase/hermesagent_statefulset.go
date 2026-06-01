@@ -15,6 +15,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	hermesGatewayPortName        = "gateway"
+	hermesGatewayPort            = int32(8642)
+	hermesWorkspacePathSeparator = "--"
+)
+
 func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
 	sts, err := u.kube.GetStatefulSet(ctx, GetStatefulSetParam{
 		NamespacedName: types.NamespacedName{Name: ha.Name, Namespace: ha.Namespace},
@@ -60,7 +66,7 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 	}
 
 	// The config hash annotation is used to trigger a rolling update of the StatefulSet when the config changes.
-	cm, _ := u.buildConfigMap(ha)
+	cm, _ := u.buildHermesConfigMap(ha)
 	configHash := configMapDataHash(cm.Data)
 
 	sts := &appsv1.StatefulSet{
@@ -106,6 +112,22 @@ func (u *HermesAgentUseCase) buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *a
 // the main hermes-agent container (env, envFrom), init containers for config and workspace,
 // and volumes/PVCs for persistence, bootstrap config, and shared memory.
 func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
+	const (
+		hermesContainerName   = "hermes"
+		hermesGatewayPortName = hermesGatewayPortName
+		hermesGatewayPort     = hermesGatewayPort
+		hermesDefaultPathEnv  = "/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+		hermesPathEnv         = hermesDefaultPathEnv + ":/opt/hermes/.venv/bin"
+		hermesHomeVolume      = "hermes-home"
+		hermesHomeMount       = "/opt/data"
+		hermesDSHMVolume      = "dshm"
+		hermesDSHMMount       = "/dev/shm"
+		hermesTmpVolume       = "tmp"
+		hermesTmpMount        = "/tmp"
+		hermesBootstrapVolume = "bootstrap"
+		hermesBootstrapMount  = "/opt/hermes/bootstrap"
+	)
+
 	sts = sts.DeepCopy()
 	sizeLimit := resource.MustParse("1Gi")
 	sec := ha.GetSecurity()
@@ -113,36 +135,36 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 	initContainers := []corev1.Container{}
 	containers := []corev1.Container{
 		{
-			Name:            "hermes-agent",
+			Name:            hermesContainerName,
 			Image:           ha.GetHermes().GetImage(),
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Args:            []string{"gateway", "run"},
 			WorkingDir:      "/opt/hermes",
 			Ports: []corev1.ContainerPort{
 				{
-					Name:          gatewayPortName,
-					ContainerPort: gatewayPort,
+					Name:          hermesGatewayPortName,
+					ContainerPort: hermesGatewayPort,
 					Protocol:      corev1.ProtocolTCP,
 				},
 			},
 			Env: append([]corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: "/opt/data"},
-				{Name: "HOME", Value: "/opt/data/home"},
-				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "HOME", Value: hermesHomeMount + "/home"},
+				{Name: "PATH", Value: hermesPathEnv},
 			}, ha.GetHermes().GetEnv()...),
 			EnvFrom:         ha.GetHermes().GetEnvFrom(),
 			Resources:       ha.GetHermes().GetResources(),
 			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: append([]corev1.VolumeMount{
-				{Name: "dshm", MountPath: "/dev/shm"},
-				{Name: "data", MountPath: "/opt/data"},
-				{Name: "tmp", MountPath: "/tmp"},
+				{Name: hermesDSHMVolume, MountPath: hermesDSHMMount},
+				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
 			}, ha.GetExtraVolumeMounts()...),
 		},
 	}
 	volumes := []corev1.Volume{
 		{
-			Name: "dshm",
+			Name: hermesDSHMVolume,
 			VolumeSource: corev1.VolumeSource{
 				EmptyDir: &corev1.EmptyDirVolumeSource{
 					Medium:    corev1.StorageMediumMemory,
@@ -151,14 +173,14 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			},
 		},
 		{
-			Name:         "tmp",
+			Name:         hermesTmpVolume,
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		},
 		{
-			Name: "bootstrap",
+			Name: hermesBootstrapVolume,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetConfigMapName()},
+					LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
 				},
 			},
 		},
@@ -169,7 +191,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 	hp := ha.GetHermes().GetPersistence()
 	if ec := hp.GetExistingClaim(); ec != "" {
 		volumes = append(volumes, corev1.Volume{
-			Name: "data",
+			Name: hermesHomeVolume,
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: ec,
@@ -178,7 +200,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 		})
 	} else if hp != nil && hp.Enabled {
 		pvc = append(pvc, corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{Name: "data"},
+			ObjectMeta: metav1.ObjectMeta{Name: hermesHomeVolume},
 			Spec: corev1.PersistentVolumeClaimSpec{
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				Resources: corev1.VolumeResourceRequirements{
@@ -191,7 +213,7 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 		})
 	} else {
 		volumes = append(volumes, corev1.Volume{
-			Name:         "data",
+			Name:         hermesHomeVolume,
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		})
 	}
@@ -205,14 +227,14 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{u.buildConfigScript()},
 			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: "/opt/data"},
-				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "PATH", Value: hermesPathEnv},
 			},
 			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: "data", MountPath: "/opt/data"},
-				{Name: "bootstrap", MountPath: "/bootstrap", ReadOnly: true},
-				{Name: "tmp", MountPath: "/tmp"},
+				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+				{Name: hermesBootstrapVolume, MountPath: hermesBootstrapMount, ReadOnly: true},
+				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
 			},
 		})
 	}
@@ -227,14 +249,14 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{u.buildWorkspaceScript()},
 			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: "/opt/data"},
-				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "PATH", Value: hermesPathEnv},
 			},
 			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: "data", MountPath: "/opt/data"},
-				{Name: "bootstrap", MountPath: "/bootstrap", ReadOnly: true},
-				{Name: "tmp", MountPath: "/tmp"},
+				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+				{Name: hermesBootstrapVolume, MountPath: hermesBootstrapMount, ReadOnly: true},
+				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
 			},
 		})
 	}
@@ -248,13 +270,13 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{u.buildPluginsScript(plugins)},
 			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: "/opt/data"},
-				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "PATH", Value: hermesPathEnv},
 			},
 			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: "data", MountPath: "/opt/data"},
-				{Name: "tmp", MountPath: "/tmp"},
+				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
 			},
 		})
 	}
@@ -268,13 +290,13 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{u.buildSkillsScript(skills)},
 			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: "/opt/data"},
-				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "PATH", Value: hermesPathEnv},
 			},
 			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: "data", MountPath: "/opt/data"},
-				{Name: "tmp", MountPath: "/tmp"},
+				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
 			},
 		})
 	}
@@ -288,15 +310,90 @@ func (u *HermesAgentUseCase) buildHermesContainer(ha *agentsv1alpha1.HermesAgent
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{u.buildCronsScript(crons)},
 			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: "/opt/data"},
-				{Name: "PATH", Value: defaultPathEnv + ":/opt/hermes/.venv/bin"},
+				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "PATH", Value: hermesPathEnv},
 			},
 			SecurityContext: sec.GetContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: "data", MountPath: "/opt/data"},
-				{Name: "tmp", MountPath: "/tmp"},
+				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
 			},
 		})
+	}
+
+	// searxng: optional sidecar backing the web_search tool.
+	if sx := ha.GetSearXNG(); sx.IsEnabled() {
+		const (
+			seaxngContainerName = "searxng"
+			searxngPortName     = "searxng"
+			searxngPort         = int32(8080)
+			searxngConfigVolume = "searxng-config"
+			searxngConfigMount  = "/etc/searxng"
+			searxngCacheVolume  = "searxng-cache"
+			searxngCacheMount   = "/var/cache/searxng"
+			searxngURL          = "http://localhost:8080"
+		)
+
+		// Inject SEARXNG_URL into the hermes-agent container env so that the web_search tool can find it.
+		containers[0].Env = append(containers[0].Env, corev1.EnvVar{Name: "SEARXNG_URL", Value: searxngURL})
+
+		containers = append(containers, corev1.Container{
+			Name:            seaxngContainerName,
+			Image:           sx.GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Ports: []corev1.ContainerPort{
+				{
+					Name:          searxngPortName,
+					ContainerPort: searxngPort,
+					Protocol:      corev1.ProtocolTCP,
+				},
+			},
+			Env: append([]corev1.EnvVar{
+				{Name: "SEARXNG_BASE_URL", Value: searxngURL + "/"},
+			}, sx.GetExtraEnv()...),
+			Resources: sx.GetResources(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: searxngConfigVolume, MountPath: searxngConfigMount},
+				{Name: searxngCacheVolume, MountPath: searxngCacheMount},
+			},
+		})
+
+		volumes = append(volumes, corev1.Volume{
+			Name: searxngConfigVolume,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetSearXNGName()},
+				},
+			},
+		})
+
+		// cache: existingClaim > managed PVC (<id>-searxng) > emptyDir fallback.
+		sp := sx.GetPersistence()
+		switch {
+		case sp.GetExistingClaim() != "":
+			volumes = append(volumes, corev1.Volume{
+				Name: searxngCacheVolume,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: sp.GetExistingClaim(),
+					},
+				},
+			})
+		case sp.IsEnabled():
+			volumes = append(volumes, corev1.Volume{
+				Name: searxngCacheVolume,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: ha.GetSearXNGName(),
+					},
+				},
+			})
+		default:
+			volumes = append(volumes, corev1.Volume{
+				Name:         searxngCacheVolume,
+				VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			})
+		}
 	}
 
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
@@ -345,7 +442,7 @@ for f in /bootstrap/workspace.*; do
 done
 
 printf '%%s' "$UPDATED_MANIFEST" > "$MANIFEST_FILE"
-`, workspacePathSeparator, workspacePathSeparator)
+`, hermesWorkspacePathSeparator, hermesWorkspacePathSeparator)
 }
 
 // pluginDirName derives the plugin directory name from a Git URL or owner/repo shorthand.

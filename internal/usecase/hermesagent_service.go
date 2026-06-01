@@ -60,9 +60,9 @@ func buildServicePorts(svc *agentsv1alpha1.Service) []corev1.ServicePort {
 	if svc == nil || len(svc.Ports) == 0 {
 		return []corev1.ServicePort{
 			{
-				Name:       gatewayPortName,
-				Port:       gatewayPort,
-				TargetPort: intstr.FromInt32(gatewayPort),
+				Name:       hermesGatewayPortName,
+				Port:       hermesGatewayPort,
+				TargetPort: intstr.FromInt32(hermesGatewayPort),
 				Protocol:   corev1.ProtocolTCP,
 			},
 		}
