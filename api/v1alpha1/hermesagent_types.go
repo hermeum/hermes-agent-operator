@@ -289,16 +289,8 @@ func (s *HermesSecurity) GetPodSecurityContext() *corev1.PodSecurityContext {
 	if s != nil && s.PodSecurityContext != nil {
 		return s.PodSecurityContext
 	}
-	// 10000 is hermes user and group ID in the official container image.
-	uid, gid := int64(10000), int64(10000)
-	rnt := true
-	pol := corev1.FSGroupChangeOnRootMismatch
+
 	return &corev1.PodSecurityContext{
-		FSGroup:             &gid,
-		FSGroupChangePolicy: &pol,
-		RunAsGroup:          &gid,
-		RunAsNonRoot:        &rnt,
-		RunAsUser:           &uid,
 		SeccompProfile: &corev1.SeccompProfile{
 			Type: corev1.SeccompProfileTypeRuntimeDefault,
 		},
@@ -309,14 +301,8 @@ func (s *HermesSecurity) GetContainerSecurityContext() *corev1.SecurityContext {
 	if s != nil && s.ContainerSecurityContext != nil {
 		return s.ContainerSecurityContext
 	}
-	apeFalse := false
-	roTrue := true
+
 	return &corev1.SecurityContext{
-		AllowPrivilegeEscalation: &apeFalse,
-		Capabilities: &corev1.Capabilities{
-			Drop: []corev1.Capability{"ALL"},
-		},
-		ReadOnlyRootFilesystem: &roTrue,
 		SeccompProfile: &corev1.SeccompProfile{
 			Type: corev1.SeccompProfileTypeRuntimeDefault,
 		},

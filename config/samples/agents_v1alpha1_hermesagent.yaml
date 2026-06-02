@@ -19,24 +19,10 @@ spec:
 
           You are a pragmatic senior engineer with strong taste.
           You optimize for truth, clarity, and usefulness over politeness theater.
-        TEST.md: |
-          # Test File
-
-          This is a test file for the Hermes Agent.
     storage:
       persistence:
         enabled: true
         size: 2Gi
-    probes:
-      # readiness is enabled by default; tune or disable it here.
-      readiness:
-        initialDelaySeconds: 5
-        periodSeconds: 10
-      # liveness and startup are opt-in: created only when configured.
-      liveness:
-        enabled: true
-        initialDelaySeconds: 15
-        periodSeconds: 20
     envFrom:
       - secretRef:
           name: ollama-api-secret

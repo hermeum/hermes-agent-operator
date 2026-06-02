@@ -112,6 +112,22 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 	return sts
 }
 
+// buildInitContainerSecurityContext returns a security context with hermes user.
+func buildInitContainerSecurityContext() *corev1.SecurityContext {
+	// 10000 is hermes user and group ID in the official container image.
+	uid, gid := int64(10000), int64(10000)
+	rnt := true
+
+	return &corev1.SecurityContext{
+		RunAsNonRoot: &rnt,
+		RunAsUser:    &uid,
+		RunAsGroup:   &gid,
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+}
+
 // buildHermesContainer populates the StatefulSet with all resources driven by the hermes spec:
 // the main hermes-agent container (env, envFrom), init containers for config and workspace,
 // and volumes/PVCs for persistence, bootstrap config, and shared memory.
@@ -126,7 +142,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		hermesTmpVolume       = "tmp"
 		hermesTmpMount        = "/tmp"
 		hermesBootstrapVolume = "bootstrap"
-		hermesBootstrapMount  = "/opt/hermes/bootstrap"
+		hermesBootstrapMount  = "/bootstrap"
 	)
 
 	sts = sts.DeepCopy()
@@ -240,7 +256,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "PATH", Value: hermesPathEnv},
 			},
-			SecurityContext: sec.GetContainerSecurityContext(),
+			SecurityContext: buildInitContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
 				{Name: hermesBootstrapVolume, MountPath: hermesBootstrapMount, ReadOnly: true},
@@ -251,105 +267,99 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	// workspace: init container copies workspace files from the bootstrap ConfigMap.
 	// ConfigMap keys use the format "workspace.<path>" with "/" replaced by "--".
-	if hw := ha.GetHermes().GetWorkspace(); hw != nil && len(hw.Files) > 0 {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "init-workspace",
-			Image:           ha.GetHermes().GetImage(),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{buildWorkspaceScript()},
-			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: hermesHomeMount},
-				{Name: "PATH", Value: hermesPathEnv},
-			},
-			SecurityContext: sec.GetContainerSecurityContext(),
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-				{Name: hermesBootstrapVolume, MountPath: hermesBootstrapMount, ReadOnly: true},
-				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-			},
-		})
-	}
+	initContainers = append(initContainers, corev1.Container{
+		Name:            "init-workspace",
+		Image:           ha.GetHermes().GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{buildWorkspaceScript()},
+		Env: []corev1.EnvVar{
+			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "PATH", Value: hermesPathEnv},
+		},
+		SecurityContext: buildInitContainerSecurityContext(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+			{Name: hermesBootstrapVolume, MountPath: hermesBootstrapMount, ReadOnly: true},
+			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
+		},
+	})
 
 	// plugins: init container installs desired plugins and removes stale ones.
-	if plugins := ha.GetHermes().GetPlugins(); len(plugins) > 0 {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "init-plugins",
-			Image:           ha.GetHermes().GetImage(),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{buildPluginsScript(plugins)},
-			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: hermesHomeMount},
-				{Name: "PATH", Value: hermesPathEnv},
-			},
-			SecurityContext: sec.GetContainerSecurityContext(),
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-			},
-		})
-	}
+	plugins := ha.GetHermes().GetPlugins()
+	initContainers = append(initContainers, corev1.Container{
+		Name:            "init-plugins",
+		Image:           ha.GetHermes().GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{buildPluginsScript(plugins)},
+		Env: []corev1.EnvVar{
+			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "PATH", Value: hermesPathEnv},
+		},
+		SecurityContext: buildInitContainerSecurityContext(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
+		},
+	})
 
 	// skills: init container installs/uninstalls skills via the hermes CLI.
-	if skills := ha.GetHermes().GetSkills(); len(skills) > 0 {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "init-skills",
-			Image:           ha.GetHermes().GetImage(),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{buildSkillsScript(skills)},
-			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: hermesHomeMount},
-				{Name: "PATH", Value: hermesPathEnv},
-			},
-			SecurityContext: sec.GetContainerSecurityContext(),
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-			},
-		})
-	}
+	skills := ha.GetHermes().GetSkills()
+	initContainers = append(initContainers, corev1.Container{
+		Name:            "init-skills",
+		Image:           ha.GetHermes().GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{buildSkillsScript(skills)},
+		Env: []corev1.EnvVar{
+			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "PATH", Value: hermesPathEnv},
+		},
+		SecurityContext: buildInitContainerSecurityContext(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
+		},
+	})
 
 	// bundles: init container reconciles bundles via the hermes CLI.
-	if bundles := ha.GetHermes().GetBundles(); len(bundles) > 0 {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "init-bundles",
-			Image:           ha.GetHermes().GetImage(),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{buildBundlesScript(bundles)},
-			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: "/opt/data"},
-				{Name: "PATH", Value: hermesPathEnv},
-			},
-			SecurityContext: sec.GetContainerSecurityContext(),
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: "data", MountPath: "/opt/data"},
-				{Name: "tmp", MountPath: "/tmp"},
-			},
-		})
-	}
+	bundles := ha.GetHermes().GetBundles()
+	initContainers = append(initContainers, corev1.Container{
+		Name:            "init-bundles",
+		Image:           ha.GetHermes().GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{buildBundlesScript(bundles)},
+		Env: []corev1.EnvVar{
+			{Name: "HERMES_HOME", Value: "/opt/data"},
+			{Name: "PATH", Value: hermesPathEnv},
+		},
+		SecurityContext: buildInitContainerSecurityContext(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
+		},
+	})
 
 	// crons: init container reconciles scheduled jobs via the hermes CLI.
-	if crons := ha.GetHermes().GetCrons(); len(crons) > 0 {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "init-crons",
-			Image:           "nousresearch/hermes-agent:latest",
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{buildCronsScript(crons)},
-			Env: []corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: hermesHomeMount},
-				{Name: "PATH", Value: hermesPathEnv},
-			},
-			SecurityContext: sec.GetContainerSecurityContext(),
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-			},
-		})
-	}
+	crons := ha.GetHermes().GetCrons()
+	initContainers = append(initContainers, corev1.Container{
+		Name:            "init-crons",
+		Image:           "nousresearch/hermes-agent:latest",
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{buildCronsScript(crons)},
+		Env: []corev1.EnvVar{
+			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "PATH", Value: hermesPathEnv},
+		},
+		SecurityContext: buildInitContainerSecurityContext(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
+		},
+	})
 
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, containers...)
@@ -698,7 +708,8 @@ func buildBundlesScript(bundles []agentsv1alpha1.HermesBundle) string {
 			cmd.WriteString(" --force")
 		}
 		fmt.Fprintf(&cmd, " %q", b.Name)
-		createLines = append(createLines, cmd.String())
+		// Append "|| true" to avoid failing the whole script, bundles returns non-zero exit code when the bundle already exists.
+		createLines = append(createLines, cmd.String()+" || true")
 	}
 
 	casePattern := `"` + strings.Join(desiredNames, `"|"`) + `"`
