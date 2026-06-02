@@ -387,18 +387,34 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 	}
 
 	const (
-		searxngContainerName = "searxng"
-		searxngPortName      = "searxng"
-		searxngPort          = int32(8080)
-		searxngConfigVolume  = "searxng-config"
-		searxngConfigMount   = "/etc/searxng"
-		searxngURL           = "http://localhost:8080"
+		searxngContainerName   = "searxng"
+		searxngPortName        = "searxng"
+		searxngPort            = int32(8080)
+		searxngConfigVolume    = "searxng-config"
+		searxngConfigMount     = "/etc/searxng"
+		searxngBootstrapVolume = "searxng-bootstrap"
+		searxngBootstrapMount  = "/bootstrap-searxng"
+		searxngURL             = "http://localhost:8080"
 	)
 
 	// Inject SEARXNG_URL into the hermes-agent container env so that the web_search tool can find it.
 	if c := findContainer(sts, hermesContainerName); c != nil {
 		c.Env = append(c.Env, corev1.EnvVar{Name: "SEARXNG_URL", Value: searxngURL})
 	}
+
+	// init container: copy config files from the read-only ConfigMap bootstrap volume into the
+	// writable emptyDir at /etc/searxng so SearXNG can write runtime files alongside them.
+	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, corev1.Container{
+		Name:            "init-searxng-config",
+		Image:           sx.GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{"cp -r /bootstrap-searxng/. /etc/searxng/"},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: searxngBootstrapVolume, MountPath: searxngBootstrapMount, ReadOnly: true},
+			{Name: searxngConfigVolume, MountPath: searxngConfigMount},
+		},
+	})
 
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
 		Name:            searxngContainerName,
@@ -425,14 +441,22 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		},
 	})
 
-	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
-		Name: searxngConfigVolume,
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetSearXNGName()},
+	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes,
+		corev1.Volume{
+			// writable emptyDir that holds the copied config files at runtime.
+			Name:         searxngConfigVolume,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		},
+		corev1.Volume{
+			// read-only ConfigMap source, copied into searxng-config by the init container.
+			Name: searxngBootstrapVolume,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetSearXNGName()},
+				},
 			},
 		},
-	})
+	)
 
 	return sts
 }
