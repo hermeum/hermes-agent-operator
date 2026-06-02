@@ -397,6 +397,27 @@ func findContainer(sts *appsv1.StatefulSet, name string) *corev1.Container {
 	return nil
 }
 
+// buildSearXNGContainerSecurityContext returns a hardened security context for the SearXNG container.
+// The image runs as UID/GID 977 (defined via --chown=977:977 in the Dockerfile).
+func buildSearXNGContainerSecurityContext() *corev1.SecurityContext {
+	ape := false
+	rot := true
+	uid := int64(977)
+	gid := int64(977)
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &ape,
+		RunAsNonRoot:             &rot,
+		RunAsUser:                &uid,
+		RunAsGroup:               &gid,
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+}
+
 func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
 	sts = sts.DeepCopy()
 
@@ -413,6 +434,8 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		searxngConfigMount     = "/etc/searxng"
 		searxngBootstrapVolume = "searxng-bootstrap"
 		searxngBootstrapMount  = "/bootstrap-searxng"
+		searxngCacheVolume     = "searxng-cache"
+		searxngCacheMount      = "/var/cache/searxng"
 		searxngURL             = "http://localhost:8080"
 	)
 
@@ -433,6 +456,7 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 			{Name: searxngBootstrapVolume, MountPath: searxngBootstrapMount, ReadOnly: true},
 			{Name: searxngConfigVolume, MountPath: searxngConfigMount},
 		},
+		SecurityContext: buildSearXNGContainerSecurityContext(),
 	})
 
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
@@ -457,7 +481,9 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		Resources: sx.GetResources(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: searxngConfigVolume, MountPath: searxngConfigMount},
+			{Name: searxngCacheVolume, MountPath: searxngCacheMount},
 		},
+		SecurityContext: buildSearXNGContainerSecurityContext(),
 	})
 
 	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes,
@@ -476,6 +502,30 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 			},
 		},
 	)
+
+	// cache: existingClaim > managed PVC > emptyDir fallback.
+	sp := sx.GetPersistence()
+	switch {
+	case sp.GetExistingClaim() != "":
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: searxngCacheVolume,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: sp.GetExistingClaim()},
+			},
+		})
+	case sp.IsEnabled():
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: searxngCacheVolume,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: ha.GetSearXNGName()},
+			},
+		})
+	default:
+		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name:         searxngCacheVolume,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
 
 	return sts
 }
