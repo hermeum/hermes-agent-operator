@@ -119,11 +119,16 @@ func buildInitContainerSecurityContext() *corev1.SecurityContext {
 	// 10000 is hermes user and group ID in the official container image.
 	uid, gid := int64(10000), int64(10000)
 	rnt := true
+	ape := false
 
 	return &corev1.SecurityContext{
-		RunAsNonRoot: &rnt,
-		RunAsUser:    &uid,
-		RunAsGroup:   &gid,
+		RunAsNonRoot:             &rnt,
+		RunAsUser:                &uid,
+		RunAsGroup:               &gid,
+		AllowPrivilegeEscalation: &ape,
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
 		SeccompProfile: &corev1.SeccompProfile{
 			Type: corev1.SeccompProfileTypeRuntimeDefault,
 		},
@@ -475,6 +480,21 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 	return sts
 }
 
+// buildCamofoxContainerSecurityContext returns a hardened security context for the Camofox container.
+// RunAsNonRoot is not set because the image is designed to run as root (data at /root/.cache/camoufox).
+func buildCamofoxContainerSecurityContext() *corev1.SecurityContext {
+	ape := false
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &ape,
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+}
+
 func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
 	sts = sts.DeepCopy()
 
@@ -485,8 +505,6 @@ func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 
 	const (
 		camofoxContainerName = "camofox"
-		camofoxPortName      = "camofox"
-		camofoxPort          = int32(9377)
 		camofoxDataVolume    = "camofox-data"
 		camofoxDataMount     = "/root/.camofox"
 		camofoxURL           = "http://localhost:9377"
@@ -501,11 +519,9 @@ func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		Name:            camofoxContainerName,
 		Image:           cx.GetImage(),
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Ports: []corev1.ContainerPort{
-			{Name: camofoxPortName, ContainerPort: camofoxPort, Protocol: corev1.ProtocolTCP},
-		},
-		Env:       cx.GetExtraEnv(),
-		Resources: cx.GetResources(),
+		Env:             cx.GetExtraEnv(),
+		Resources:       cx.GetResources(),
+		SecurityContext: buildCamofoxContainerSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: camofoxDataVolume, MountPath: camofoxDataMount},
 		},
