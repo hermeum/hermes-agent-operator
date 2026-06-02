@@ -16,6 +16,7 @@ type PrometheusTelemetry struct {
 	reconcileTotal    *prometheus.CounterVec
 	reconcileDuration *prometheus.HistogramVec
 	configMapOps      *prometheus.CounterVec
+	secretOps         *prometheus.CounterVec
 	statefulSetOps    *prometheus.CounterVec
 	serviceAccountOps *prometheus.CounterVec
 	roleOps           *prometheus.CounterVec
@@ -40,6 +41,10 @@ func NewPrometheusTelemetry() *PrometheusTelemetry {
 		configMapOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_configmap_operations_total",
 			Help: "Total number of ConfigMap create/update operations.",
+		}, []string{"namespace", "name", "operation", "result"}),
+		secretOps: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "hermesagent_secret_operations_total",
+			Help: "Total number of Secret create/delete operations.",
 		}, []string{"namespace", "name", "operation", "result"}),
 		statefulSetOps: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "hermesagent_statefulset_operations_total",
@@ -79,6 +84,7 @@ func NewPrometheusTelemetry() *PrometheusTelemetry {
 		m.reconcileTotal,
 		m.reconcileDuration,
 		m.configMapOps,
+		m.secretOps,
 		m.statefulSetOps,
 		m.serviceAccountOps,
 		m.roleOps,
@@ -118,6 +124,10 @@ func (m *PrometheusTelemetry) ObserveReconcileDuration(_ context.Context, param 
 
 func (m *PrometheusTelemetry) IncConfigMapOperation(_ context.Context, param usecase.IncConfigMapOperationParam) {
 	m.configMapOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
+}
+
+func (m *PrometheusTelemetry) IncSecretOperation(_ context.Context, param usecase.IncSecretOperationParam) {
+	m.secretOps.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Operation.String(), param.Result.String()).Inc()
 }
 
 func (m *PrometheusTelemetry) IncStatefulSetOperation(_ context.Context, param usecase.IncStatefulSetOperationParam) {

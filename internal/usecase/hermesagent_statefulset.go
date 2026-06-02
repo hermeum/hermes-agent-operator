@@ -392,8 +392,6 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		searxngPort          = int32(8080)
 		searxngConfigVolume  = "searxng-config"
 		searxngConfigMount   = "/etc/searxng"
-		searxngCacheVolume   = "searxng-cache"
-		searxngCacheMount    = "/var/cache/searxng"
 		searxngURL           = "http://localhost:8080"
 	)
 
@@ -411,11 +409,19 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		},
 		Env: append([]corev1.EnvVar{
 			{Name: "SEARXNG_BASE_URL", Value: searxngURL + "/"},
+			{
+				Name: "SEARXNG_SECRET",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetSearXNGName()},
+						Key:                  "SEARXNG_SECRET",
+					},
+				},
+			},
 		}, sx.GetExtraEnv()...),
 		Resources: sx.GetResources(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: searxngConfigVolume, MountPath: searxngConfigMount},
-			{Name: searxngCacheVolume, MountPath: searxngCacheMount},
 		},
 	})
 
@@ -427,34 +433,6 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 			},
 		},
 	})
-
-	// cache: existingClaim > managed PVC > emptyDir fallback.
-	sp := sx.GetPersistence()
-	switch {
-	case sp.GetExistingClaim() != "":
-		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
-			Name: searxngCacheVolume,
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: sp.GetExistingClaim()},
-			},
-		})
-	case sp.IsEnabled():
-		sts.Spec.VolumeClaimTemplates = append(sts.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{Name: searxngCacheVolume},
-			Spec: corev1.PersistentVolumeClaimSpec{
-				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-				Resources: corev1.VolumeResourceRequirements{
-					Requests: corev1.ResourceList{corev1.ResourceStorage: sp.GetSize()},
-				},
-				StorageClassName: sp.StorageClassName,
-			},
-		})
-	default:
-		sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, corev1.Volume{
-			Name:         searxngCacheVolume,
-			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
-		})
-	}
 
 	return sts
 }

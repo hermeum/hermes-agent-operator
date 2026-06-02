@@ -45,6 +45,7 @@ type Telemetry interface {
 	IncReconcile(ctx context.Context, param IncReconcileParam)
 	ObserveReconcileDuration(ctx context.Context, param ObserveReconcileDurationParam)
 	IncConfigMapOperation(ctx context.Context, param IncConfigMapOperationParam)
+	IncSecretOperation(ctx context.Context, param IncSecretOperationParam)
 	IncStatefulSetOperation(ctx context.Context, param IncStatefulSetOperationParam)
 	IncServiceAccountOperation(ctx context.Context, param IncServiceAccountOperationParam)
 	IncRoleOperation(ctx context.Context, param IncRoleOperationParam)
@@ -66,6 +67,12 @@ type ObserveReconcileDurationParam struct {
 }
 
 type IncConfigMapOperationParam struct {
+	NamespacedName types.NamespacedName
+	Operation      Operation
+	Result         Result
+}
+
+type IncSecretOperationParam struct {
 	NamespacedName types.NamespacedName
 	Operation      Operation
 	Result         Result
@@ -128,6 +135,10 @@ type Kubernetes interface {
 	UpdateConfigMapOwnedByHermesAgent(ctx context.Context, param UpdateConfigMapParam) error
 	DeleteConfigMap(ctx context.Context, param DeleteConfigMapParam) error
 
+	GetSecret(ctx context.Context, param GetSecretParam) (*corev1.Secret, error)
+	CreateSecretOwnedByHermesAgent(ctx context.Context, param CreateSecretOfHermesAgentParam) error
+	DeleteSecret(ctx context.Context, param DeleteSecretParam) error
+
 	GetStatefulSet(ctx context.Context, param GetStatefulSetParam) (*appsv1.StatefulSet, error)
 	CreateStatefulSetOwnedByHermesAgent(ctx context.Context, param CreateStatefulSetOfHermesAgentParam) error
 	UpdateStatefulSetOwnedByHermesAgent(ctx context.Context, param UpdateStatefulSetParam) error
@@ -189,6 +200,19 @@ type UpdateConfigMapParam struct {
 }
 
 type DeleteConfigMapParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type GetSecretParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type CreateSecretOfHermesAgentParam struct {
+	HermesAgent *agentsv1alpha1.HermesAgent
+	Secret      *corev1.Secret
+}
+
+type DeleteSecretParam struct {
 	NamespacedName types.NamespacedName
 }
 

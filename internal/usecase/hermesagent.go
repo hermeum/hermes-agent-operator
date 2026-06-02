@@ -69,6 +69,13 @@ func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam
 	}
 	u.tel.Info(ctx, "SearXNG ConfigMap reconciled successfully", "namespacedName", param.NamespacedName)
 
+	if err := u.reconcileSearXNGSecret(ctx, ha); err != nil {
+		u.tel.Error(ctx, err, "Failed to reconcile SearXNG Secret", "namespacedName", param.NamespacedName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+	u.tel.Info(ctx, "SearXNG Secret reconciled successfully", "namespacedName", param.NamespacedName)
+
 	if err := u.reconcileServiceAccount(ctx, ha); err != nil {
 		u.tel.Error(ctx, err, "Failed to reconcile ServiceAccount", "namespacedName", param.NamespacedName)
 		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})

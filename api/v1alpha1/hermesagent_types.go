@@ -1151,7 +1151,7 @@ func (h *HermesAgent) GetSearXNG() *SearXNG {
 }
 
 // GetSearXNGName returns the name shared by the operator-managed SearXNG
-// ConfigMap and the SearXNG cache PersistentVolumeClaim.
+// ConfigMap and Secret.
 func (h *HermesAgent) GetSearXNGName() string {
 	return h.Name + "-searxng"
 }

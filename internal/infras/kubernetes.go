@@ -87,6 +87,34 @@ func (k *KubernetesClient) DeleteConfigMap(ctx context.Context, param usecase.De
 	return client.IgnoreNotFound(k.client.Delete(ctx, cm))
 }
 
+func (k *KubernetesClient) GetSecret(ctx context.Context, param usecase.GetSecretParam) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	if err := k.client.Get(ctx, param.NamespacedName, secret); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return secret, nil
+}
+
+func (k *KubernetesClient) CreateSecretOwnedByHermesAgent(ctx context.Context, param usecase.CreateSecretOfHermesAgentParam) error {
+	if err := ctrl.SetControllerReference(param.HermesAgent, param.Secret, k.scheme); err != nil {
+		return err
+	}
+	return k.client.Create(ctx, param.Secret)
+}
+
+func (k *KubernetesClient) DeleteSecret(ctx context.Context, param usecase.DeleteSecretParam) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      param.NamespacedName.Name,
+			Namespace: param.NamespacedName.Namespace,
+		},
+	}
+	return client.IgnoreNotFound(k.client.Delete(ctx, secret))
+}
+
 func (k *KubernetesClient) GetStatefulSet(ctx context.Context, param usecase.GetStatefulSetParam) (*appsv1.StatefulSet, error) {
 	sts := &appsv1.StatefulSet{}
 	if err := k.client.Get(ctx, param.NamespacedName, sts); err != nil {
