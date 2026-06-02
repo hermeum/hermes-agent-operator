@@ -190,13 +190,6 @@ type HermesImage struct {
 
 // HermesSecurity configures the security context for the pod and container.
 type HermesSecurity struct {
-	// podSecurityContext overrides the pod-level security context.
-	// +optional
-	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
-	// containerSecurityContext overrides the container-level security context
-	// applied to the hermes-agent container and all init containers.
-	// +optional
-	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 	// rbac configures the ServiceAccount and Role used by the HermesAgent pod.
 	// +optional
 	RBAC *RBAC `json:"rbac,omitempty"`
@@ -283,30 +276,6 @@ type RBACRule struct {
 	Resources []string `json:"resources"`
 	// Verbs is a list of verbs that apply to the resources.
 	Verbs []string `json:"verbs"`
-}
-
-func (s *HermesSecurity) GetPodSecurityContext() *corev1.PodSecurityContext {
-	if s != nil && s.PodSecurityContext != nil {
-		return s.PodSecurityContext
-	}
-
-	return &corev1.PodSecurityContext{
-		SeccompProfile: &corev1.SeccompProfile{
-			Type: corev1.SeccompProfileTypeRuntimeDefault,
-		},
-	}
-}
-
-func (s *HermesSecurity) GetContainerSecurityContext() *corev1.SecurityContext {
-	if s != nil && s.ContainerSecurityContext != nil {
-		return s.ContainerSecurityContext
-	}
-
-	return &corev1.SecurityContext{
-		SeccompProfile: &corev1.SeccompProfile{
-			Type: corev1.SeccompProfileTypeRuntimeDefault,
-		},
-	}
 }
 
 func (s *HermesSecurity) GetRBAC() *RBAC {

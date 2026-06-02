@@ -90,7 +90,9 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: ha.GetServiceAccountName(),
-					SecurityContext:    ha.GetSecurity().GetPodSecurityContext(),
+					SecurityContext: &corev1.PodSecurityContext{
+						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+					},
 				},
 			},
 		},
@@ -147,8 +149,6 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	sts = sts.DeepCopy()
 	sizeLimit := resource.MustParse("1Gi")
-	sec := ha.GetSecurity()
-
 	initContainers := []corev1.Container{}
 	containers := []corev1.Container{
 		{
@@ -169,9 +169,11 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				{Name: "HOME", Value: hermesHomeMount + "/home"},
 				{Name: "PATH", Value: hermesPathEnv},
 			}, ha.GetHermes().GetEnv()...),
-			EnvFrom:         ha.GetHermes().GetEnvFrom(),
-			Resources:       ha.GetHermes().GetResources(),
-			SecurityContext: sec.GetContainerSecurityContext(),
+			EnvFrom:   ha.GetHermes().GetEnvFrom(),
+			Resources: ha.GetHermes().GetResources(),
+			SecurityContext: &corev1.SecurityContext{
+				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+			},
 			LivenessProbe: ha.GetHermes().GetProbes().GetLiveness().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
 				InitialDelaySeconds: 15, PeriodSeconds: 20, TimeoutSeconds: 1, FailureThreshold: 3,
 			}),
@@ -243,6 +245,18 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		})
 	}
+
+	// ensures the data volume is owned by the hermes user
+	initContainers = append(initContainers, corev1.Container{
+		Name:            "init-chown-data",
+		Image:           ha.GetHermes().GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{"chown -R 10000:10000 /opt/data"},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+		},
+	})
 
 	// config: init container copies config.yaml from the bootstrap ConfigMap to the data volume.
 	if hc := ha.GetHermes().GetConfig(); hc != nil {
@@ -332,7 +346,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Command:         []string{"/bin/sh", "-ec"},
 		Args:            []string{buildBundlesScript(bundles)},
 		Env: []corev1.EnvVar{
-			{Name: "HERMES_HOME", Value: "/opt/data"},
+			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "PATH", Value: hermesPathEnv},
 		},
 		SecurityContext: buildInitContainerSecurityContext(),
@@ -526,17 +540,17 @@ func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 
 func buildConfigScript() string {
 	return `set -eu
-mkdir -p "/opt/data/home"
-cp "/bootstrap/config.yaml" "/opt/data/config.yaml"
+mkdir -p "$HERMES_HOME/home"
+cp "/bootstrap/config.yaml" "$HERMES_HOME/config.yaml"
 echo "Config file copied"
 `
 }
 
 func buildWorkspaceScript() string {
 	return fmt.Sprintf(`set -eu
-MANIFEST_FILE="/opt/data/.hermes-agent-operator/workspace-files"
+MANIFEST_FILE="$HERMES_HOME/.hermes-agent-operator/workspace-files"
 UPDATED_MANIFEST=""
-mkdir -p "/opt/data/.hermes-agent-operator"
+mkdir -p "$HERMES_HOME/.hermes-agent-operator"
 
 # delete files that were previously managed but are no longer in workspace.files
 if [ -f "$MANIFEST_FILE" ]; then
@@ -544,7 +558,7 @@ if [ -f "$MANIFEST_FILE" ]; then
     [ -z "$managed" ] && continue
     key="workspace.$(echo "$managed" | sed 's|/|%s|g')"
     if [ ! -f "/bootstrap/$key" ]; then
-      rm -f "/opt/data/$managed"
+      rm -f "$HERMES_HOME/$managed"
 			echo "Removed outdated workspace file: $managed"
     fi
   done < "$MANIFEST_FILE"
@@ -553,7 +567,7 @@ fi
 for f in /bootstrap/workspace.*; do
   [ -f "$f" ] || continue
   relpath=$(basename "$f" | sed 's/^workspace\.//' | sed 's/%s/\//g')
-  target="/opt/data/$relpath"
+  target="$HERMES_HOME/$relpath"
   mkdir -p "$(dirname "$target")"
   cp "$f" "$target"
 	echo "Copied workspace file: $relpath"
@@ -599,8 +613,8 @@ func buildPluginsScript(plugins []agentsv1alpha1.HermesPlugin) string {
 	manifestContent := strings.Join(desiredNames, "\n")
 
 	script := fmt.Sprintf(`set -eu
-MANIFEST="/opt/data/.hermes-agent-operator/plugins"
-mkdir -p "/opt/data/.hermes-agent-operator"
+MANIFEST="$HERMES_HOME/.hermes-agent-operator/plugins"
+mkdir -p "$HERMES_HOME/.hermes-agent-operator"
 
 # Remove plugins present in manifest but no longer desired
 if [ -f "$MANIFEST" ]; then
@@ -664,8 +678,8 @@ func buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
 	manifestContent := strings.Join(desiredNames, "\n")
 
 	return fmt.Sprintf(`set -eu
-MANIFEST="/opt/data/.hermes-agent-operator/skills"
-mkdir -p "/opt/data/.hermes-agent-operator"
+MANIFEST="$HERMES_HOME/.hermes-agent-operator/skills"
+mkdir -p "$HERMES_HOME/.hermes-agent-operator"
 
 # Remove skills present in manifest but no longer desired
 if [ -f "$MANIFEST" ]; then
@@ -719,8 +733,8 @@ func buildBundlesScript(bundles []agentsv1alpha1.HermesBundle) string {
 	manifestContent := strings.Join(desiredNames, "\n")
 
 	return fmt.Sprintf(`set -eu
-MANIFEST="/opt/data/.hermes-agent-operator/bundles"
-mkdir -p "/opt/data/.hermes-agent-operator"
+MANIFEST="$HERMES_HOME/.hermes-agent-operator/bundles"
+mkdir -p "$HERMES_HOME/.hermes-agent-operator"
 
 # Remove bundles present in manifest but no longer desired
 if [ -f "$MANIFEST" ]; then
