@@ -355,6 +355,12 @@ type Hermes struct {
 	// The gateway port (8642) is always included and should not be repeated here.
 	// +optional
 	Ports []corev1.ContainerPort `json:"ports,omitempty"`
+	// initChownData runs an init container that chowns /opt/data to the hermes
+	// user (10000:10000) before the agent starts. Enable this when the data
+	// volume is provisioned with root ownership (e.g. most cloud block-storage
+	// provisioners) and the agent would otherwise fail to write to it.
+	// +optional
+	InitChownData bool `json:"initChownData,omitempty"`
 }
 
 // Probes defines health probe configuration for the hermes-agent container.
@@ -539,6 +545,10 @@ func (p *Probe) GetProbe(path string, portName string, defaults corev1.Probe) *c
 		probe.FailureThreshold = *p.FailureThreshold
 	}
 	return &probe
+}
+
+func (h *Hermes) ShouldInitChownData() bool {
+	return h != nil && h.InitChownData
 }
 
 func (h *Hermes) GetImage() string {

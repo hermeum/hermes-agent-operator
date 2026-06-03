@@ -252,16 +252,18 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	}
 
 	// ensures the data volume is owned by the hermes user
-	initContainers = append(initContainers, corev1.Container{
-		Name:            "init-chown-data",
-		Image:           ha.GetHermes().GetImage(),
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{"chown -R 10000:10000 /opt/data"},
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-		},
-	})
+	if ha.GetHermes().ShouldInitChownData() {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "init-chown-data",
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{"chown -R 10000:10000 /opt/data"},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+			},
+		})
+	}
 
 	// config: init container copies config.yaml from the bootstrap ConfigMap to the data volume.
 	if hc := ha.GetHermes().GetConfig(); hc != nil {
