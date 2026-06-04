@@ -2324,7 +2324,21 @@ spec:
                     type: array
                   config:
                     description: config holds the Hermes agent config.yml configuration.
-                    x-kubernetes-preserve-unknown-fields: true
+                    properties:
+                      apiServer:
+                        description: apiServer configures the gateway API server.
+                        properties:
+                          enabled:
+                            description: |-
+                              enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
+                              The API key secret is always created regardless of this field.
+                            type: boolean
+                        type: object
+                      raw:
+                        description: raw holds the verbatim Hermes agent config.yml
+                          as free-form YAML/JSON.
+                        x-kubernetes-preserve-unknown-fields: true
+                    type: object
                   crons:
                     description: crons is a list of scheduled jobs to manage via hermes
                       cron.

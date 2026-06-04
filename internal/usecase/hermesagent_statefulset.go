@@ -154,46 +154,45 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	sts = sts.DeepCopy()
 	sizeLimit := resource.MustParse("1Gi")
+
 	initContainers := []corev1.Container{}
-	containers := []corev1.Container{
-		{
-			Name:            hermesContainerName,
-			Image:           ha.GetHermes().GetImage(),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Args:            []string{"gateway", "run"},
-			WorkingDir:      "/opt/hermes",
-			Ports: append([]corev1.ContainerPort{
-				{
-					Name:          hermesGatewayPortName,
-					ContainerPort: hermesGatewayPort,
-					Protocol:      corev1.ProtocolTCP,
-				},
-			}, ha.GetHermes().GetPorts()...),
-			Env: append([]corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: hermesHomeMount},
-				{Name: "HOME", Value: hermesHomeMount + "/home"},
-				{Name: "PATH", Value: hermesPathEnv},
-			}, ha.GetHermes().GetEnv()...),
-			EnvFrom:   ha.GetHermes().GetEnvFrom(),
-			Resources: ha.GetHermes().GetResources(),
-			SecurityContext: &corev1.SecurityContext{
-				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+	container := corev1.Container{
+		Name:            hermesContainerName,
+		Image:           ha.GetHermes().GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Args:            []string{"gateway", "run"},
+		WorkingDir:      "/opt/hermes",
+		Ports: append([]corev1.ContainerPort{
+			{
+				Name:          hermesGatewayPortName,
+				ContainerPort: hermesGatewayPort,
+				Protocol:      corev1.ProtocolTCP,
 			},
-			LivenessProbe: ha.GetHermes().GetProbes().GetLiveness().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
-				InitialDelaySeconds: 15, PeriodSeconds: 20, TimeoutSeconds: 1, FailureThreshold: 3,
-			}),
-			ReadinessProbe: ha.GetHermes().GetProbes().GetReadiness().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
-				InitialDelaySeconds: 5, PeriodSeconds: 10, TimeoutSeconds: 1, FailureThreshold: 3,
-			}),
-			StartupProbe: ha.GetHermes().GetProbes().GetStartup().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
-				InitialDelaySeconds: 0, PeriodSeconds: 10, TimeoutSeconds: 1, FailureThreshold: 10,
-			}),
-			VolumeMounts: append([]corev1.VolumeMount{
-				{Name: hermesDSHMVolume, MountPath: hermesDSHMMount},
-				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-			}, ha.GetExtraVolumeMounts()...),
+		}, ha.GetHermes().GetPorts()...),
+		Env: append([]corev1.EnvVar{
+			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount + "/home"},
+			{Name: "PATH", Value: hermesPathEnv},
+		}, ha.GetHermes().GetEnv()...),
+		EnvFrom:   ha.GetHermes().GetEnvFrom(),
+		Resources: ha.GetHermes().GetResources(),
+		SecurityContext: &corev1.SecurityContext{
+			SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 		},
+		LivenessProbe: ha.GetHermes().GetProbes().GetLiveness().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
+			InitialDelaySeconds: 15, PeriodSeconds: 20, TimeoutSeconds: 1, FailureThreshold: 3,
+		}),
+		ReadinessProbe: ha.GetHermes().GetProbes().GetReadiness().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
+			InitialDelaySeconds: 5, PeriodSeconds: 10, TimeoutSeconds: 1, FailureThreshold: 3,
+		}),
+		StartupProbe: ha.GetHermes().GetProbes().GetStartup().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
+			InitialDelaySeconds: 0, PeriodSeconds: 10, TimeoutSeconds: 1, FailureThreshold: 10,
+		}),
+		VolumeMounts: append([]corev1.VolumeMount{
+			{Name: hermesDSHMVolume, MountPath: hermesDSHMMount},
+			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
+		}, ha.GetExtraVolumeMounts()...),
 	}
 	volumes := []corev1.Volume{
 		{
@@ -219,6 +218,22 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		},
 	}
 	pvc := []corev1.PersistentVolumeClaim{}
+
+	// API server configuration
+	if ha.GetHermes().GetAPIServer().IsEnabled() {
+		container.Env = append(container.Env, []corev1.EnvVar{
+			{
+				Name: "API_SERVER_KEY",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesSecretName()},
+						Key:                  "API_SERVER_KEY",
+					},
+				},
+			},
+			{Name: "API_SERVER_ENABLED", Value: "true"},
+		}...)
+	}
 
 	// persistence: existingClaim > enabled PVC > emptyDir fallback.
 	hp := ha.GetHermes().GetPersistence()
@@ -383,7 +398,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	})
 
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
-	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, containers...)
+	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, container)
 	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, volumes...)
 	sts.Spec.VolumeClaimTemplates = append(sts.Spec.VolumeClaimTemplates, pvc...)
 

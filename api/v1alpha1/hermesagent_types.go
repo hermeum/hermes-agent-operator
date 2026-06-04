@@ -311,6 +311,42 @@ func (n *NetworkPolicy) ShouldAllowDNS() bool {
 	return *n.AllowDNS
 }
 
+// HermesAPIServer configures the gateway API server.
+type HermesAPIServer struct {
+	// enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
+	// The API key secret is always created regardless of this field.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+}
+
+func (a *HermesAPIServer) IsEnabled() bool {
+	return a != nil && a.Enabled
+}
+
+// HermesConfig holds the Hermes agent config.yml and related configuration.
+type HermesConfig struct {
+	// raw holds the verbatim Hermes agent config.yml as free-form YAML/JSON.
+	// +optional
+	Raw *apiextensionsv1.JSON `json:"raw,omitempty"`
+	// apiServer configures the gateway API server.
+	// +optional
+	APIServer *HermesAPIServer `json:"apiServer,omitempty"`
+}
+
+func (c *HermesConfig) GetRaw() *apiextensionsv1.JSON {
+	if c == nil {
+		return nil
+	}
+	return c.Raw
+}
+
+func (c *HermesConfig) GetAPIServer() *HermesAPIServer {
+	if c == nil {
+		return nil
+	}
+	return c.APIServer
+}
+
 // Hermes defines the hermes-specific section of the spec.
 type Hermes struct {
 	// image overrides the container image used for the hermes-agent container
@@ -319,7 +355,7 @@ type Hermes struct {
 	Image *HermesImage `json:"image,omitempty"`
 	// config holds the Hermes agent config.yml configuration.
 	// +optional
-	Config *apiextensionsv1.JSON `json:"config,omitempty"`
+	Config *HermesConfig `json:"config,omitempty"`
 	// storage configures persistent storage for the agent.
 	// +optional
 	Storage *HermesStorage `json:"storage,omitempty"`
@@ -401,7 +437,14 @@ func (h *Hermes) GetConfig() *apiextensionsv1.JSON {
 	if h == nil {
 		return nil
 	}
-	return h.Config
+	return h.Config.GetRaw()
+}
+
+func (h *Hermes) GetAPIServer() *HermesAPIServer {
+	if h == nil {
+		return nil
+	}
+	return h.Config.GetAPIServer()
 }
 
 func (h *Hermes) GetPersistence() *HermesPersistence {
@@ -1143,6 +1186,11 @@ func (h *HermesAgent) GetCamofox() *Camofox {
 // GetCamofoxName returns the name used for the Camofox PersistentVolumeClaim.
 func (h *HermesAgent) GetCamofoxName() string {
 	return h.Name + "-camofox"
+}
+
+// GetHermesSecretName returns the name of the operator-managed Secret for the hermes-agent container.
+func (h *HermesAgent) GetHermesSecretName() string {
+	return h.GetHermesName()
 }
 
 // +kubebuilder:object:root=true
