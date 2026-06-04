@@ -3,20 +3,25 @@ package usecase
 import (
 	"context"
 	"maps"
+	"time"
+
 	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
-	nsName := types.NamespacedName{Name: ha.Name, Namespace: ha.Namespace}
+func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
 	existing, err := u.kube.GetService(ctx, GetServiceParam{NamespacedName: nsName})
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to get Service", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
 	desired := buildService(ha)
@@ -25,13 +30,25 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 		// ClusterIP is immutable; carry it over from the existing Service.
 		desired.Spec.ClusterIP = existing.Spec.ClusterIP
 		err := u.kube.UpdateServiceOwnedByHermesAgent(ctx, UpdateServiceParam{HermesAgent: ha, Service: desired})
-		u.tel.IncServiceOperation(ctx, IncServiceOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
-		return err
+		u.tel.IncServiceOperation(ctx, IncServiceOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update Service", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "Service updated", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
 	err = u.kube.CreateServiceOwnedByHermesAgent(ctx, CreateServiceOfHermesAgentParam{HermesAgent: ha, Service: desired})
-	u.tel.IncServiceOperation(ctx, IncServiceOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
-	return err
+	u.tel.IncServiceOperation(ctx, IncServiceOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
+	if err != nil {
+		u.tel.Error(ctx, err, "Failed to create Service", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+	u.tel.Debug(ctx, "Service created", "namespacedName", nsName)
+	return ctrl.Result{}, nil
 }
 
 func buildService(ha *agentsv1alpha1.HermesAgent) *corev1.Service {

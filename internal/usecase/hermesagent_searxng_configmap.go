@@ -2,41 +2,65 @@ package usecase
 
 import (
 	"context"
+	"time"
+
 	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
-	nsName := types.NamespacedName{Name: ha.GetSearXNGName(), Namespace: ha.Namespace}
+func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
+	cmNsName := types.NamespacedName{Name: ha.GetSearXNGName(), Namespace: ha.Namespace}
 
-	existing, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{NamespacedName: nsName})
+	existing, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{NamespacedName: cmNsName})
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to get SearXNG ConfigMap", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
 	if !ha.GetSearXNG().IsEnabled() {
 		if existing == nil {
-			return nil
+			return ctrl.Result{}, nil
 		}
-		err := u.kube.DeleteConfigMap(ctx, DeleteConfigMapParam{NamespacedName: nsName})
-		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
-		return err
+		err := u.kube.DeleteConfigMap(ctx, DeleteConfigMapParam{NamespacedName: cmNsName})
+		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to delete SearXNG ConfigMap", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "SearXNG ConfigMap deleted", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
 	desired := buildSearXNGConfigMap(ha)
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateConfigMapOwnedByHermesAgent(ctx, UpdateConfigMapParam{HermesAgent: ha, ConfigMap: desired})
-		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
-		return err
+		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update SearXNG ConfigMap", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "SearXNG ConfigMap updated", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
 	err = u.kube.CreateConfigMapOwnedByHermesAgent(ctx, CreateConfigMapOfHermesAgentParam{HermesAgent: ha, ConfigMap: desired})
-	u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
-	return err
+	u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
+	if err != nil {
+		u.tel.Error(ctx, err, "Failed to create SearXNG ConfigMap", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+	u.tel.Debug(ctx, "SearXNG ConfigMap created", "namespacedName", nsName)
+	return ctrl.Result{}, nil
 }
 
 func buildSearXNGConfigMap(ha *agentsv1alpha1.HermesAgent) *corev1.ConfigMap {

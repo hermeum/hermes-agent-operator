@@ -6,40 +6,57 @@ import (
 	"fmt"
 	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	sigsyaml "sigs.k8s.io/yaml"
 )
 
-func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
+func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
+
 	cmName := ha.GetHermesName()
 	cm, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{
 		NamespacedName: types.NamespacedName{Name: cmName, Namespace: ha.Namespace},
 	})
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to get Hermes ConfigMap", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
 	desired, err := buildHermesConfigMap(ha)
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to build Hermes ConfigMap", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
 	if cm != nil {
 		desired.ResourceVersion = cm.ResourceVersion
 		err := u.kube.UpdateConfigMapOwnedByHermesAgent(ctx, UpdateConfigMapParam{HermesAgent: ha, ConfigMap: desired})
-		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
-		return err
+		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update Hermes ConfigMap", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "Hermes ConfigMap updated", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
-	err = u.kube.CreateConfigMapOwnedByHermesAgent(ctx, CreateConfigMapOfHermesAgentParam{
-		HermesAgent: ha,
-		ConfigMap:   desired,
-	})
-	u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
-	return err
+	err = u.kube.CreateConfigMapOwnedByHermesAgent(ctx, CreateConfigMapOfHermesAgentParam{HermesAgent: ha, ConfigMap: desired})
+	u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
+	if err != nil {
+		u.tel.Error(ctx, err, "Failed to create Hermes ConfigMap", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+	u.tel.Debug(ctx, "Hermes ConfigMap created", "namespacedName", nsName)
+	return ctrl.Result{}, nil
 }
 
 // applySearXNGConfigDefaults applies default values to the SearXNG config if they are not set by the user.

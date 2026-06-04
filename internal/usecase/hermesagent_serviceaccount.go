@@ -3,42 +3,64 @@ package usecase
 import (
 	"context"
 	"maps"
+	"time"
+
 	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
-	name := ha.Name
-	nsName := types.NamespacedName{Name: name, Namespace: ha.Namespace}
+func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
 	existing, err := u.kube.GetServiceAccount(ctx, GetServiceAccountParam{NamespacedName: nsName})
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to get ServiceAccount", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
 	if !ha.GetSecurity().GetRBAC().ShouldCreateServiceAccount() {
 		if existing == nil {
-			return nil
+			return ctrl.Result{}, nil
 		}
 		err := u.kube.DeleteServiceAccount(ctx, DeleteServiceAccountParam{NamespacedName: nsName})
-		u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
-		return err
+		u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to delete ServiceAccount", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "ServiceAccount deleted", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
 	desired := buildServiceAccount(ha)
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateServiceAccountOwnedByHermesAgent(ctx, UpdateServiceAccountParam{HermesAgent: ha, ServiceAccount: desired})
-		u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
-		return err
+		u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update ServiceAccount", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "ServiceAccount updated", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
 	err = u.kube.CreateServiceAccountOwnedByHermesAgent(ctx, CreateServiceAccountOfHermesAgentParam{HermesAgent: ha, ServiceAccount: desired})
-	u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
-	return err
+	u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
+	if err != nil {
+		u.tel.Error(ctx, err, "Failed to create ServiceAccount", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+	u.tel.Debug(ctx, "ServiceAccount created", "namespacedName", nsName)
+	return ctrl.Result{}, nil
 }
 
 func buildServiceAccount(ha *agentsv1alpha1.HermesAgent) *corev1.ServiceAccount {

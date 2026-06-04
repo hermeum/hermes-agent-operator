@@ -3,42 +3,65 @@ package usecase
 import (
 	"context"
 	"maps"
+	"time"
+
 	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
 
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
-	nsName := types.NamespacedName{Name: ha.Name, Namespace: ha.Namespace}
+func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
 	existing, err := u.kube.GetIngress(ctx, GetIngressParam{NamespacedName: nsName})
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to get Ingress", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
 	ing := ha.GetNetworking().GetIngress()
 	if !ing.IsEnabled() {
 		if existing == nil {
-			return nil
+			return ctrl.Result{}, nil
 		}
 		err := u.kube.DeleteIngress(ctx, DeleteIngressParam{NamespacedName: nsName})
-		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
-		return err
+		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to delete Ingress", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "Ingress deleted", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
 	desired := buildIngress(ha, ing)
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateIngressOwnedByHermesAgent(ctx, UpdateIngressParam{HermesAgent: ha, Ingress: desired})
-		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
-		return err
+		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update Ingress", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "Ingress updated", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
 	err = u.kube.CreateIngressOwnedByHermesAgent(ctx, CreateIngressOfHermesAgentParam{HermesAgent: ha, Ingress: desired})
-	u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
-	return err
+	u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
+	if err != nil {
+		u.tel.Error(ctx, err, "Failed to create Ingress", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+	u.tel.Debug(ctx, "Ingress created", "namespacedName", nsName)
+	return ctrl.Result{}, nil
 }
 
 func buildIngress(ha *agentsv1alpha1.HermesAgent, ing *agentsv1alpha1.Ingress) *networkingv1.Ingress {

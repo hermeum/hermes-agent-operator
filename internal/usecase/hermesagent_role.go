@@ -2,24 +2,30 @@ package usecase
 
 import (
 	"context"
+	"time"
+
 	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
-	name := ha.Name
-	nsName := types.NamespacedName{Name: name, Namespace: ha.Namespace}
+func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
 	existingRole, err := u.kube.GetRole(ctx, GetRoleParam{NamespacedName: nsName})
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to get Role", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	existingRB, err := u.kube.GetRoleBinding(ctx, GetRoleBindingParam{NamespacedName: nsName})
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to get RoleBinding", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
 	rules := ha.GetSecurity().GetRBAC().GetAdditionalRules()
@@ -28,47 +34,72 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 	if len(rules) == 0 || saName == "" {
 		if existingRB != nil {
 			err := u.kube.DeleteRoleBinding(ctx, DeleteRoleBindingParam{NamespacedName: nsName})
-			u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
+			u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
 			if err != nil {
-				return err
+				u.tel.Error(ctx, err, "Failed to delete RoleBinding", "namespacedName", nsName)
+				u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
+			u.tel.Debug(ctx, "RoleBinding deleted", "namespacedName", nsName)
 		}
 		if existingRole != nil {
 			err := u.kube.DeleteRole(ctx, DeleteRoleParam{NamespacedName: nsName})
-			u.tel.IncRoleOperation(ctx, IncRoleOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
+			u.tel.IncRoleOperation(ctx, IncRoleOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
 			if err != nil {
-				return err
+				u.tel.Error(ctx, err, "Failed to delete Role", "namespacedName", nsName)
+				u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
+			u.tel.Debug(ctx, "Role deleted", "namespacedName", nsName)
 		}
-		return nil
+		return ctrl.Result{}, nil
 	}
 
 	desiredRole := buildRole(ha, rules)
 	if existingRole != nil {
 		desiredRole.ResourceVersion = existingRole.ResourceVersion
 		err := u.kube.UpdateRoleOwnedByHermesAgent(ctx, UpdateRoleParam{HermesAgent: ha, Role: desiredRole})
-		u.tel.IncRoleOperation(ctx, IncRoleOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
+		u.tel.IncRoleOperation(ctx, IncRoleOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
 		if err != nil {
-			return err
+			u.tel.Error(ctx, err, "Failed to update Role", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
+		u.tel.Debug(ctx, "Role updated", "namespacedName", nsName)
 	} else {
 		err := u.kube.CreateRoleOwnedByHermesAgent(ctx, CreateRoleOfHermesAgentParam{HermesAgent: ha, Role: desiredRole})
-		u.tel.IncRoleOperation(ctx, IncRoleOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
+		u.tel.IncRoleOperation(ctx, IncRoleOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 		if err != nil {
-			return err
+			u.tel.Error(ctx, err, "Failed to create Role", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
+		u.tel.Debug(ctx, "Role created", "namespacedName", nsName)
 	}
 
 	desiredRB := buildRoleBinding(ha, saName)
 	if existingRB != nil {
 		desiredRB.ResourceVersion = existingRB.ResourceVersion
 		err := u.kube.UpdateRoleBindingOwnedByHermesAgent(ctx, UpdateRoleBindingParam{HermesAgent: ha, RoleBinding: desiredRB})
-		u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
-		return err
+		u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update RoleBinding", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "RoleBinding updated", "namespacedName", nsName)
+	} else {
+		err := u.kube.CreateRoleBindingOwnedByHermesAgent(ctx, CreateRoleBindingOfHermesAgentParam{HermesAgent: ha, RoleBinding: desiredRB})
+		u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to create RoleBinding", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "RoleBinding created", "namespacedName", nsName)
 	}
-	err = u.kube.CreateRoleBindingOwnedByHermesAgent(ctx, CreateRoleBindingOfHermesAgentParam{HermesAgent: ha, RoleBinding: desiredRB})
-	u.tel.IncRoleBindingOperation(ctx, IncRoleBindingOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
-	return err
+
+	return ctrl.Result{}, nil
 }
 
 func buildRole(ha *agentsv1alpha1.HermesAgent, rules []agentsv1alpha1.RBACRule) *rbacv1.Role {

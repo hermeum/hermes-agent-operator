@@ -7,12 +7,14 @@ import (
 	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
 	"sort"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
@@ -22,29 +24,81 @@ const (
 	hermesWorkspacePathSeparator = "--"
 )
 
-func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
+func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
+
 	sts, err := u.kube.GetStatefulSet(ctx, GetStatefulSetParam{
-		NamespacedName: types.NamespacedName{Name: ha.Name, Namespace: ha.Namespace},
+		NamespacedName: nsName,
 	})
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to get StatefulSet", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
 	desired := buildStatefulSet(ha)
 
+	var stsOp string
 	if sts != nil {
 		desired.ResourceVersion = sts.ResourceVersion
 		err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
-		u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
-		return err
+		u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update StatefulSet", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		stsOp = "updated"
+	} else {
+		err = u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{HermesAgent: ha, StatefulSet: desired})
+		u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to create StatefulSet", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		stsOp = "created"
 	}
 
-	err = u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{
-		HermesAgent: ha,
-		StatefulSet: desired,
+	ha.Status.Phase = u.derivePhase(ctx, ha)
+	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
+		u.tel.Error(ctx, err, "Failed to update HermesAgent status", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+
+	u.tel.Debug(ctx, "StatefulSet "+stsOp, "namespacedName", nsName, "phase", ha.Status.Phase)
+	if ha.Status.Phase == agentsv1alpha1.PhasePending || ha.Status.Phase == agentsv1alpha1.PhaseUnknown {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+	return ctrl.Result{}, nil
+}
+
+func (u *HermesAgentUseCase) derivePhase(ctx context.Context, ha *agentsv1alpha1.HermesAgent) agentsv1alpha1.HermesAgentPhase {
+	if ha.IsSuspended() {
+		return agentsv1alpha1.PhaseSuspended
+	}
+	pod, err := u.kube.GetPod(ctx, GetPodParam{
+		NamespacedName: types.NamespacedName{Name: ha.Name + "-0", Namespace: ha.Namespace},
 	})
-	u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
-	return err
+	if err != nil {
+		return agentsv1alpha1.PhaseUnknown
+	}
+	if pod == nil {
+		return agentsv1alpha1.PhasePending
+	}
+	switch pod.Status.Phase {
+	case corev1.PodPending:
+		return agentsv1alpha1.PhasePending
+	case corev1.PodRunning:
+		return agentsv1alpha1.PhaseRunning
+	case corev1.PodSucceeded:
+		return agentsv1alpha1.PhaseSucceeded
+	case corev1.PodFailed:
+		return agentsv1alpha1.PhaseFailed
+	default:
+		return agentsv1alpha1.PhaseUnknown
+	}
 }
 
 func configMapDataHash(data map[string]string) string {

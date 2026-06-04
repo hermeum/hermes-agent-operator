@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"time"
+
 	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -9,39 +11,60 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const namespaceNameLabel = "kubernetes.io/metadata.name"
 
-func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
-	nsName := types.NamespacedName{Name: ha.Name, Namespace: ha.Namespace}
+func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
 	existing, err := u.kube.GetNetworkPolicy(ctx, GetNetworkPolicyParam{NamespacedName: nsName})
 	if err != nil {
-		return err
+		u.tel.Error(ctx, err, "Failed to get NetworkPolicy", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
 	np := ha.GetSecurity().GetNetworkPolicy()
 	if !np.IsEnabled() {
 		if existing == nil {
-			return nil
+			return ctrl.Result{}, nil
 		}
 		err := u.kube.DeleteNetworkPolicy(ctx, DeleteNetworkPolicyParam{NamespacedName: nsName})
-		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationDelete, Result: resultOf(err)})
-		return err
+		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to delete NetworkPolicy", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "NetworkPolicy deleted", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
 	desired := buildNetworkPolicy(ha, np)
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateNetworkPolicyOwnedByHermesAgent(ctx, UpdateNetworkPolicyParam{HermesAgent: ha, NetworkPolicy: desired})
-		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationUpdate, Result: resultOf(err)})
-		return err
+		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update NetworkPolicy", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Debug(ctx, "NetworkPolicy updated", "namespacedName", nsName)
+		return ctrl.Result{}, nil
 	}
 
 	err = u.kube.CreateNetworkPolicyOwnedByHermesAgent(ctx, CreateNetworkPolicyOfHermesAgentParam{HermesAgent: ha, NetworkPolicy: desired})
-	u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}, Operation: OperationCreate, Result: resultOf(err)})
-	return err
+	u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
+	if err != nil {
+		u.tel.Error(ctx, err, "Failed to create NetworkPolicy", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+	u.tel.Debug(ctx, "NetworkPolicy created", "namespacedName", nsName)
+	return ctrl.Result{}, nil
 }
 
 func buildNetworkPolicy(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha1.NetworkPolicy) *networkingv1.NetworkPolicy {
