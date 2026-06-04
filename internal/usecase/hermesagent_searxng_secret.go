@@ -42,6 +42,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 
 	// Never update — preserve the generated secret value across reconciles.
 	if existing != nil {
+		ha.Status.ManagedResources.SearXNGSecret = ha.GetSearXNGName()
 		return ctrl.Result{}, nil
 	}
 
@@ -59,6 +60,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "SearXNG Secret created", "namespacedName", nsName)
+	ha.Status.ManagedResources.SearXNGSecret = ha.GetSearXNGName()
 	return ctrl.Result{}, nil
 }
 

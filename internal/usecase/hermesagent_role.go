@@ -99,6 +99,8 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 		u.tel.Debug(ctx, "RoleBinding created", "namespacedName", nsName)
 	}
 
+	ha.Status.ManagedResources.Role = ha.Name
+	ha.Status.ManagedResources.RoleBinding = ha.Name
 	return ctrl.Result{}, nil
 }
 

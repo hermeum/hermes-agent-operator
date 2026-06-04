@@ -49,6 +49,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "SearXNG ConfigMap updated", "namespacedName", nsName)
+		ha.Status.ManagedResources.SearXNGConfigMap = ha.GetSearXNGName()
 		return ctrl.Result{}, nil
 	}
 
@@ -60,6 +61,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "SearXNG ConfigMap created", "namespacedName", nsName)
+	ha.Status.ManagedResources.SearXNGConfigMap = ha.GetSearXNGName()
 	return ctrl.Result{}, nil
 }
 

@@ -49,6 +49,7 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "ServiceAccount updated", "namespacedName", nsName)
+		ha.Status.ManagedResources.ServiceAccount = ha.Name
 		return ctrl.Result{}, nil
 	}
 
@@ -60,6 +61,7 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "ServiceAccount created", "namespacedName", nsName)
+	ha.Status.ManagedResources.ServiceAccount = ha.Name
 	return ctrl.Result{}, nil
 }
 

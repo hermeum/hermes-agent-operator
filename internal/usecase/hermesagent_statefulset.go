@@ -60,6 +60,7 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		stsOp = "created"
 	}
 
+	ha.Status.ManagedResources.StatefulSet = ha.Name
 	ha.Status.Phase = u.derivePhase(ctx, ha)
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		u.tel.Error(ctx, err, "Failed to update HermesAgent status", "namespacedName", nsName)
@@ -280,7 +281,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				Name: "API_SERVER_KEY",
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesSecretName()},
+						LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
 						Key:                  "API_SERVER_KEY",
 					},
 				},

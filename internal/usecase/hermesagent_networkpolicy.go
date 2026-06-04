@@ -53,6 +53,7 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "NetworkPolicy updated", "namespacedName", nsName)
+		ha.Status.ManagedResources.NetworkPolicy = ha.Name
 		return ctrl.Result{}, nil
 	}
 
@@ -64,6 +65,7 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "NetworkPolicy created", "namespacedName", nsName)
+	ha.Status.ManagedResources.NetworkPolicy = ha.Name
 	return ctrl.Result{}, nil
 }
 

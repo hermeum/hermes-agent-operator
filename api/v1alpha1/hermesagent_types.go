@@ -1077,6 +1077,45 @@ type HermesAgentSpec struct {
 	Camofox *Camofox `json:"camofox,omitempty"`
 }
 
+// ManagedResources lists the Kubernetes resources currently owned by this HermesAgent.
+// Each field holds the name of the managed resource; omitted when the resource is not active.
+// Rebuilt on every reconcile.
+type ManagedResources struct {
+	// hermesConfigMap is the name of the Hermes configuration ConfigMap.
+	// +optional
+	HermesConfigMap string `json:"hermesConfigMap,omitempty"`
+	// hermesSecret is the name of the Hermes API key Secret.
+	// +optional
+	HermesSecret string `json:"hermesSecret,omitempty"`
+	// searxngConfigMap is the name of the SearXNG configuration ConfigMap.
+	// +optional
+	SearXNGConfigMap string `json:"searxngConfigMap,omitempty"`
+	// searxngSecret is the name of the SearXNG Secret.
+	// +optional
+	SearXNGSecret string `json:"searxngSecret,omitempty"`
+	// serviceAccount is the name of the managed ServiceAccount.
+	// +optional
+	ServiceAccount string `json:"serviceAccount,omitempty"`
+	// role is the name of the managed Role.
+	// +optional
+	Role string `json:"role,omitempty"`
+	// roleBinding is the name of the managed RoleBinding.
+	// +optional
+	RoleBinding string `json:"roleBinding,omitempty"`
+	// service is the name of the managed Service.
+	// +optional
+	Service string `json:"service,omitempty"`
+	// ingress is the name of the managed Ingress.
+	// +optional
+	Ingress string `json:"ingress,omitempty"`
+	// networkPolicy is the name of the managed NetworkPolicy.
+	// +optional
+	NetworkPolicy string `json:"networkPolicy,omitempty"`
+	// statefulSet is the name of the managed StatefulSet.
+	// +optional
+	StatefulSet string `json:"statefulSet,omitempty"`
+}
+
 // HermesAgentStatus defines the observed state of HermesAgent.
 type HermesAgentStatus struct {
 	// phase is the current lifecycle phase of the HermesAgent, mirroring the underlying pod phase.
@@ -1097,6 +1136,10 @@ type HermesAgentStatus struct {
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// managedResources describes the Kubernetes resources currently owned by this HermesAgent.
+	// +optional
+	ManagedResources ManagedResources `json:"managedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -1186,11 +1229,6 @@ func (h *HermesAgent) GetCamofox() *Camofox {
 // GetCamofoxName returns the name used for the Camofox PersistentVolumeClaim.
 func (h *HermesAgent) GetCamofoxName() string {
 	return h.Name + "-camofox"
-}
-
-// GetHermesSecretName returns the name of the operator-managed Secret for the hermes-agent container.
-func (h *HermesAgent) GetHermesSecretName() string {
-	return h.GetHermesName()
 }
 
 // +kubebuilder:object:root=true

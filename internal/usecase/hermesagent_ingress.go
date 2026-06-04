@@ -50,6 +50,7 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "Ingress updated", "namespacedName", nsName)
+		ha.Status.ManagedResources.Ingress = ha.Name
 		return ctrl.Result{}, nil
 	}
 
@@ -61,6 +62,7 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "Ingress created", "namespacedName", nsName)
+	ha.Status.ManagedResources.Ingress = ha.Name
 	return ctrl.Result{}, nil
 }
 

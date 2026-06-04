@@ -37,6 +37,7 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "Service updated", "namespacedName", nsName)
+		ha.Status.ManagedResources.Service = ha.Name
 		return ctrl.Result{}, nil
 	}
 
@@ -48,6 +49,7 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "Service created", "namespacedName", nsName)
+	ha.Status.ManagedResources.Service = ha.Name
 	return ctrl.Result{}, nil
 }
 

@@ -32,7 +32,7 @@ import (
 
 func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
-	secretNsName := types.NamespacedName{Name: ha.GetHermesSecretName(), Namespace: ha.Namespace}
+	secretNsName := types.NamespacedName{Name: ha.GetHermesName(), Namespace: ha.Namespace}
 
 	existing, err := u.kube.GetSecret(ctx, GetSecretParam{NamespacedName: secretNsName})
 	if err != nil {
@@ -43,6 +43,7 @@ func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agen
 
 	// Never update — preserve the generated secret value across reconciles.
 	if existing != nil {
+		ha.Status.ManagedResources.HermesSecret = ha.GetHermesName()
 		return ctrl.Result{}, nil
 	}
 
@@ -60,6 +61,7 @@ func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agen
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "Hermes Secret created", "namespacedName", nsName)
+	ha.Status.ManagedResources.HermesSecret = ha.GetHermesName()
 	return ctrl.Result{}, nil
 }
 
@@ -70,7 +72,7 @@ func buildHermesSecret(ha *agentsv1alpha1.HermesAgent) (*corev1.Secret, error) {
 	}
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ha.GetHermesSecretName(),
+			Name:      ha.GetHermesName(),
 			Namespace: ha.Namespace,
 			Labels:    resourceLabels(ha),
 		},

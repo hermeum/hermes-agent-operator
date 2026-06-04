@@ -45,6 +45,7 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "Hermes ConfigMap updated", "namespacedName", nsName)
+		ha.Status.ManagedResources.HermesConfigMap = ha.GetHermesName()
 		return ctrl.Result{}, nil
 	}
 
@@ -56,6 +57,7 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "Hermes ConfigMap created", "namespacedName", nsName)
+	ha.Status.ManagedResources.HermesConfigMap = ha.GetHermesName()
 	return ctrl.Result{}, nil
 }
 
