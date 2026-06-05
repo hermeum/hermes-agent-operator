@@ -8,10 +8,11 @@ metadata:
 spec:
   hermes:
     config:
-      model:
-        base_url: https://ollama.com/v1
-        default: kimi-k2.6
-        provider: ollama-cloud
+      raw:
+        model:
+          base_url: https://ollama.com/v1
+          default: kimi-k2.6
+          provider: ollama-cloud
     workspace:
       files:
         SOUL.md: |
