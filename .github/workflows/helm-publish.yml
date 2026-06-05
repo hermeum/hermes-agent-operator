@@ -23,7 +23,7 @@ jobs:
 
       - name: Log in to GHCR OCI registry
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+          echo "${{ secrets.GHCR_TOKEN }}" | helm registry login ghcr.io \
             --username ${{ github.actor }} \
             --password-stdin
 
