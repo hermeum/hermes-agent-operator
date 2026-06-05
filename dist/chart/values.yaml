@@ -19,7 +19,7 @@ manager:
     repository: ghcr.io/noahingh/hermes-agent-operator
     ## Image tag (defaults to Chart.appVersion if not set)
     ##
-    tag: "latest"
+    # tag: "latest"
     pullPolicy: IfNotPresent
 
   ## Arguments

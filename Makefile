@@ -311,7 +311,7 @@ helm-rollback: ## Rollback to previous Helm release.
 
 .PHONY: helm-package
 helm-package: ## Package the Helm chart for distribution.
-	$(HELM) package $(HELM_CHART_DIR) --destination dist --version $(HELM_CHART_VERSION)
+	$(HELM) package $(HELM_CHART_DIR) --destination dist --version $(HELM_CHART_VERSION) $(HELM_EXTRA_ARGS)
 
 .PHONY: helm-push
 helm-push: helm-package ## Push the packaged Helm chart to HELM_REGISTRY (default: oci://ghcr.io/noahingh).

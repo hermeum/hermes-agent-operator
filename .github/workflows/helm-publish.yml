@@ -1,0 +1,31 @@
+name: Helm Publish
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  package-and-push:
+    permissions:
+      contents: read
+      packages: write
+    name: Package and Push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Helm
+        run: make install-helm
+
+      - name: Log in to GHCR OCI registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username ${{ github.actor }} \
+            --password-stdin
+
+      - name: Package and push Helm chart
+        run: make helm-push
