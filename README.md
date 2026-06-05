@@ -1,6 +1,8 @@
 # hermes-agent-operator
 
-Self-hosting [Hermes agent](https://github.com/nousresearch/hermes-agent) on Kubernetes in a declarative, reproducible manner. Declare your agent's full configuration — model settings, workspace files, skills, plugins, crons, and bundles — as a Kubernetes custom resource. 
+![Hermes Agent Goher](./img/hermes-agent-gopher.png)
+
+Self-hosting [Hermes agent](https://github.com/nousresearch/hermes-agent) on Kubernetes in a declarative, reproducible manner. 
 
 ## Why
 
@@ -54,9 +56,23 @@ kubectl get hermesagent my-agent
 kubectl get pods -l app.kubernetes.io/instance=my-agent
 ```
 
----
-
 ## Configuration
+
+- [`hermes.config`](#hermesconfig)
+- [`hermes.storage`](#hermesstorage)
+- [`hermes.workspace`](#hermesworkspace)
+- [`hermes.plugins`](#hermesplugins)
+- [`hermes.skills`](#hermesskills)
+- [`hermes.crons`](#hermescrons)
+- [`hermes.bundles`](#hermesbundles)
+- [`hermes.env` / `hermes.envFrom`](#hermesenv--hermesenvfrom)
+- [`hermes.resources`](#hermesresources)
+- [`hermes.initChownData`](#hermesinit​chowndata)
+- [`searxng`](#searxng)
+- [`camofox`](#camofox)
+- [`security`](#security)
+- [`networking`](#networking)
+- [`suspend`](#suspend)
 
 ### `hermes.config`
 
@@ -82,8 +98,6 @@ hermes:
       enabled: true
 ```
 
----
-
 ### `hermes.storage`
 
 Persistent volume for agent data at `/opt/data`. Without persistence, data is lost on pod restart.
@@ -98,7 +112,6 @@ hermes:
       existingClaim: my-pvc        # optional; omit to provision a new PVC automatically
 ```
 
----
 
 ### `hermes.workspace`
 
@@ -115,7 +128,6 @@ hermes:
         ...
 ```
 
----
 
 ### `hermes.plugins`
 
@@ -128,7 +140,6 @@ hermes:
       enable: true                 # optional; defaults to true (auto-enable after install)
 ```
 
----
 
 ### `hermes.skills`
 
@@ -143,7 +154,6 @@ hermes:
       force: false                 # optional; set true to install despite a blocked scan verdict
 ```
 
----
 
 ### `hermes.crons`
 
@@ -165,7 +175,6 @@ hermes:
       profile: default             # optional; Hermes profile name to run under
 ```
 
----
 
 ### `hermes.bundles`
 
@@ -182,7 +191,6 @@ hermes:
       force: false                 # optional; set true to overwrite an existing bundle with the same name
 ```
 
----
 
 ### `hermes.env` / `hermes.envFrom`
 
@@ -200,7 +208,6 @@ hermes:
         name: my-agent-config
 ```
 
----
 
 ### `hermes.resources`
 
@@ -217,7 +224,6 @@ hermes:
       memory: 1Gi
 ```
 
----
 
 ### `hermes.initChownData`
 
@@ -228,7 +234,6 @@ hermes:
   initChownData: true              # optional; defaults to false
 ```
 
----
 
 ### `searxng`
 
@@ -269,7 +274,6 @@ searxng:
       value: my-secret
 ```
 
----
 
 ### `camofox`
 
@@ -298,7 +302,6 @@ camofox:
       value: ":99"
 ```
 
----
 
 ### `security`
 
@@ -330,7 +333,6 @@ security:
             protocol: TCP
 ```
 
----
 
 ### `networking`
 
@@ -364,7 +366,6 @@ networking:
         secretName: agent-tls
 ```
 
----
 
 ### `suspend`
 
@@ -374,7 +375,6 @@ Pause the agent by scaling its StatefulSet to 0 without deleting the resource or
 suspend: true                      # optional; defaults to false
 ```
 
----
 
 ## Contributing
 
