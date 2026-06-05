@@ -1,6 +1,6 @@
 # hermes-agent-operator
 
-![Hermes Agent Goher](./img/hermes-agent-gopher.png)
+<p align="center"><img alt="Hermes Gopher" src="./img/hermes-agent-gopher.png" width="250" height="250"/></p>
 
 Self-hosting [Hermes agent](https://github.com/nousresearch/hermes-agent) on Kubernetes in a declarative, reproducible manner. 
 
