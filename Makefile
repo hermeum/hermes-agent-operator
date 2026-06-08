@@ -271,7 +271,7 @@ HELM_CHART_DIR ?= dist/chart
 ## Additional arguments to pass to helm commands
 HELM_EXTRA_ARGS ?=
 ## OCI registry to push the Helm chart to
-HELM_REGISTRY ?= oci://ghcr.io/hermeum
+HELM_REGISTRY ?= oci://ghcr.io/hermeum/charts
 ## Version of the Helm chart to package and push
 HELM_CHART_VERSION ?= $(shell grep '^version:' $(HELM_CHART_DIR)/Chart.yaml 2>/dev/null | awk '{print $$2}')
 
