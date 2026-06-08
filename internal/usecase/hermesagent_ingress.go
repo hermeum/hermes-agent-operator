@@ -25,7 +25,6 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 	if !ing.IsEnabled() {
 		if existing != nil {
 			err := u.kube.DeleteIngress(ctx, DeleteIngressParam{NamespacedName: nsName})
-			u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
@@ -42,7 +41,6 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateIngressOwnedByHermesAgent(ctx, UpdateIngressParam{HermesAgent: ha, Ingress: desired})
-		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
@@ -52,7 +50,6 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 	}
 
 	err = u.kube.CreateIngressOwnedByHermesAgent(ctx, CreateIngressOfHermesAgentParam{HermesAgent: ha, Ingress: desired})
-	u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
