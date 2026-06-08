@@ -227,7 +227,9 @@ hermes:
 
 ### `hermes.initChownData`
 
-Run an init container that sets `/opt/data` ownership to the hermes user (`10000:10000`). Useful when using a pre-existing PVC whose data was written by a different user.
+Run an init container that sets `/opt/data` ownership to the hermes user (`10000:10000`). Useful when using an existing PVC whose data was written by a different user.
+
+> **Note:** Because the container starts as root (see [FAQ](#faq)), running the `hermes` command inside the container will also change the ownership of files under `/opt/data` to the hermes user (`10000:10000`).
 
 ```yaml
 hermes:
@@ -374,6 +376,21 @@ Pause the agent by scaling its StatefulSet to 0 without deleting the resource or
 ```yaml
 suspend: true                      # optional; defaults to false
 ```
+
+
+## FAQ
+
+**Q: How are things self-installed by Hermes managed via the custom resource?**
+
+They aren't. The operator only manages what is explicitly declared in the `HermesAgent` custom resource. Anything Hermes installs on its own at runtime (plugins, packages, etc.) is outside the operator's control and will not be reconciled.
+
+**Q: How do I make binaries, packages, etc. persistent?**
+
+Only the `HERMES_HOME` path (`/opt/data`) is persisted across pod restarts. Anything that needs to survive a restart must be placed under `HERMES_HOME`. The operator sets `HOME=/opt/data/home` so tools that respect `$HOME` will write there automatically.
+
+**Q: Why does the Hermes container run as root?**
+
+The official Hermes image uses [s6-overlay](https://github.com/just-containers/s6-overlay), which requires the process to start as root for service supervision setup. Once initialisation is complete, s6-overlay drops privileges and runs the agent as the `hermes` user (`10000:10000`).
 
 
 ## Contributing
