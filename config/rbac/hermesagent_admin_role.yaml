@@ -1,7 +1,7 @@
 # This rule is not used by the project hermes-agent-operator itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants full permissions ('*') over agents.hermes-agent-operator.xyz.
+# Grants full permissions ('*') over agents.hermeum.app.
 # This role is intended for users authorized to modify roles and bindings within the cluster,
 # enabling them to delegate specific permissions to other users or groups as needed.
 
@@ -14,13 +14,13 @@ metadata:
   name: hermesagent-admin-role
 rules:
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents
   verbs:
   - '*'
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents/status
   verbs:

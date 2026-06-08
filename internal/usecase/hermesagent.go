@@ -4,14 +4,14 @@ import (
 	"context"
 	"time"
 
-	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
+	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
-	domain = "hermes-agent-operator.xyz"
+	domain = "hermeum.app"
 )
 
 type HermesAgentUseCase struct {

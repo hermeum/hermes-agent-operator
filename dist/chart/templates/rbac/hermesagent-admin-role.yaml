@@ -17,13 +17,13 @@ metadata:
   name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "hermesagent-admin-role" "context" $) }}
 rules:
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents
   verbs:
   - '*'
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents/status
   verbs:

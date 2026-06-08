@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
+	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"sort"
 	"strings"
 	"time"

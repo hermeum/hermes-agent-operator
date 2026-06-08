@@ -5,7 +5,7 @@ import (
 	"maps"
 	"time"
 
-	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
+	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

@@ -2,7 +2,7 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/agents.hermes-agent-operator.xyz_hermesagents.yaml
+- bases/agents.hermeum.app_hermesagents.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

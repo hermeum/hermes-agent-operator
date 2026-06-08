@@ -1,4 +1,4 @@
-apiVersion: agents.hermes-agent-operator.xyz/v1alpha1
+apiVersion: agents.hermeum.app/v1alpha1
 kind: HermesAgent
 metadata:
   labels:

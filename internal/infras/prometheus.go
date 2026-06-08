@@ -3,7 +3,7 @@ package infras
 import (
 	"context"
 
-	"noahingh/hermes-agent-operator/internal/usecase"
+	"hermeum/hermes-agent-operator/internal/usecase"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/log"

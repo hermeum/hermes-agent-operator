@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
+	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 )
 
 func ptrBool(b bool) *bool { return &b }

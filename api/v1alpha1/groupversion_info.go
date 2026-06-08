@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package v1alpha1 contains API Schema definitions for the agents v1alpha1 API group.
 // +kubebuilder:object:generate=true
-// +groupName=agents.hermes-agent-operator.xyz
+// +groupName=agents.hermeum.app
 package v1alpha1
 
 import (
@@ -27,7 +27,7 @@ import (
 var (
 	// SchemeGroupVersion is group version used to register these objects.
 	// This name is used by applyconfiguration generators (e.g. controller-gen).
-	SchemeGroupVersion = schema.GroupVersion{Group: "agents.hermes-agent-operator.xyz", Version: "v1alpha1"}
+	SchemeGroupVersion = schema.GroupVersion{Group: "agents.hermeum.app", Version: "v1alpha1"}
 
 	// GroupVersion is an alias for SchemeGroupVersion, for backward compatibility.
 	GroupVersion = SchemeGroupVersion

@@ -5,16 +5,16 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: hermes-agent-operator
     control-plane: controller-manager
-  name: hermes-agent-operator-system
+  name: hermes-agent
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: hermesagents.agents.hermes-agent-operator.xyz
+  name: hermesagents.agents.hermeum.app
 spec:
-  group: agents.hermes-agent-operator.xyz
+  group: agents.hermeum.app
   names:
     kind: HermesAgent
     listKind: HermesAgentList
@@ -6735,6 +6735,46 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              managedResources:
+                description: managedResources describes the Kubernetes resources currently
+                  owned by this HermesAgent.
+                properties:
+                  hermesConfigMap:
+                    description: hermesConfigMap is the name of the Hermes configuration
+                      ConfigMap.
+                    type: string
+                  hermesSecret:
+                    description: hermesSecret is the name of the Hermes API key Secret.
+                    type: string
+                  ingress:
+                    description: ingress is the name of the managed Ingress.
+                    type: string
+                  networkPolicy:
+                    description: networkPolicy is the name of the managed NetworkPolicy.
+                    type: string
+                  role:
+                    description: role is the name of the managed Role.
+                    type: string
+                  roleBinding:
+                    description: roleBinding is the name of the managed RoleBinding.
+                    type: string
+                  searxngConfigMap:
+                    description: searxngConfigMap is the name of the SearXNG configuration
+                      ConfigMap.
+                    type: string
+                  searxngSecret:
+                    description: searxngSecret is the name of the SearXNG Secret.
+                    type: string
+                  service:
+                    description: service is the name of the managed Service.
+                    type: string
+                  serviceAccount:
+                    description: serviceAccount is the name of the managed ServiceAccount.
+                    type: string
+                  statefulSet:
+                    description: statefulSet is the name of the managed StatefulSet.
+                    type: string
+                type: object
               phase:
                 description: |-
                   phase is the current lifecycle phase of the HermesAgent, mirroring the underlying pod phase.
@@ -6756,7 +6796,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: hermes-agent-operator
   name: hermes-agent-operator-controller-manager
-  namespace: hermes-agent-operator-system
+  namespace: hermes-agent
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -6765,7 +6805,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: hermes-agent-operator
   name: hermes-agent-operator-leader-election-role
-  namespace: hermes-agent-operator-system
+  namespace: hermes-agent
 rules:
 - apiGroups:
   - ""
@@ -6808,13 +6848,13 @@ metadata:
   name: hermes-agent-operator-hermesagent-admin-role
 rules:
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents
   verbs:
   - '*'
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents/status
   verbs:
@@ -6829,7 +6869,7 @@ metadata:
   name: hermes-agent-operator-hermesagent-editor-role
 rules:
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents
   verbs:
@@ -6841,7 +6881,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents/status
   verbs:
@@ -6856,7 +6896,7 @@ metadata:
   name: hermes-agent-operator-hermesagent-viewer-role
 rules:
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents
   verbs:
@@ -6864,7 +6904,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents/status
   verbs:
@@ -6900,7 +6940,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents
   verbs:
@@ -6912,13 +6952,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents/finalizers
   verbs:
   - update
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents/status
   verbs:
@@ -6999,7 +7039,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/name: hermes-agent-operator
   name: hermes-agent-operator-leader-election-rolebinding
-  namespace: hermes-agent-operator-system
+  namespace: hermes-agent
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -7007,7 +7047,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: hermes-agent-operator-controller-manager
-  namespace: hermes-agent-operator-system
+  namespace: hermes-agent
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -7023,7 +7063,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: hermes-agent-operator-controller-manager
-  namespace: hermes-agent-operator-system
+  namespace: hermes-agent
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -7036,7 +7076,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: hermes-agent-operator-controller-manager
-  namespace: hermes-agent-operator-system
+  namespace: hermes-agent
 ---
 apiVersion: v1
 kind: Service
@@ -7046,7 +7086,7 @@ metadata:
     app.kubernetes.io/name: hermes-agent-operator
     control-plane: controller-manager
   name: hermes-agent-operator-controller-manager-metrics-service
-  namespace: hermes-agent-operator-system
+  namespace: hermes-agent
 spec:
   ports:
   - name: https
@@ -7065,7 +7105,7 @@ metadata:
     app.kubernetes.io/name: hermes-agent-operator
     control-plane: controller-manager
   name: hermes-agent-operator-controller-manager
-  namespace: hermes-agent-operator-system
+  namespace: hermes-agent
 spec:
   replicas: 1
   selector:
@@ -7087,7 +7127,7 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
-        image: ghcr.io/noahingh/hermes-agent-operator:latest
+        image: ghcr.io/hermeum/hermes-agent-operator:latest
         livenessProbe:
           httpGet:
             path: /healthz

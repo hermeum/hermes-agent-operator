@@ -3,7 +3,7 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 cliVersion: 4.14.0
-domain: hermes-agent-operator.xyz
+domain: hermeum.app
 layout:
 - go.kubebuilder.io/v4
 plugins:
@@ -11,15 +11,15 @@ plugins:
     manifests: dist/install.yaml
     output: dist
 projectName: hermes-agent-operator
-repo: noahingh/hermes-agent-operator
+repo: hermeum/hermes-agent-operator
 resources:
 - api:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: hermes-agent-operator.xyz
+  domain: hermeum.app
   group: agents
   kind: HermesAgent
-  path: noahingh/hermes-agent-operator/api/v1alpha1
+  path: hermeum/hermes-agent-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

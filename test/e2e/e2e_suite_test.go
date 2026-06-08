@@ -28,7 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"noahingh/hermes-agent-operator/test/utils"
+	"hermeum/hermes-agent-operator/test/utils"
 )
 
 var (

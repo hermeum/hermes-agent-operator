@@ -33,7 +33,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
+	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

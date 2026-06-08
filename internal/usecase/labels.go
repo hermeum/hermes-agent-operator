@@ -1,6 +1,6 @@
 package usecase
 
-import agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
+import agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 
 const (
 	labelName      = "app.kubernetes.io/name"

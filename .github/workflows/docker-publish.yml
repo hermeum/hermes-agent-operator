@@ -35,5 +35,5 @@ jobs:
           platforms: linux/arm64,linux/amd64
           push: true
           tags: |
-            ghcr.io/noahingh/hermes-agent-operator:${{ github.ref_name }}
-            ghcr.io/noahingh/hermes-agent-operator:latest
+            ghcr.io/hermeum/hermes-agent-operator:${{ github.ref_name }}
+            ghcr.io/hermeum/hermes-agent-operator:latest

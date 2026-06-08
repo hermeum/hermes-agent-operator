@@ -1,4 +1,4 @@
-module noahingh/hermes-agent-operator
+module hermeum/hermes-agent-operator
 
 go 1.25.7
 

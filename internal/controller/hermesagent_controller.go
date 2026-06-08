@@ -18,9 +18,9 @@ package controller
 
 import (
 	"context"
-	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
-	"noahingh/hermes-agent-operator/internal/infras"
-	"noahingh/hermes-agent-operator/internal/usecase"
+	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
+	"hermeum/hermes-agent-operator/internal/infras"
+	"hermeum/hermes-agent-operator/internal/usecase"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,9 +40,9 @@ type HermesAgentReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=agents.hermes-agent-operator.xyz,resources=hermesagents,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=agents.hermes-agent-operator.xyz,resources=hermesagents/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=agents.hermes-agent-operator.xyz,resources=hermesagents/finalizers,verbs=update
+// +kubebuilder:rbac:groups=agents.hermeum.app,resources=hermesagents,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=agents.hermeum.app,resources=hermesagents/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=agents.hermeum.app,resources=hermesagents/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch

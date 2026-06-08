@@ -17,7 +17,7 @@ Hermes agent is a powerful tool for automating tasks — but it is designed for 
 ### 1. Install the operator
 
 ```sh
-helm install hermes-agent-operator oci://ghcr.io/noahingh/charts/hermes-agent-operator \
+helm install hermes-agent-operator oci://ghcr.io/hermeum/charts/hermes-agent-operator \
   --namespace hermes-agent --create-namespace
 ```
 
@@ -32,7 +32,7 @@ kubectl create secret generic my-hermes-secret \
 
 ```sh
 kubectl apply -f - <<EOF
-apiVersion: agents.hermes-agent-operator.xyz/v1alpha1
+apiVersion: agents.hermeum.app/v1alpha1
 kind: HermesAgent
 metadata:
   name: my-agent

@@ -35,8 +35,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
-	"noahingh/hermes-agent-operator/internal/controller"
+	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
+	"hermeum/hermes-agent-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -160,7 +160,7 @@ func main() {
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "24daf6e5.hermes-agent-operator.xyz",
+		LeaderElectionID:       "24daf6e5.hermeum.app",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly

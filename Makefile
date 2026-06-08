@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= ghcr.io/noahingh/hermes-agent-operator:latest
+IMG ?= ghcr.io/hermeum/hermes-agent-operator:latest
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
@@ -263,7 +263,7 @@ endef
 ## Helm binary to use for deploying the chart
 HELM ?= helm
 ## Namespace to deploy the Helm release
-HELM_NAMESPACE ?= hermes-agent-operator-system
+HELM_NAMESPACE ?= hermes-agent
 ## Name of the Helm release
 HELM_RELEASE ?= hermes-agent-operator
 ## Path to the Helm chart directory
@@ -271,7 +271,7 @@ HELM_CHART_DIR ?= dist/chart
 ## Additional arguments to pass to helm commands
 HELM_EXTRA_ARGS ?=
 ## OCI registry to push the Helm chart to
-HELM_REGISTRY ?= oci://ghcr.io/noahingh
+HELM_REGISTRY ?= oci://ghcr.io/hermeum
 ## Version of the Helm chart to package and push
 HELM_CHART_VERSION ?= $(shell grep '^version:' $(HELM_CHART_DIR)/Chart.yaml 2>/dev/null | awk '{print $$2}')
 
@@ -314,5 +314,5 @@ helm-package: ## Package the Helm chart for distribution.
 	$(HELM) package $(HELM_CHART_DIR) --destination dist --version $(HELM_CHART_VERSION) $(HELM_EXTRA_ARGS)
 
 .PHONY: helm-push
-helm-push: helm-package ## Push the packaged Helm chart to HELM_REGISTRY (default: oci://ghcr.io/noahingh).
+helm-push: helm-package ## Push the packaged Helm chart to HELM_REGISTRY (default: oci://ghcr.io/hermeum).
 	$(HELM) push dist/$(HELM_RELEASE)-$(HELM_CHART_VERSION).tgz $(HELM_REGISTRY)

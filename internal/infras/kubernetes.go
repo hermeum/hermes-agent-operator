@@ -3,8 +3,8 @@ package infras
 import (
 	"context"
 
-	agentsv1alpha1 "noahingh/hermes-agent-operator/api/v1alpha1"
-	"noahingh/hermes-agent-operator/internal/usecase"
+	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
+	"hermeum/hermes-agent-operator/internal/usecase"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"

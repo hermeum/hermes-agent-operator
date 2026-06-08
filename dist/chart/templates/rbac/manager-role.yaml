@@ -35,7 +35,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents
   verbs:
@@ -47,13 +47,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents/finalizers
   verbs:
   - update
 - apiGroups:
-  - agents.hermes-agent-operator.xyz
+  - agents.hermeum.app
   resources:
   - hermesagents/status
   verbs:
