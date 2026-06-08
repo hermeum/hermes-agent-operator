@@ -28,7 +28,6 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	if !np.IsEnabled() {
 		if existing != nil {
 			err := u.kube.DeleteNetworkPolicy(ctx, DeleteNetworkPolicyParam{NamespacedName: nsName})
-			u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
@@ -45,7 +44,6 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateNetworkPolicyOwnedByHermesAgent(ctx, UpdateNetworkPolicyParam{HermesAgent: ha, NetworkPolicy: desired})
-		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
@@ -55,7 +53,6 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	}
 
 	err = u.kube.CreateNetworkPolicyOwnedByHermesAgent(ctx, CreateNetworkPolicyOfHermesAgentParam{HermesAgent: ha, NetworkPolicy: desired})
-	u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}

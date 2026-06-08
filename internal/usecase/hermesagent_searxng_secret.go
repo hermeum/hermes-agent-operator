@@ -26,7 +26,6 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 	if !ha.GetSearXNG().IsEnabled() {
 		if existing != nil {
 			err := u.kube.DeleteSecret(ctx, DeleteSecretParam{NamespacedName: secretNsName})
-			u.tel.IncSecretOperation(ctx, IncSecretOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
@@ -50,7 +49,6 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	err = u.kube.CreateSecretOwnedByHermesAgent(ctx, CreateSecretOfHermesAgentParam{HermesAgent: ha, Secret: secret})
-	u.tel.IncSecretOperation(ctx, IncSecretOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}

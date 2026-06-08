@@ -128,10 +128,3 @@ func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam
 	u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultSuccess})
 	return ctrl.Result{}, nil
 }
-
-func resultOf(err error) Result {
-	if err != nil {
-		return ResultError
-	}
-	return ResultSuccess
-}

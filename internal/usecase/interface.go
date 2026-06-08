@@ -22,17 +22,6 @@ const (
 
 func (r Result) String() string { return string(r) }
 
-// Operation is the kind of write performed on a child resource, used as a metric label.
-type Operation string
-
-const (
-	OperationCreate Operation = "create"
-	OperationUpdate Operation = "update"
-	OperationDelete Operation = "delete"
-)
-
-func (o Operation) String() string { return string(o) }
-
 // Telemetry collects logs and metrics emitted by the usecase. Each metric has
 // its own specific method; the implementation owns the underlying collector names.
 type Telemetry interface {
@@ -44,15 +33,6 @@ type Telemetry interface {
 	// Metrics
 	IncReconcile(ctx context.Context, param IncReconcileParam)
 	ObserveReconcileDuration(ctx context.Context, param ObserveReconcileDurationParam)
-	IncConfigMapOperation(ctx context.Context, param IncConfigMapOperationParam)
-	IncSecretOperation(ctx context.Context, param IncSecretOperationParam)
-	IncStatefulSetOperation(ctx context.Context, param IncStatefulSetOperationParam)
-	IncServiceAccountOperation(ctx context.Context, param IncServiceAccountOperationParam)
-	IncRoleOperation(ctx context.Context, param IncRoleOperationParam)
-	IncRoleBindingOperation(ctx context.Context, param IncRoleBindingOperationParam)
-	IncServiceOperation(ctx context.Context, param IncServiceOperationParam)
-	IncIngressOperation(ctx context.Context, param IncIngressOperationParam)
-	IncNetworkPolicyOperation(ctx context.Context, param IncNetworkPolicyOperationParam)
 	IncNotFound(ctx context.Context, param IncNotFoundParam)
 }
 
@@ -64,60 +44,6 @@ type IncReconcileParam struct {
 type ObserveReconcileDurationParam struct {
 	NamespacedName types.NamespacedName
 	Seconds        float64
-}
-
-type IncConfigMapOperationParam struct {
-	NamespacedName types.NamespacedName
-	Operation      Operation
-	Result         Result
-}
-
-type IncSecretOperationParam struct {
-	NamespacedName types.NamespacedName
-	Operation      Operation
-	Result         Result
-}
-
-type IncStatefulSetOperationParam struct {
-	NamespacedName types.NamespacedName
-	Operation      Operation
-	Result         Result
-}
-
-type IncServiceAccountOperationParam struct {
-	NamespacedName types.NamespacedName
-	Operation      Operation
-	Result         Result
-}
-
-type IncRoleOperationParam struct {
-	NamespacedName types.NamespacedName
-	Operation      Operation
-	Result         Result
-}
-
-type IncRoleBindingOperationParam struct {
-	NamespacedName types.NamespacedName
-	Operation      Operation
-	Result         Result
-}
-
-type IncServiceOperationParam struct {
-	NamespacedName types.NamespacedName
-	Operation      Operation
-	Result         Result
-}
-
-type IncIngressOperationParam struct {
-	NamespacedName types.NamespacedName
-	Operation      Operation
-	Result         Result
-}
-
-type IncNetworkPolicyOperationParam struct {
-	NamespacedName types.NamespacedName
-	Operation      Operation
-	Result         Result
 }
 
 type IncNotFoundParam struct {
