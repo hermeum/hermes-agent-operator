@@ -31,13 +31,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// telemetry is the Telemetry implementation used by Reconcile.
-var telemetry usecase.Telemetry = infras.NewPrometheusTelemetry()
-
 // HermesAgentReconciler reconciles a HermesAgent object
 type HermesAgentReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme    *runtime.Scheme
+	Telemetry usecase.Telemetry
 }
 
 // +kubebuilder:rbac:groups=agents.hermeum.app,resources=hermesagents,verbs=get;list;watch;create;update;patch;delete
@@ -56,7 +54,7 @@ type HermesAgentReconciler struct {
 
 func (r *HermesAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	kube := infras.NewKubernetesClient(r.Client, r.Scheme)
-	uc := usecase.NewHermesAgentUseCase(kube, telemetry)
+	uc := usecase.NewHermesAgentUseCase(kube, r.Telemetry)
 	result, err := uc.Reconcile(ctx, usecase.ReconcileParam{
 		NamespacedName: req.NamespacedName,
 	})
