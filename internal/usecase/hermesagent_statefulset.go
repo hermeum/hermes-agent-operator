@@ -31,8 +31,6 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		NamespacedName: nsName,
 	})
 	if err != nil {
-		u.tel.Error(ctx, err, "Failed to get StatefulSet", "namespacedName", nsName)
-		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
@@ -44,8 +42,6 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
 		u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
 		if err != nil {
-			u.tel.Error(ctx, err, "Failed to update StatefulSet", "namespacedName", nsName)
-			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		stsOp = "updated"
@@ -53,8 +49,6 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		err = u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{HermesAgent: ha, StatefulSet: desired})
 		u.tel.IncStatefulSetOperation(ctx, IncStatefulSetOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 		if err != nil {
-			u.tel.Error(ctx, err, "Failed to create StatefulSet", "namespacedName", nsName)
-			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		stsOp = "created"
@@ -63,8 +57,6 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	ha.Status.ManagedResources.StatefulSet = ha.Name
 	ha.Status.Phase = u.derivePhase(ctx, ha)
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
-		u.tel.Error(ctx, err, "Failed to update HermesAgent status", "namespacedName", nsName)
-		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 

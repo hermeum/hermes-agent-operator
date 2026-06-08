@@ -30,7 +30,7 @@ func NewHermesAgentUseCase(kube Kubernetes, tel Telemetry) *HermesAgentUseCase {
 	}
 }
 
-func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam) (ctrl.Result, error) {
+func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam) (ctrl.Result, error) { //nolint:gocyclo
 	start := time.Now()
 	defer func() {
 		u.tel.ObserveReconcileDuration(ctx, ObserveReconcileDurationParam{
@@ -58,33 +58,73 @@ func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam
 	ha.Status.ManagedResources = agentsv1alpha1.ManagedResources{}
 
 	if result, err := u.reconcileHermesConfigMap(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile Hermes ConfigMap", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 	if result, err := u.reconcileHermesSecret(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile Hermes Secret", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 	if result, err := u.reconcileSearXNGConfigMap(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile SearXNG ConfigMap", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 	if result, err := u.reconcileSearXNGSecret(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile SearXNG Secret", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 	if result, err := u.reconcileServiceAccount(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile ServiceAccount", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 	if result, err := u.reconcileRole(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile Role", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 	if result, err := u.reconcileService(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile Service", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 	if result, err := u.reconcileIngress(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile Ingress", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 	if result, err := u.reconcileNetworkPolicy(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile NetworkPolicy", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 	if result, err := u.reconcileStatefulSet(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile StatefulSet", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
 		return result, err
 	}
 
