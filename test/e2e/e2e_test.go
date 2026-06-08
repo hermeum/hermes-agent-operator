@@ -34,7 +34,7 @@ import (
 )
 
 // namespace where the project is deployed in
-const namespace = "hermes-agent-operator-system"
+const namespace = "hermes-agent"
 
 // serviceAccountName created for the project
 const serviceAccountName = "hermes-agent-operator-controller-manager"
