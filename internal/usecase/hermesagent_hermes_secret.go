@@ -36,8 +36,6 @@ func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agen
 
 	existing, err := u.kube.GetSecret(ctx, GetSecretParam{NamespacedName: secretNsName})
 	if err != nil {
-		u.tel.Error(ctx, err, "Failed to get Hermes Secret", "namespacedName", nsName)
-		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
@@ -49,15 +47,11 @@ func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agen
 
 	secret, err := buildHermesSecret(ha)
 	if err != nil {
-		u.tel.Error(ctx, err, "Failed to build Hermes Secret", "namespacedName", nsName)
-		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	err = u.kube.CreateSecretOwnedByHermesAgent(ctx, CreateSecretOfHermesAgentParam{HermesAgent: ha, Secret: secret})
 	u.tel.IncSecretOperation(ctx, IncSecretOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 	if err != nil {
-		u.tel.Error(ctx, err, "Failed to create Hermes Secret", "namespacedName", nsName)
-		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "Hermes Secret created", "namespacedName", nsName)

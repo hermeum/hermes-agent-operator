@@ -18,8 +18,6 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 
 	existing, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{NamespacedName: cmNsName})
 	if err != nil {
-		u.tel.Error(ctx, err, "Failed to get SearXNG ConfigMap", "namespacedName", nsName)
-		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
@@ -30,8 +28,6 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 		err := u.kube.DeleteConfigMap(ctx, DeleteConfigMapParam{NamespacedName: cmNsName})
 		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
 		if err != nil {
-			u.tel.Error(ctx, err, "Failed to delete SearXNG ConfigMap", "namespacedName", nsName)
-			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "SearXNG ConfigMap deleted", "namespacedName", nsName)
@@ -44,8 +40,6 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 		err := u.kube.UpdateConfigMapOwnedByHermesAgent(ctx, UpdateConfigMapParam{HermesAgent: ha, ConfigMap: desired})
 		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
 		if err != nil {
-			u.tel.Error(ctx, err, "Failed to update SearXNG ConfigMap", "namespacedName", nsName)
-			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "SearXNG ConfigMap updated", "namespacedName", nsName)
@@ -56,8 +50,6 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 	err = u.kube.CreateConfigMapOwnedByHermesAgent(ctx, CreateConfigMapOfHermesAgentParam{HermesAgent: ha, ConfigMap: desired})
 	u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 	if err != nil {
-		u.tel.Error(ctx, err, "Failed to create SearXNG ConfigMap", "namespacedName", nsName)
-		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "SearXNG ConfigMap created", "namespacedName", nsName)
