@@ -218,7 +218,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		}, ha.GetHermes().GetPorts()...),
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount + "/home"},
+			{Name: "HOME", Value: hermesHomeMount},
 			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:   ha.GetHermes().GetEnvFrom(),
@@ -321,6 +321,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{"chown -R 10000:10000 /opt/data"},
+			Env: append([]corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "HOME", Value: hermesHomeMount},
+				{Name: "PATH", Value: hermesPathEnv},
+			}, ha.GetHermes().GetEnv()...),
+			EnvFrom: ha.GetHermes().GetEnvFrom(),
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
 			},
@@ -335,10 +341,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{buildConfigScript()},
-			Env: []corev1.EnvVar{
+			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "HOME", Value: hermesHomeMount},
 				{Name: "PATH", Value: hermesPathEnv},
-			},
+			}, ha.GetHermes().GetEnv()...),
+			EnvFrom:         ha.GetHermes().GetEnvFrom(),
 			SecurityContext: buildInitContainerSecurityContext(),
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
@@ -356,10 +364,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
 		Args:            []string{buildWorkspaceScript()},
-		Env: []corev1.EnvVar{
+		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount},
 			{Name: "PATH", Value: hermesPathEnv},
-		},
+		}, ha.GetHermes().GetEnv()...),
+		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
@@ -376,10 +386,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
 		Args:            []string{buildPluginsScript(plugins)},
-		Env: []corev1.EnvVar{
+		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount},
 			{Name: "PATH", Value: hermesPathEnv},
-		},
+		}, ha.GetHermes().GetEnv()...),
+		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
@@ -395,10 +407,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
 		Args:            []string{buildSkillsScript(skills)},
-		Env: []corev1.EnvVar{
+		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount},
 			{Name: "PATH", Value: hermesPathEnv},
-		},
+		}, ha.GetHermes().GetEnv()...),
+		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
@@ -414,10 +428,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
 		Args:            []string{buildBundlesScript(bundles)},
-		Env: []corev1.EnvVar{
+		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount},
 			{Name: "PATH", Value: hermesPathEnv},
-		},
+		}, ha.GetHermes().GetEnv()...),
+		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
@@ -433,10 +449,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
 		Args:            []string{buildCronsScript(crons)},
-		Env: []corev1.EnvVar{
+		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount},
 			{Name: "PATH", Value: hermesPathEnv},
-		},
+		}, ha.GetHermes().GetEnv()...),
+		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
