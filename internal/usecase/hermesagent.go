@@ -30,7 +30,7 @@ func NewHermesAgentUseCase(kube Kubernetes, tel Telemetry) *HermesAgentUseCase {
 	}
 }
 
-func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam) (ctrl.Result, error) {
+func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam) (ctrl.Result, error) { //nolint:gocyclo
 	start := time.Now()
 	defer func() {
 		u.tel.ObserveReconcileDuration(ctx, ObserveReconcileDurationParam{
