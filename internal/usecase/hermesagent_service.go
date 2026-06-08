@@ -19,6 +19,8 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 
 	existing, err := u.kube.GetService(ctx, GetServiceParam{NamespacedName: nsName})
 	if err != nil {
+		u.tel.Error(ctx, err, "Failed to get Service", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
@@ -30,6 +32,8 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 		err := u.kube.UpdateServiceOwnedByHermesAgent(ctx, UpdateServiceParam{HermesAgent: ha, Service: desired})
 		u.tel.IncServiceOperation(ctx, IncServiceOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
 		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update Service", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "Service updated", "namespacedName", nsName)
@@ -40,6 +44,8 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 	err = u.kube.CreateServiceOwnedByHermesAgent(ctx, CreateServiceOfHermesAgentParam{HermesAgent: ha, Service: desired})
 	u.tel.IncServiceOperation(ctx, IncServiceOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 	if err != nil {
+		u.tel.Error(ctx, err, "Failed to create Service", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "Service created", "namespacedName", nsName)

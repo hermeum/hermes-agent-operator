@@ -20,6 +20,8 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 
 	existing, err := u.kube.GetSecret(ctx, GetSecretParam{NamespacedName: secretNsName})
 	if err != nil {
+		u.tel.Error(ctx, err, "Failed to get SearXNG Secret", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
@@ -30,6 +32,8 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 		err := u.kube.DeleteSecret(ctx, DeleteSecretParam{NamespacedName: secretNsName})
 		u.tel.IncSecretOperation(ctx, IncSecretOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
 		if err != nil {
+			u.tel.Error(ctx, err, "Failed to delete SearXNG Secret", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "SearXNG Secret deleted", "namespacedName", nsName)
@@ -44,11 +48,15 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 
 	secret, err := buildSearXNGSecret(ha)
 	if err != nil {
+		u.tel.Error(ctx, err, "Failed to build SearXNG Secret", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	err = u.kube.CreateSecretOwnedByHermesAgent(ctx, CreateSecretOfHermesAgentParam{HermesAgent: ha, Secret: secret})
 	u.tel.IncSecretOperation(ctx, IncSecretOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 	if err != nil {
+		u.tel.Error(ctx, err, "Failed to create SearXNG Secret", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "SearXNG Secret created", "namespacedName", nsName)

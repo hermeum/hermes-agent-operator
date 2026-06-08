@@ -21,6 +21,8 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 
 	existing, err := u.kube.GetNetworkPolicy(ctx, GetNetworkPolicyParam{NamespacedName: nsName})
 	if err != nil {
+		u.tel.Error(ctx, err, "Failed to get NetworkPolicy", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
@@ -32,6 +34,8 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 		err := u.kube.DeleteNetworkPolicy(ctx, DeleteNetworkPolicyParam{NamespacedName: nsName})
 		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
 		if err != nil {
+			u.tel.Error(ctx, err, "Failed to delete NetworkPolicy", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "NetworkPolicy deleted", "namespacedName", nsName)
@@ -44,6 +48,8 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 		err := u.kube.UpdateNetworkPolicyOwnedByHermesAgent(ctx, UpdateNetworkPolicyParam{HermesAgent: ha, NetworkPolicy: desired})
 		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationUpdate, Result: resultOf(err)})
 		if err != nil {
+			u.tel.Error(ctx, err, "Failed to update NetworkPolicy", "namespacedName", nsName)
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "NetworkPolicy updated", "namespacedName", nsName)
@@ -54,6 +60,8 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	err = u.kube.CreateNetworkPolicyOwnedByHermesAgent(ctx, CreateNetworkPolicyOfHermesAgentParam{HermesAgent: ha, NetworkPolicy: desired})
 	u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationCreate, Result: resultOf(err)})
 	if err != nil {
+		u.tel.Error(ctx, err, "Failed to create NetworkPolicy", "namespacedName", nsName)
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	u.tel.Debug(ctx, "NetworkPolicy created", "namespacedName", nsName)
