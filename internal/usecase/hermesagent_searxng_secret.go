@@ -24,15 +24,18 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 	}
 
 	if !ha.GetSearXNG().IsEnabled() {
-		if existing == nil {
-			return ctrl.Result{}, nil
+		if existing != nil {
+			err := u.kube.DeleteSecret(ctx, DeleteSecretParam{NamespacedName: secretNsName})
+			u.tel.IncSecretOperation(ctx, IncSecretOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Debug(ctx, "SearXNG Secret deleted", "namespacedName", nsName)
 		}
-		err := u.kube.DeleteSecret(ctx, DeleteSecretParam{NamespacedName: secretNsName})
-		u.tel.IncSecretOperation(ctx, IncSecretOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
-		if err != nil {
+		ha.Status.ManagedResources.SearXNGSecret = ""
+		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "SearXNG Secret deleted", "namespacedName", nsName)
 		return ctrl.Result{}, nil
 	}
 

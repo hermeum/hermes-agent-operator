@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
-
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -54,8 +52,6 @@ func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam
 	}
 
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
-
-	ha.Status.ManagedResources = agentsv1alpha1.ManagedResources{}
 
 	if result, err := u.reconcileHermesConfigMap(ctx, ha); err != nil || !result.IsZero() {
 		if err != nil {

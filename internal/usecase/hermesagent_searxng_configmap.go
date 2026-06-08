@@ -22,15 +22,18 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 	}
 
 	if !ha.GetSearXNG().IsEnabled() {
-		if existing == nil {
-			return ctrl.Result{}, nil
+		if existing != nil {
+			err := u.kube.DeleteConfigMap(ctx, DeleteConfigMapParam{NamespacedName: cmNsName})
+			u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Debug(ctx, "SearXNG ConfigMap deleted", "namespacedName", nsName)
 		}
-		err := u.kube.DeleteConfigMap(ctx, DeleteConfigMapParam{NamespacedName: cmNsName})
-		u.tel.IncConfigMapOperation(ctx, IncConfigMapOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
-		if err != nil {
+		ha.Status.ManagedResources.SearXNGConfigMap = ""
+		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "SearXNG ConfigMap deleted", "namespacedName", nsName)
 		return ctrl.Result{}, nil
 	}
 
