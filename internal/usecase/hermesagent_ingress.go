@@ -23,15 +23,18 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 
 	ing := ha.GetNetworking().GetIngress()
 	if !ing.IsEnabled() {
-		if existing == nil {
-			return ctrl.Result{}, nil
+		if existing != nil {
+			err := u.kube.DeleteIngress(ctx, DeleteIngressParam{NamespacedName: nsName})
+			u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Debug(ctx, "Ingress deleted", "namespacedName", nsName)
 		}
-		err := u.kube.DeleteIngress(ctx, DeleteIngressParam{NamespacedName: nsName})
-		u.tel.IncIngressOperation(ctx, IncIngressOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
-		if err != nil {
+		ha.Status.ManagedResources.Ingress = ""
+		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "Ingress deleted", "namespacedName", nsName)
 		return ctrl.Result{}, nil
 	}
 

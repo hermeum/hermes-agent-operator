@@ -44,6 +44,11 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 			}
 			u.tel.Debug(ctx, "Role deleted", "namespacedName", nsName)
 		}
+		ha.Status.ManagedResources.Role = ""
+		ha.Status.ManagedResources.RoleBinding = ""
+		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
 		return ctrl.Result{}, nil
 	}
 

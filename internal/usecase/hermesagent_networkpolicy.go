@@ -26,15 +26,18 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 
 	np := ha.GetSecurity().GetNetworkPolicy()
 	if !np.IsEnabled() {
-		if existing == nil {
-			return ctrl.Result{}, nil
+		if existing != nil {
+			err := u.kube.DeleteNetworkPolicy(ctx, DeleteNetworkPolicyParam{NamespacedName: nsName})
+			u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Debug(ctx, "NetworkPolicy deleted", "namespacedName", nsName)
 		}
-		err := u.kube.DeleteNetworkPolicy(ctx, DeleteNetworkPolicyParam{NamespacedName: nsName})
-		u.tel.IncNetworkPolicyOperation(ctx, IncNetworkPolicyOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
-		if err != nil {
+		ha.Status.ManagedResources.NetworkPolicy = ""
+		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "NetworkPolicy deleted", "namespacedName", nsName)
 		return ctrl.Result{}, nil
 	}
 

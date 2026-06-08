@@ -22,15 +22,18 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 	}
 
 	if !ha.GetSecurity().GetRBAC().ShouldCreateServiceAccount() {
-		if existing == nil {
-			return ctrl.Result{}, nil
+		if existing != nil {
+			err := u.kube.DeleteServiceAccount(ctx, DeleteServiceAccountParam{NamespacedName: nsName})
+			u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Debug(ctx, "ServiceAccount deleted", "namespacedName", nsName)
 		}
-		err := u.kube.DeleteServiceAccount(ctx, DeleteServiceAccountParam{NamespacedName: nsName})
-		u.tel.IncServiceAccountOperation(ctx, IncServiceAccountOperationParam{NamespacedName: nsName, Operation: OperationDelete, Result: resultOf(err)})
-		if err != nil {
+		ha.Status.ManagedResources.ServiceAccount = ""
+		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "ServiceAccount deleted", "namespacedName", nsName)
 		return ctrl.Result{}, nil
 	}
 
