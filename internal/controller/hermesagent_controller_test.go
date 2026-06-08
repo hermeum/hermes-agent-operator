@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
+	"hermeum/hermes-agent-operator/internal/infras"
 )
 
 var _ = Describe("HermesAgent Controller", func() {
@@ -69,8 +70,9 @@ var _ = Describe("HermesAgent Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &HermesAgentReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:    k8sClient,
+				Scheme:    k8sClient.Scheme(),
+				Telemetry: infras.NewPrometheusTelemetry(),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
