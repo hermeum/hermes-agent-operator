@@ -37,6 +37,7 @@ import (
 
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"hermeum/hermes-agent-operator/internal/controller"
+	"hermeum/hermes-agent-operator/internal/infras"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -178,9 +179,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	tel := infras.NewPrometheusTelemetry()
+
 	if err := (&controller.HermesAgentReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Telemetry: tel,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "hermesagent")
 		os.Exit(1)
