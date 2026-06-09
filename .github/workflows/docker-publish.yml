@@ -37,3 +37,20 @@ jobs:
           tags: |
             ghcr.io/hermeum/hermes-agent-operator:${{ github.ref_name }}
             ghcr.io/hermeum/hermes-agent-operator:latest
+
+      - name: Install Helm
+        run: make install-helm
+
+      - name: Log in to GHCR OCI registry
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | helm registry login ghcr.io \
+            --username ${{ github.actor }} \
+            --password-stdin
+
+      - name: Package and publish Helm chart pinned to app version
+        run: |
+          VERSION=${{ github.ref_name }}
+          APP_VERSION=${VERSION#v}
+          make helm-push \
+            HELM_CHART_VERSION=${APP_VERSION} \
+            HELM_EXTRA_ARGS="--app-version ${APP_VERSION}"
