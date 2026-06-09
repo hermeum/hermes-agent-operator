@@ -216,7 +216,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		}, ha.GetHermes().GetPorts()...),
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount + "/home"},
 			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:   ha.GetHermes().GetEnvFrom(),
