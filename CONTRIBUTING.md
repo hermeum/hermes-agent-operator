@@ -33,6 +33,32 @@ make test       # unit tests (no cluster required)
 make test-e2e   # e2e tests against a Kind cluster
 ```
 
+## Pull request titles
+
+PR titles must follow the [Conventional Commits](https://www.conventionalcommits.org/) format and are validated automatically by CI:
+
+```
+<type>: <short description>
+```
+
+Permitted types:
+
+| Type | When to use |
+|---|---|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `style` | Formatting, no logic change |
+| `refactor` | Code restructure, no feature/fix |
+| `perf` | Performance improvement |
+| `test` | Adding or fixing tests |
+| `build` | Build system changes |
+| `ci` | CI configuration changes |
+| `chore` | Maintenance tasks |
+| `revert` | Reverts a previous commit |
+
+Scopes are optional: `feat(api): add webhook field` is valid but `feat: add webhook field` is equally fine.
+
 ## Build and run locally
 
 ```sh
