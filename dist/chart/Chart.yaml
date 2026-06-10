@@ -3,7 +3,7 @@ name: hermes-agent-operator
 description: A Helm chart to distribute hermes-agent-operator
 type: application
 
-version: 0.1.2
+version: 0.2.0
 appVersion: "0.2.0"
 
 keywords:

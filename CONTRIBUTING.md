@@ -14,6 +14,7 @@ After changing API types (`api/v1alpha1/`), regenerate the DeepCopy methods and 
 ```sh
 make generate   # regenerate zz_generated.deepcopy.go
 make manifests  # regenerate CRDs and RBAC from markers
+kubebuilder edit --plugins=helm/v2-alpha
 ```
 
 ## Lint
@@ -40,23 +41,3 @@ make install
 make run
 ```
 
-## Build and push image
-
-```sh
-make docker-build IMG=<registry>/hermes-agent-operator:<tag>
-make docker-push  IMG=<registry>/hermes-agent-operator:<tag>
-```
-
-## Deploy to a cluster
-
-```sh
-make install                          # install CRDs
-make deploy IMG=<registry>/hermes-agent-operator:<tag>   # deploy the manager
-```
-
-To remove:
-
-```sh
-make undeploy
-make uninstall
-```

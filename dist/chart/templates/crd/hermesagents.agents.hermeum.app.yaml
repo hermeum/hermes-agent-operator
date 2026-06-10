@@ -2329,18 +2329,87 @@ spec:
                     description: config holds the Hermes agent config.yml configuration.
                     properties:
                       apiServer:
-                        description: apiServer configures the gateway API server.
+                        description: |-
+                          apiServer configures the gateway API server. For convenience, the operator
+                          automatically generates an API key Secret internally — no manual secret
+                          management required. Set existingSecret to supply your own Secret instead.
+                          The Secret is persisted across reconciles; enabling the server injects it into the container.
                         properties:
                           enabled:
                             description: |-
                               enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
-                              The API key secret is always created regardless of this field.
+                              The operator always generates an API key Secret automatically.
                             type: boolean
+                          existingSecret:
+                            description: |-
+                              existingSecret references a user-managed Secret that contains the API key.
+                              When set, its key is injected into the container instead of the operator-generated one.
+                              The referenced Secret must exist in the same namespace as the HermesAgent.
+                              The operator still generates its own Secret regardless of this field.
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
                         type: object
                       raw:
                         description: raw holds the verbatim Hermes agent config.yml
                           as free-form YAML/JSON.
                         x-kubernetes-preserve-unknown-fields: true
+                      webhook:
+                        description: webhook configures the webhook ingress.
+                        properties:
+                          enabled:
+                            description: |-
+                              enabled activates the webhook listener (sets WEBHOOK_ENABLED=true).
+                              When enabled without secretRef, WEBHOOK_SECRET is injected from the
+                              operator-managed hermes Secret.
+                            type: boolean
+                          secretRef:
+                            description: |-
+                              secretRef references an existing Secret key to use as the HMAC secret
+                              instead of the operator-generated one. Use this to share a known value
+                              with external webhook senders, or to set "INSECURE_NO_AUTH" for testing.
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
                     type: object
                   crons:
                     description: crons is a list of scheduled jobs to manage via hermes
@@ -6730,6 +6799,46 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              managedResources:
+                description: managedResources describes the Kubernetes resources currently
+                  owned by this HermesAgent.
+                properties:
+                  hermesConfigMap:
+                    description: hermesConfigMap is the name of the Hermes configuration
+                      ConfigMap.
+                    type: string
+                  hermesSecret:
+                    description: hermesSecret is the name of the Hermes API key Secret.
+                    type: string
+                  ingress:
+                    description: ingress is the name of the managed Ingress.
+                    type: string
+                  networkPolicy:
+                    description: networkPolicy is the name of the managed NetworkPolicy.
+                    type: string
+                  role:
+                    description: role is the name of the managed Role.
+                    type: string
+                  roleBinding:
+                    description: roleBinding is the name of the managed RoleBinding.
+                    type: string
+                  searxngConfigMap:
+                    description: searxngConfigMap is the name of the SearXNG configuration
+                      ConfigMap.
+                    type: string
+                  searxngSecret:
+                    description: searxngSecret is the name of the SearXNG Secret.
+                    type: string
+                  service:
+                    description: service is the name of the managed Service.
+                    type: string
+                  serviceAccount:
+                    description: serviceAccount is the name of the managed ServiceAccount.
+                    type: string
+                  statefulSet:
+                    description: statefulSet is the name of the managed StatefulSet.
+                    type: string
+                type: object
               phase:
                 description: |-
                   phase is the current lifecycle phase of the HermesAgent, mirroring the underlying pod phase.
