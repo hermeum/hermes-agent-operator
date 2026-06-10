@@ -2338,6 +2338,43 @@ spec:
                         description: raw holds the verbatim Hermes agent config.yml
                           as free-form YAML/JSON.
                         x-kubernetes-preserve-unknown-fields: true
+                      webhook:
+                        description: webhook configures the webhook ingress.
+                        properties:
+                          enabled:
+                            description: |-
+                              enabled activates the webhook listener (sets WEBHOOK_ENABLED=true).
+                              When enabled without secretRef, WEBHOOK_SECRET is injected from the
+                              operator-managed hermes Secret.
+                            type: boolean
+                          secretRef:
+                            description: |-
+                              secretRef references an existing Secret key to use as the HMAC secret
+                              instead of the operator-generated one. Use this to share a known value
+                              with external webhook senders, or to set "INSECURE_NO_AUTH" for testing.
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
                     type: object
                   crons:
                     description: crons is a list of scheduled jobs to manage via hermes

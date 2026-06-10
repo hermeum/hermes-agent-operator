@@ -39,8 +39,19 @@ func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agen
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	// Never update — preserve the generated secret value across reconciles.
 	if existing != nil {
+		// One-time migration: add WEBHOOK_SECRET if the secret predates this feature.
+		if _, ok := existing.Data["WEBHOOK_SECRET"]; !ok {
+			raw := make([]byte, 32)
+			if _, err := rand.Read(raw); err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			existing.Data["WEBHOOK_SECRET"] = []byte(fmt.Sprintf("%x", raw))
+			if err := u.kube.UpdateSecretOwnedByHermesAgent(ctx, UpdateSecretOfHermesAgentParam{HermesAgent: ha, Secret: existing}); err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Debug(ctx, "Hermes Secret patched with WEBHOOK_SECRET", "namespacedName", nsName)
+		}
 		ha.Status.ManagedResources.HermesSecret = ha.GetHermesName()
 		return ctrl.Result{}, nil
 	}
@@ -59,8 +70,12 @@ func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agen
 }
 
 func buildHermesSecret(ha *agentsv1alpha1.HermesAgent) (*corev1.Secret, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	apiKey := make([]byte, 32)
+	webhookSecret := make([]byte, 32)
+	if _, err := rand.Read(apiKey); err != nil {
+		return nil, err
+	}
+	if _, err := rand.Read(webhookSecret); err != nil {
 		return nil, err
 	}
 	return &corev1.Secret{
@@ -70,7 +85,8 @@ func buildHermesSecret(ha *agentsv1alpha1.HermesAgent) (*corev1.Secret, error) {
 			Labels:    resourceLabels(ha),
 		},
 		Data: map[string][]byte{
-			"API_SERVER_KEY": []byte(fmt.Sprintf("%x", raw)),
+			"API_SERVER_KEY": []byte(fmt.Sprintf("%x", apiKey)),
+			"WEBHOOK_SECRET": []byte(fmt.Sprintf("%x", webhookSecret)),
 		},
 	}, nil
 }

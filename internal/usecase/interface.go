@@ -63,6 +63,7 @@ type Kubernetes interface {
 
 	GetSecret(ctx context.Context, param GetSecretParam) (*corev1.Secret, error)
 	CreateSecretOwnedByHermesAgent(ctx context.Context, param CreateSecretOfHermesAgentParam) error
+	UpdateSecretOwnedByHermesAgent(ctx context.Context, param UpdateSecretOfHermesAgentParam) error
 	DeleteSecret(ctx context.Context, param DeleteSecretParam) error
 
 	GetStatefulSet(ctx context.Context, param GetStatefulSetParam) (*appsv1.StatefulSet, error)
@@ -134,6 +135,11 @@ type GetSecretParam struct {
 }
 
 type CreateSecretOfHermesAgentParam struct {
+	HermesAgent *agentsv1alpha1.HermesAgent
+	Secret      *corev1.Secret
+}
+
+type UpdateSecretOfHermesAgentParam struct {
 	HermesAgent *agentsv1alpha1.HermesAgent
 	Secret      *corev1.Secret
 }
