@@ -76,7 +76,7 @@ kubectl get pods -l app.kubernetes.io/instance=my-agent
 
 ### `hermes.config`
 
-Configure the Hermes agent runtime. `raw` and `apiServer` can be used independently or together.
+Configure the Hermes agent runtime. `raw`, `apiServer`, and `webhook` can be used independently or together.
 
 **`raw`** — pass a verbatim `config.yml` as free-form YAML. Anything valid in a Hermes config file is accepted here.
 
@@ -90,7 +90,6 @@ hermes:
 ```
 
 **`apiServer`** — enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true` and injects the key into the agent container automatically. 
-Use `existingSecret` to inject a key from your own Secret instead of the operator-generated one.
 
 ```yaml
 hermes:
@@ -100,11 +99,21 @@ hermes:
       existingSecret:              # optional; omit to use the operator-generated key
         name: my-api-key-secret    # name of the Secret in the same namespace
         key: API_SERVER_KEY        # key within that Secret
-
 ```
 
-**Curator** — the operator disables the Hermes curator (automatic skill updates) by default to prevent unintended skill drift in team environments. To re-enable it:
+**`webhook`** — enable the webhook ingress. When `enabled: true`, the operator sets `WEBHOOK_ENABLED=true` and injects a `WEBHOOK_SECRET` (the HMAC secret) into the agent container. By default the secret is generated once and stored in the operator-managed `<agent-name>-hermes` Secret, then preserved across reconciles so it is not rotated. 
 
+```yaml
+hermes:
+  config:
+    webhook:                       # optional; omit to disable the webhook ingress
+      enabled: true
+      secretRef:                   # optional; omit to use the operator-generated secret
+        name: my-webhook-secret    # name of the Secret in the same namespace
+        key: WEBHOOK_SECRET        # key within that Secret
+```
+
+> NOTE: The operator disables the Hermes curator (automatic skill updates) by default to prevent unintended skill drift in team environments. To re-enable it:
 
 ```yaml
 hermes:
