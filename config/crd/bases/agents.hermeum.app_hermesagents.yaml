@@ -2335,14 +2335,14 @@ spec:
                           enabled:
                             description: |-
                               enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
-                              The operator generates an API key Secret automatically unless existingSecret is set.
+                              The operator always generates an API key Secret automatically.
                             type: boolean
                           existingSecret:
                             description: |-
-                              existingSecret references a user-managed Secret that contains the API key,
-                              instead of using the operator-generated one. The referenced Secret must
-                              exist in the same namespace as the HermesAgent. When set, the operator
-                              skips generating its own Secret.
+                              existingSecret references a user-managed Secret that contains the API key.
+                              When set, its key is injected into the container instead of the operator-generated one.
+                              The referenced Secret must exist in the same namespace as the HermesAgent.
+                              The operator still generates its own Secret regardless of this field.
                             properties:
                               key:
                                 description: The key of the secret to select from.  Must
