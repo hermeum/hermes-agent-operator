@@ -266,15 +266,17 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	// API server configuration
 	if ha.GetHermes().GetAPIServer().IsEnabled() {
+		apiKeyRef := &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
+			Key:                  "API_SERVER_KEY",
+		}
+		if ref := ha.GetHermes().GetAPIServer().GetExistingSecret(); ref != nil {
+			apiKeyRef = ref
+		}
 		container.Env = append(container.Env, []corev1.EnvVar{
 			{
-				Name: "API_SERVER_KEY",
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
-						Key:                  "API_SERVER_KEY",
-					},
-				},
+				Name:      "API_SERVER_KEY",
+				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: apiKeyRef},
 			},
 			{Name: "API_SERVER_ENABLED", Value: "true"},
 		}...)

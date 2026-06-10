@@ -314,12 +314,26 @@ func (n *NetworkPolicy) ShouldAllowDNS() bool {
 // HermesAPIServer configures the gateway API server.
 type HermesAPIServer struct {
 	// enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
+	// The operator always generates an API key Secret automatically.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
+	// existingSecret references a user-managed Secret that contains the API key.
+	// When set, its key is injected into the container instead of the operator-generated one.
+	// The referenced Secret must exist in the same namespace as the HermesAgent.
+	// The operator still generates its own Secret regardless of this field.
+	// +optional
+	ExistingSecret *corev1.SecretKeySelector `json:"existingSecret,omitempty"`
 }
 
 func (a *HermesAPIServer) IsEnabled() bool {
 	return a != nil && a.Enabled
+}
+
+func (a *HermesAPIServer) GetExistingSecret() *corev1.SecretKeySelector {
+	if a == nil {
+		return nil
+	}
+	return a.ExistingSecret
 }
 
 // HermesWebhook configures the webhook ingress.
@@ -352,7 +366,10 @@ type HermesConfig struct {
 	// raw holds the verbatim Hermes agent config.yml as free-form YAML/JSON.
 	// +optional
 	Raw *apiextensionsv1.JSON `json:"raw,omitempty"`
-	// apiServer configures the gateway API server.
+	// apiServer configures the gateway API server. For convenience, the operator
+	// automatically generates an API key Secret internally — no manual secret
+	// management required. Set existingSecret to supply your own Secret instead.
+	// The Secret is persisted across reconciles; enabling the server injects it into the container.
 	// +optional
 	APIServer *HermesAPIServer `json:"apiServer,omitempty"`
 	// webhook configures the webhook ingress.
