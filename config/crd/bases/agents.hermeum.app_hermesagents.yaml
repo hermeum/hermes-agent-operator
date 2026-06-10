@@ -2326,13 +2326,45 @@ spec:
                     description: config holds the Hermes agent config.yml configuration.
                     properties:
                       apiServer:
-                        description: apiServer configures the gateway API server.
+                        description: |-
+                          apiServer configures the gateway API server. For convenience, the operator
+                          automatically generates an API key Secret internally — no manual secret
+                          management required. Set existingSecret to supply your own Secret instead.
+                          The Secret is persisted across reconciles; enabling the server injects it into the container.
                         properties:
                           enabled:
                             description: |-
                               enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
-                              The API key secret is always created regardless of this field.
+                              The operator generates an API key Secret automatically unless existingSecret is set.
                             type: boolean
+                          existingSecret:
+                            description: |-
+                              existingSecret references a user-managed Secret that contains the API key,
+                              instead of using the operator-generated one. The referenced Secret must
+                              exist in the same namespace as the HermesAgent. When set, the operator
+                              skips generating its own Secret.
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
                         type: object
                       raw:
                         description: raw holds the verbatim Hermes agent config.yml
