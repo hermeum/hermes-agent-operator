@@ -105,6 +105,13 @@ func (k *KubernetesClient) CreateSecretOwnedByHermesAgent(ctx context.Context, p
 	return k.client.Create(ctx, param.Secret)
 }
 
+func (k *KubernetesClient) UpdateSecretOwnedByHermesAgent(ctx context.Context, param usecase.UpdateSecretOfHermesAgentParam) error {
+	if err := ctrl.SetControllerReference(param.HermesAgent, param.Secret, k.scheme); err != nil {
+		return err
+	}
+	return k.client.Update(ctx, param.Secret)
+}
+
 func (k *KubernetesClient) DeleteSecret(ctx context.Context, param usecase.DeleteSecretParam) error {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

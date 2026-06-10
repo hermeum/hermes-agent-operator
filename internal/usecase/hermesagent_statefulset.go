@@ -282,6 +282,24 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		}...)
 	}
 
+	// Webhook configuration
+	if ha.GetHermes().GetWebhook().IsEnabled() {
+		secretRef := ha.GetHermes().GetWebhook().GetSecretRef()
+		if secretRef == nil {
+			secretRef = &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
+				Key:                  "WEBHOOK_SECRET",
+			}
+		}
+		container.Env = append(container.Env, []corev1.EnvVar{
+			{
+				Name:      "WEBHOOK_SECRET",
+				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: secretRef},
+			},
+			{Name: "WEBHOOK_ENABLED", Value: "true"},
+		}...)
+	}
+
 	// persistence: existingClaim > enabled PVC > emptyDir fallback.
 	hp := ha.GetHermes().GetPersistence()
 	if ec := hp.GetExistingClaim(); ec != "" {

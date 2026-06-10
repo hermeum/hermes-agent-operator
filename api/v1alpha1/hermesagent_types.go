@@ -336,6 +336,31 @@ func (a *HermesAPIServer) GetExistingSecret() *corev1.SecretKeySelector {
 	return a.ExistingSecret
 }
 
+// HermesWebhook configures the webhook ingress.
+type HermesWebhook struct {
+	// enabled activates the webhook listener (sets WEBHOOK_ENABLED=true).
+	// When enabled without secretRef, WEBHOOK_SECRET is injected from the
+	// operator-managed hermes Secret.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// secretRef references an existing Secret key to use as the HMAC secret
+	// instead of the operator-generated one. Use this to share a known value
+	// with external webhook senders, or to set "INSECURE_NO_AUTH" for testing.
+	// +optional
+	SecretRef *corev1.SecretKeySelector `json:"secretRef,omitempty"`
+}
+
+func (w *HermesWebhook) IsEnabled() bool {
+	return w != nil && w.Enabled
+}
+
+func (w *HermesWebhook) GetSecretRef() *corev1.SecretKeySelector {
+	if w == nil {
+		return nil
+	}
+	return w.SecretRef
+}
+
 // HermesConfig holds the Hermes agent config.yml and related configuration.
 type HermesConfig struct {
 	// raw holds the verbatim Hermes agent config.yml as free-form YAML/JSON.
@@ -347,6 +372,9 @@ type HermesConfig struct {
 	// The Secret is persisted across reconciles; enabling the server injects it into the container.
 	// +optional
 	APIServer *HermesAPIServer `json:"apiServer,omitempty"`
+	// webhook configures the webhook ingress.
+	// +optional
+	Webhook *HermesWebhook `json:"webhook,omitempty"`
 }
 
 func (c *HermesConfig) GetRaw() *apiextensionsv1.JSON {
@@ -361,6 +389,13 @@ func (c *HermesConfig) GetAPIServer() *HermesAPIServer {
 		return nil
 	}
 	return c.APIServer
+}
+
+func (c *HermesConfig) GetWebhook() *HermesWebhook {
+	if c == nil {
+		return nil
+	}
+	return c.Webhook
 }
 
 // Hermes defines the hermes-specific section of the spec.
@@ -461,6 +496,13 @@ func (h *Hermes) GetAPIServer() *HermesAPIServer {
 		return nil
 	}
 	return h.Config.GetAPIServer()
+}
+
+func (h *Hermes) GetWebhook() *HermesWebhook {
+	if h == nil {
+		return nil
+	}
+	return h.Config.GetWebhook()
 }
 
 func (h *Hermes) GetPersistence() *HermesPersistence {
