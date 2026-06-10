@@ -33,6 +33,14 @@ make test       # unit tests (no cluster required)
 make test-e2e   # e2e tests against a Kind cluster
 ```
 
+## Build and run locally
+
+```sh
+# Run the operator against the current kubeconfig context (installs CRDs first)
+make install
+make run
+```
+
 ## Pull request titles
 
 PR titles must follow the [Conventional Commits](https://www.conventionalcommits.org/) format and are validated automatically by CI:
@@ -58,12 +66,4 @@ Permitted types:
 | `revert` | Reverts a previous commit |
 
 Scopes are optional: `feat(api): add webhook field` is valid but `feat: add webhook field` is equally fine.
-
-## Build and run locally
-
-```sh
-# Run the operator against the current kubeconfig context (installs CRDs first)
-make install
-make run
-```
 
