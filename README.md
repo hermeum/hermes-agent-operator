@@ -89,25 +89,29 @@ hermes:
         default: claude-sonnet-4-6
 ```
 
-**`apiServer`** — enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true` and injects the key into the agent container automatically.
+**`apiServer`** — enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true` and injects the key into the agent container automatically. 
+Use `existingSecret` to inject a key from your own Secret instead of the operator-generated one.
 
 ```yaml
 hermes:
   config:
     apiServer:                     # optional; omit to disable the gateway API
       enabled: true
+      existingSecret:              # optional; omit to use the operator-generated key
+        name: my-api-key-secret    # name of the Secret in the same namespace
+        key: API_SERVER_KEY        # key within that Secret
+
 ```
 
-Use `existingSecret` to inject a key from your own Secret instead of the operator-generated one. The operator still creates its own Secret regardless — `existingSecret` only controls which key is mounted into the container.
+**Curator** — the operator disables the Hermes curator (automatic skill updates) by default to prevent unintended skill drift in team environments. To re-enable it:
+
 
 ```yaml
 hermes:
   config:
-    apiServer:
-      enabled: true
-      existingSecret:              # optional; omit to use the operator-generated key
-        name: my-api-key-secret   # name of the Secret in the same namespace
-        key: API_SERVER_KEY       # key within that Secret
+    raw:
+      curator:
+        enabled: true
 ```
 
 ### `hermes.storage`
