@@ -17,8 +17,8 @@ Hermes agent is a powerful tool for automating tasks — but it is designed for 
 ### 1. Install the operator
 
 ```sh
-helm install hermes-agent-operator oci://ghcr.io/hermeum/charts/hermes-agent-operator \
-  --namespace hermes-agent --create-namespace
+helm upgrade hermes-agent-operator oci://ghcr.io/hermeum/charts/hermes-agent-operator \
+  --install --namespace hermes-agent --create-namespace
 ```
 
 ### 2. Create a secret with your API key
