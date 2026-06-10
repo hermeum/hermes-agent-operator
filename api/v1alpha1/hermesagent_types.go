@@ -314,7 +314,6 @@ func (n *NetworkPolicy) ShouldAllowDNS() bool {
 // HermesAPIServer configures the gateway API server.
 type HermesAPIServer struct {
 	// enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
-	// The API key secret is always created regardless of this field.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
 }
