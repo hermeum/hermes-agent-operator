@@ -341,7 +341,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			Args:            []string{"chown -R 10000:10000 /opt/data"},
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
-				{Name: "HOME", Value: hermesHomeMount},
+				{Name: "HOME", Value: hermesHomeMount + "/home"},
 				{Name: "PATH", Value: hermesPathEnv},
 			}, ha.GetHermes().GetEnv()...),
 			EnvFrom: ha.GetHermes().GetEnvFrom(),
@@ -361,7 +361,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			Args:            []string{buildConfigScript()},
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
-				{Name: "HOME", Value: hermesHomeMount},
+				{Name: "HOME", Value: hermesHomeMount + "/home"},
 				{Name: "PATH", Value: hermesPathEnv},
 			}, ha.GetHermes().GetEnv()...),
 			EnvFrom:         ha.GetHermes().GetEnvFrom(),
@@ -384,7 +384,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Args:            []string{buildWorkspaceScript()},
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount + "/home"},
 			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
@@ -406,7 +406,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Args:            []string{buildPluginsScript(plugins)},
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount + "/home"},
 			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
@@ -427,7 +427,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Args:            []string{buildSkillsScript(skills)},
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount + "/home"},
 			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
@@ -448,7 +448,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Args:            []string{buildBundlesScript(bundles)},
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount + "/home"},
 			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
@@ -469,7 +469,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Args:            []string{buildCronsScript(crons)},
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount + "/home"},
 			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
