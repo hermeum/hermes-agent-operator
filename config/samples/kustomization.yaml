@@ -1,4 +1,4 @@
 ## Append samples of your project ##
 resources:
-- agents_v1alpha1_hermesagent.yaml
+- web_search.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
