@@ -463,7 +463,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	crons := ha.GetHermes().GetCrons()
 	initContainers = append(initContainers, corev1.Container{
 		Name:            "init-crons",
-		Image:           "nousresearch/hermes-agent:latest",
+		Image:           ha.GetHermes().GetImage(),
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
 		Args:            []string{buildCronsScript(crons)},
