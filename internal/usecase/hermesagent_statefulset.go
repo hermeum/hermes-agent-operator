@@ -6,6 +6,7 @@ import (
 	"fmt"
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,10 +20,13 @@ import (
 
 const (
 	hermesContainerName          = "hermes-agent"
-	hermesGatewayPortName        = "gateway"
-	hermesGatewayPort            = int32(8642)
 	hermesWorkspacePathSeparator = "--"
 )
+
+// hermesHealthCheckCommand reports the gateway state regardless of which
+// ports the gateway listens on, so probes keep working when the API server
+// is disabled or moved to another port.
+var hermesHealthCheckCommand = []string{"hermes", "gateway", "status"}
 
 func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
@@ -199,6 +203,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	sts = sts.DeepCopy()
 	sizeLimit := resource.MustParse("1Gi")
+	apiServer := ha.GetHermes().GetAPIServer()
 
 	initContainers := []corev1.Container{}
 	container := corev1.Container{
@@ -209,8 +214,8 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		WorkingDir:      "/opt/hermes",
 		Ports: append([]corev1.ContainerPort{
 			{
-				Name:          hermesGatewayPortName,
-				ContainerPort: hermesGatewayPort,
+				Name:          apiServer.GetPortName(),
+				ContainerPort: apiServer.GetPort(),
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}, ha.GetHermes().GetPorts()...),
@@ -224,14 +229,14 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		SecurityContext: &corev1.SecurityContext{
 			SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 		},
-		LivenessProbe: ha.GetHermes().GetProbes().GetLiveness().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
-			InitialDelaySeconds: 15, PeriodSeconds: 20, TimeoutSeconds: 1, FailureThreshold: 3,
+		LivenessProbe: ha.GetHermes().GetProbes().GetLiveness().GetProbe(hermesHealthCheckCommand, corev1.Probe{
+			InitialDelaySeconds: 15, PeriodSeconds: 20, TimeoutSeconds: 5, FailureThreshold: 3,
 		}),
-		ReadinessProbe: ha.GetHermes().GetProbes().GetReadiness().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
-			InitialDelaySeconds: 5, PeriodSeconds: 10, TimeoutSeconds: 1, FailureThreshold: 3,
+		ReadinessProbe: ha.GetHermes().GetProbes().GetReadiness().GetProbe(hermesHealthCheckCommand, corev1.Probe{
+			InitialDelaySeconds: 5, PeriodSeconds: 10, TimeoutSeconds: 5, FailureThreshold: 3,
 		}),
-		StartupProbe: ha.GetHermes().GetProbes().GetStartup().GetProbe("/health", hermesGatewayPortName, corev1.Probe{
-			InitialDelaySeconds: 0, PeriodSeconds: 10, TimeoutSeconds: 1, FailureThreshold: 10,
+		StartupProbe: ha.GetHermes().GetProbes().GetStartup().GetProbe(hermesHealthCheckCommand, corev1.Probe{
+			InitialDelaySeconds: 0, PeriodSeconds: 10, TimeoutSeconds: 5, FailureThreshold: 10,
 		}),
 		VolumeMounts: append([]corev1.VolumeMount{
 			{Name: hermesDSHMVolume, MountPath: hermesDSHMMount},
@@ -265,12 +270,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	pvc := []corev1.PersistentVolumeClaim{}
 
 	// API server configuration
-	if ha.GetHermes().GetAPIServer().IsEnabled() {
+	if apiServer.IsEnabled() {
 		apiKeyRef := &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
 			Key:                  "API_SERVER_KEY",
 		}
-		if ref := ha.GetHermes().GetAPIServer().GetExistingSecret(); ref != nil {
+		if ref := apiServer.GetExistingSecret(); ref != nil {
 			apiKeyRef = ref
 		}
 		container.Env = append(container.Env, []corev1.EnvVar{
@@ -279,7 +284,17 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: apiKeyRef},
 			},
 			{Name: "API_SERVER_ENABLED", Value: "true"},
+			// The default bind is 127.0.0.1, which is unreachable from outside
+			// the pod; bind all interfaces so the Service can route to it.
+			{Name: "API_SERVER_HOST", Value: "0.0.0.0"},
+			{Name: "API_SERVER_PORT", Value: strconv.Itoa(int(apiServer.GetPort()))},
 		}...)
+		if origins := apiServer.GetCORSOrigins(); len(origins) > 0 {
+			container.Env = append(container.Env, corev1.EnvVar{
+				Name:  "API_SERVER_CORS_ORIGINS",
+				Value: strings.Join(origins, ","),
+			})
+		}
 	}
 
 	// Webhook configuration

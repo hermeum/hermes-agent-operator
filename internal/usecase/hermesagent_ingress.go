@@ -99,10 +99,6 @@ func buildIngress(ha *agentsv1alpha1.HermesAgent, ing *agentsv1alpha1.Ingress) *
 }
 
 func buildIngressPaths(ha *agentsv1alpha1.HermesAgent, specPaths []agentsv1alpha1.IngressPath) []networkingv1.HTTPIngressPath {
-	if len(specPaths) == 0 {
-		specPaths = []agentsv1alpha1.IngressPath{{}}
-	}
-
 	paths := make([]networkingv1.HTTPIngressPath, 0, len(specPaths))
 	for _, p := range specPaths {
 		path := p.Path
@@ -113,17 +109,13 @@ func buildIngressPaths(ha *agentsv1alpha1.HermesAgent, specPaths []agentsv1alpha
 		if p.PathType == "" {
 			pathType = networkingv1.PathTypePrefix
 		}
-		port := hermesGatewayPort
-		if p.Port != nil {
-			port = *p.Port
-		}
 		paths = append(paths, networkingv1.HTTPIngressPath{
 			Path:     path,
 			PathType: &pathType,
 			Backend: networkingv1.IngressBackend{
 				Service: &networkingv1.IngressServiceBackend{
 					Name: ha.Name,
-					Port: networkingv1.ServiceBackendPort{Number: port},
+					Port: networkingv1.ServiceBackendPort{Number: p.Port},
 				},
 			},
 		})

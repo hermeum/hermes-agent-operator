@@ -76,16 +76,16 @@ func buildNetworkPolicy(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha1.Netwo
 				networkingv1.PolicyTypeIngress,
 				networkingv1.PolicyTypeEgress,
 			},
-			Ingress: buildNetworkPolicyIngress(np),
+			Ingress: buildNetworkPolicyIngress(ha, np),
 			Egress:  buildNetworkPolicyEgress(np),
 		},
 	}
 }
 
-func buildNetworkPolicyIngress(np *agentsv1alpha1.NetworkPolicy) []networkingv1.NetworkPolicyIngressRule {
-	gateway := intstr.FromInt32(hermesGatewayPort)
+func buildNetworkPolicyIngress(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha1.NetworkPolicy) []networkingv1.NetworkPolicyIngressRule {
+	apiServer := intstr.FromInt32(ha.GetHermes().GetAPIServer().GetPort())
 	tcp := corev1.ProtocolTCP
-	ports := []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &gateway}}
+	ports := []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &apiServer}}
 
 	peers := make([]networkingv1.NetworkPolicyPeer, 0, len(np.AllowedIngressCIDRs)+len(np.AllowedIngressNamespaces))
 	for _, cidr := range np.AllowedIngressCIDRs {

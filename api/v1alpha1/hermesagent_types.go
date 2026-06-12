@@ -24,7 +24,6 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const defaultImageTag = "latest"
@@ -311,12 +310,31 @@ func (n *NetworkPolicy) ShouldAllowDNS() bool {
 	return *n.AllowDNS
 }
 
+// DefaultAPIServerPort is the default port the gateway API server listens on.
+const DefaultAPIServerPort = int32(8642)
+
 // HermesAPIServer configures the gateway API server.
 type HermesAPIServer struct {
-	// enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
+	// enabled turns on the gateway API server (sets API_SERVER_ENABLED=true)
+	// bound to all interfaces (sets API_SERVER_HOST=0.0.0.0) so that the
+	// Service can route to it.
 	// The operator always generates an API key Secret automatically.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
+	// port is the port the API server listens on (sets API_SERVER_PORT when enabled).
+	// The container port, the Service port, and the NetworkPolicy ingress rule
+	// follow this value.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +kubebuilder:default=8642
+	// +optional
+	Port *int32 `json:"port,omitempty"`
+	// corsOrigins lists the browser origins allowed to call the API server
+	// (sets API_SERVER_CORS_ORIGINS as a comma-separated list when enabled).
+	// CORS stays disabled when empty. Keep this narrow: the API grants access
+	// to the agent's full toolset.
+	// +optional
+	CORSOrigins []string `json:"corsOrigins,omitempty"`
 	// existingSecret references a user-managed Secret that contains the API key.
 	// When set, its key is injected into the container instead of the operator-generated one.
 	// The referenced Secret must exist in the same namespace as the HermesAgent.
@@ -327,6 +345,25 @@ type HermesAPIServer struct {
 
 func (a *HermesAPIServer) IsEnabled() bool {
 	return a != nil && a.Enabled
+}
+
+func (a *HermesAPIServer) GetPort() int32 {
+	if a == nil || a.Port == nil {
+		return DefaultAPIServerPort
+	}
+	return *a.Port
+}
+
+// GetPortName returns the name of the container port the API server listens on.
+func (a *HermesAPIServer) GetPortName() string {
+	return "api-server"
+}
+
+func (a *HermesAPIServer) GetCORSOrigins() []string {
+	if a == nil {
+		return nil
+	}
+	return a.CORSOrigins
 }
 
 func (a *HermesAPIServer) GetExistingSecret() *corev1.SecretKeySelector {
@@ -435,11 +472,13 @@ type Hermes struct {
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 	// probes overrides the health probe configuration for the hermes-agent container.
-	// Probes target the GET /health endpoint on the gateway port.
+	// Probes exec `hermes gateway status` inside the container, which works
+	// regardless of which ports the gateway listens on.
 	// +optional
 	Probes *Probes `json:"probes,omitempty"`
 	// ports declares additional container ports on the hermes-agent container.
-	// The gateway port (8642) is always included and should not be repeated here.
+	// The API server port (config.apiServer.port, default 8642) is always
+	// included and should not be repeated here.
 	// +optional
 	Ports []corev1.ContainerPort `json:"ports,omitempty"`
 	// initChownData runs an init container that chowns /opt/data to the hermes
@@ -452,22 +491,22 @@ type Hermes struct {
 
 // Probes defines health probe configuration for the hermes-agent container.
 type Probes struct {
-	// liveness configures the liveness probe. Disabled unless set.
+	// liveness configures the liveness probe. Disabled unless enabled.
 	// +optional
 	Liveness *Probe `json:"liveness,omitempty"`
-	// readiness configures the readiness probe. Enabled by default.
+	// readiness configures the readiness probe. Disabled unless enabled.
 	// +optional
 	Readiness *Probe `json:"readiness,omitempty"`
-	// startup configures the startup probe. Disabled unless set.
+	// startup configures the startup probe. Disabled unless enabled.
 	// +optional
 	Startup *Probe `json:"startup,omitempty"`
 }
 
 // Probe defines a single health probe's tunable parameters. The probe action
-// (HTTP GET /health on the gateway port) is fixed by the operator.
+// (exec `hermes gateway status`) is fixed by the operator.
 type Probe struct {
 	// enabled enables the probe.
-	// +kubebuilder:default=true
+	// +kubebuilder:default=false
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
 	// initialDelaySeconds is the seconds after container start before probing.
@@ -612,26 +651,20 @@ func (p *Probes) GetStartup() *Probe {
 	return p.Startup
 }
 
-// IsEnabled reports whether the probe is enabled (default true when unset).
+// IsEnabled reports whether the probe is enabled (default false when unset).
 func (p *Probe) IsEnabled() bool {
-	if p == nil || p.Enabled == nil {
-		return true
-	}
-	return *p.Enabled
+	return p != nil && p.Enabled != nil && *p.Enabled
 }
 
 // GetProbe returns a configured corev1.Probe from the spec, applying overrides on top of defaults.
 // Returns nil if the probe is disabled or the spec is nil.
-func (p *Probe) GetProbe(path string, portName string, defaults corev1.Probe) *corev1.Probe {
+func (p *Probe) GetProbe(command []string, defaults corev1.Probe) *corev1.Probe {
 	if p == nil || !p.IsEnabled() {
 		return nil
 	}
 	probe := defaults
 	probe.ProbeHandler = corev1.ProbeHandler{
-		HTTPGet: &corev1.HTTPGetAction{
-			Path: path,
-			Port: intstr.FromString(portName),
-		},
+		Exec: &corev1.ExecAction{Command: command},
 	}
 	if p.InitialDelaySeconds != nil {
 		probe.InitialDelaySeconds = *p.InitialDelaySeconds
@@ -689,9 +722,9 @@ type Service struct {
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
-	// ports defines custom ports exposed on the Service.
-	// When set, these replace the default gateway port.
-	// When empty, the operator creates the default gateway port (8642).
+	// ports defines additional ports exposed on the Service.
+	// The API server port (config.apiServer.port, default 8642) is always
+	// exposed and should not be repeated here.
 	// +kubebuilder:validation:MaxItems=20
 	// +optional
 	Ports []ServicePort `json:"ports,omitempty"`
@@ -751,8 +784,8 @@ type IngressHost struct {
 	Host string `json:"host"`
 
 	// paths is a list of paths to route.
-	// +optional
-	Paths []IngressPath `json:"paths,omitempty"`
+	// +kubebuilder:validation:MinItems=1
+	Paths []IngressPath `json:"paths"`
 }
 
 // IngressPath defines a path for the Ingress.
@@ -769,11 +802,9 @@ type IngressPath struct {
 	PathType string `json:"pathType,omitempty"`
 
 	// port is the backend service port number to route traffic to.
-	// Defaults to the gateway port (8642) when not set.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
-	// +optional
-	Port *int32 `json:"port,omitempty"`
+	Port int32 `json:"port"`
 }
 
 // IngressTLS defines TLS configuration for the Ingress.
