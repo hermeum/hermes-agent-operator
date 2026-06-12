@@ -63,24 +63,25 @@ func buildService(ha *agentsv1alpha1.HermesAgent) *corev1.Service {
 		Spec: corev1.ServiceSpec{
 			Type:     svc.GetType(),
 			Selector: selectorLabels(ha),
-			Ports:    buildServicePorts(svc),
+			Ports:    buildServicePorts(ha, svc),
 		},
 	}
 }
 
-func buildServicePorts(svc *agentsv1alpha1.Service) []corev1.ServicePort {
-	if svc == nil || len(svc.Ports) == 0 {
-		return []corev1.ServicePort{
-			{
-				Name:       hermesGatewayPortName,
-				Port:       hermesGatewayPort,
-				TargetPort: intstr.FromInt32(hermesGatewayPort),
-				Protocol:   corev1.ProtocolTCP,
-			},
-		}
+func buildServicePorts(ha *agentsv1alpha1.HermesAgent, svc *agentsv1alpha1.Service) []corev1.ServicePort {
+	apiServer := ha.GetHermes().GetAPIServer()
+	ports := []corev1.ServicePort{
+		{
+			Name:       apiServer.GetPortName(),
+			Port:       apiServer.GetPort(),
+			TargetPort: intstr.FromInt32(apiServer.GetPort()),
+			Protocol:   corev1.ProtocolTCP,
+		},
+	}
+	if svc == nil {
+		return ports
 	}
 
-	ports := make([]corev1.ServicePort, 0, len(svc.Ports))
 	for _, p := range svc.Ports {
 		target := p.Port
 		if p.TargetPort != nil {

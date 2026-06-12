@@ -2365,6 +2365,16 @@ spec:
                             - key
                             type: object
                             x-kubernetes-map-type: atomic
+                          port:
+                            default: 8642
+                            description: |-
+                              port is the port the API server listens on (sets API_SERVER_PORT when enabled).
+                              The container port, the Service port, and the NetworkPolicy ingress rule
+                              follow this value.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
                         type: object
                       raw:
                         description: raw holds the verbatim Hermes agent config.yml
@@ -2712,7 +2722,8 @@ spec:
                   ports:
                     description: |-
                       ports declares additional container ports on the hermes-agent container.
-                      The gateway port (8642) is always included and should not be repeated here.
+                      The API server port (config.apiServer.port, default 8642) is always
+                      included and should not be repeated here.
                     items:
                       description: ContainerPort represents a network port in a single
                         container.
@@ -2753,14 +2764,15 @@ spec:
                   probes:
                     description: |-
                       probes overrides the health probe configuration for the hermes-agent container.
-                      Probes target the GET /health endpoint on the gateway port.
+                      Probes exec `hermes gateway status` inside the container, which works
+                      regardless of which ports the gateway listens on.
                     properties:
                       liveness:
                         description: liveness configures the liveness probe. Disabled
-                          unless set.
+                          unless enabled.
                         properties:
                           enabled:
-                            default: true
+                            default: false
                             description: enabled enables the probe.
                             type: boolean
                           failureThreshold:
@@ -2785,11 +2797,11 @@ spec:
                             type: integer
                         type: object
                       readiness:
-                        description: readiness configures the readiness probe. Enabled
-                          by default.
+                        description: readiness configures the readiness probe. Disabled
+                          unless enabled.
                         properties:
                           enabled:
-                            default: true
+                            default: false
                             description: enabled enables the probe.
                             type: boolean
                           failureThreshold:
@@ -2815,10 +2827,10 @@ spec:
                         type: object
                       startup:
                         description: startup configures the startup probe. Disabled
-                          unless set.
+                          unless enabled.
                         properties:
                           enabled:
-                            default: true
+                            default: false
                             description: enabled enables the probe.
                             type: boolean
                           failureThreshold:
@@ -4544,17 +4556,20 @@ spec:
                                     - ImplementationSpecific
                                     type: string
                                   port:
-                                    description: |-
-                                      port is the backend service port number to route traffic to.
-                                      Defaults to the gateway port (8642) when not set.
+                                    description: port is the backend service port
+                                      number to route traffic to.
                                     format: int32
                                     maximum: 65535
                                     minimum: 1
                                     type: integer
+                                required:
+                                - port
                                 type: object
+                              minItems: 1
                               type: array
                           required:
                           - host
+                          - paths
                           type: object
                         type: array
                       tls:
@@ -4586,9 +4601,9 @@ spec:
                         type: object
                       ports:
                         description: |-
-                          ports defines custom ports exposed on the Service.
-                          When set, these replace the default gateway port.
-                          When empty, the operator creates the default gateway port (8642).
+                          ports defines additional ports exposed on the Service.
+                          The API server port (config.apiServer.port, default 8642) is always
+                          exposed and should not be repeated here.
                         items:
                           description: ServicePort defines a port exposed by the Service.
                           properties:

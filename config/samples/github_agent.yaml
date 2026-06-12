@@ -60,6 +60,7 @@ spec:
           paths:
             - path: /
               pathType: Prefix
+              port: 8642
       tls:
         - hosts:
             - gh-agent.example.com
