@@ -70,11 +70,18 @@ func buildService(ha *agentsv1alpha1.HermesAgent) *corev1.Service {
 
 func buildServicePorts(ha *agentsv1alpha1.HermesAgent, svc *agentsv1alpha1.Service) []corev1.ServicePort {
 	apiServer := ha.GetHermes().GetAPIServer()
+	webhook := ha.GetHermes().GetWebhook()
 	ports := []corev1.ServicePort{
 		{
 			Name:       apiServer.GetPortName(),
 			Port:       apiServer.GetPort(),
 			TargetPort: intstr.FromInt32(apiServer.GetPort()),
+			Protocol:   corev1.ProtocolTCP,
+		},
+		{
+			Name:       webhook.GetPortName(),
+			Port:       webhook.GetPort(),
+			TargetPort: intstr.FromInt32(webhook.GetPort()),
 			Protocol:   corev1.ProtocolTCP,
 		},
 	}

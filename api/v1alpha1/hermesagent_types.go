@@ -313,6 +313,9 @@ func (n *NetworkPolicy) ShouldAllowDNS() bool {
 // DefaultAPIServerPort is the default port the gateway API server listens on.
 const DefaultAPIServerPort = int32(8642)
 
+// DefaultWebhookPort is the default port the webhook listener binds on.
+const DefaultWebhookPort = int32(8644)
+
 // HermesAPIServer configures the gateway API server.
 type HermesAPIServer struct {
 	// enabled turns on the gateway API server (sets API_SERVER_ENABLED=true)
@@ -380,6 +383,14 @@ type HermesWebhook struct {
 	// operator-managed hermes Secret.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
+	// port is the port the webhook listener binds on (sets WEBHOOK_PORT when enabled).
+	// The container port, the Service port, and the NetworkPolicy ingress rule
+	// follow this value.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +kubebuilder:default=8644
+	// +optional
+	Port *int32 `json:"port,omitempty"`
 	// secretRef references an existing Secret key to use as the HMAC secret
 	// instead of the operator-generated one. Use this to share a known value
 	// with external webhook senders, or to set "INSECURE_NO_AUTH" for testing.
@@ -389,6 +400,17 @@ type HermesWebhook struct {
 
 func (w *HermesWebhook) IsEnabled() bool {
 	return w != nil && w.Enabled
+}
+
+func (w *HermesWebhook) GetPort() int32 {
+	if w == nil || w.Port == nil {
+		return DefaultWebhookPort
+	}
+	return *w.Port
+}
+
+func (w *HermesWebhook) GetPortName() string {
+	return "webhook"
 }
 
 func (w *HermesWebhook) GetSecretRef() *corev1.SecretKeySelector {
