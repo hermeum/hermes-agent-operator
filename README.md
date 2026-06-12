@@ -70,8 +70,10 @@ kubectl get pods -l app.kubernetes.io/instance=my-agent
 - [`hermes.initChownData`](#hermesinit​chowndata)
 - [`searxng`](#searxng)
 - [`camofox`](#camofox)
-- [`security`](#security)
-- [`networking`](#networking)
+- [`security.rbac`](#securityrbac)
+- [`security.networkPolicy`](#securitynetworkpolicy)
+- [`networking.service`](#networkingservice)
+- [`networking.ingress`](#networkingingress)
 - [`suspend`](#suspend)
 
 ### `hermes.config`
@@ -89,15 +91,14 @@ hermes:
         default: claude-sonnet-4-6
 ```
 
-**`apiServer`** — enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true`, binds the server to all interfaces (`API_SERVER_HOST=0.0.0.0`) so the Service can route to it, sets `API_SERVER_PORT`, and injects the key into the agent container automatically. 
+**`apiServer`** — enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true`, `API_SERVER_PORT`, and injects the key into the agent container automatically. 
 
 ```yaml
 hermes:
   config:
     apiServer:                     # optional; omit to disable the gateway API
       enabled: true
-      port: 8642                   # optional; defaults to 8642. Also used by the container port,
-                                   # the Service, and the NetworkPolicy ingress rule
+      port: 8642                   # optional; defaults to 8642. 
       corsOrigins:                 # optional; browser origins allowed to call the API server
         - https://app.example.com  # (sets API_SERVER_CORS_ORIGINS). CORS stays disabled when empty
       existingSecret:              # optional; omit to use the operator-generated key
@@ -112,6 +113,7 @@ hermes:
   config:
     webhook:                       # optional; omit to disable the webhook ingress
       enabled: true
+      port: 8644                   # optional; defaults to 8644. 
       secretRef:                   # optional; omit to use the operator-generated secret
         name: my-webhook-secret    # name of the Secret in the same namespace
         key: WEBHOOK_SECRET        # key within that Secret
@@ -334,9 +336,9 @@ camofox:
 ```
 
 
-### `security`
+### `security.rbac`
 
-RBAC and NetworkPolicy configuration. A ServiceAccount is created by default. NetworkPolicy is created when the block is present.
+ServiceAccount and Role configuration. A ServiceAccount is created by default.
 
 ```yaml
 security:
@@ -349,6 +351,15 @@ security:
       - apiGroups: [""]
         resources: ["secrets"]
         verbs: ["get", "list"]
+```
+
+
+### `security.networkPolicy`
+
+NetworkPolicy configuration. Created only when this block is present.
+
+```yaml
+security:
   networkPolicy:                   # optional; omit the entire block to skip NetworkPolicy creation
     enabled: true                  # optional; defaults to true when the block is present
     allowedIngressCIDRs:           # optional; CIDRs allowed to reach this agent
@@ -365,9 +376,9 @@ security:
 ```
 
 
-### `networking`
+### `networking.service`
 
-Service type and optional Ingress for exposing the agent's API server (`hermes.config.apiServer.port`, default `8642`).
+Service configuration for the agent. Ports defined by `hermes.config.apiServer` and `hermes.config.webhook` are automatically exposed — use `ports` only for additional ports beyond those.
 
 ```yaml
 networking:
@@ -375,11 +386,20 @@ networking:
     type: ClusterIP                # optional; ClusterIP (default) | LoadBalancer | NodePort
     annotations:                   # optional; custom annotations on the Service
       service.beta.kubernetes.io/aws-load-balancer-type: nlb
-    ports:                         # optional; additional ports. The API server port is always
-      - name: metrics              #   exposed and should not be repeated here
+    ports:                         # optional; additional ports.
+      - name: metrics              
         port: 9090
         targetPort: 9090           # optional; defaults to port
         protocol: TCP              # optional; TCP (default) | UDP | SCTP
+```
+
+
+### `networking.ingress`
+
+Optional Ingress for exposing the agent externally.
+
+```yaml
+networking:
   ingress:
     enabled: true                  # optional; defaults to false
     className: nginx               # optional; name of the IngressClass to use
