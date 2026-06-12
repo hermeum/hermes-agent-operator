@@ -12,9 +12,9 @@ metadata:
   name: gh-agent
 spec:
   hermes:
-    webhook:
-      enabled: true
     config:
+      webhook:
+        enabled: true
       raw:
         model:
           base_url: https://ollama.com/v1
@@ -60,7 +60,7 @@ spec:
           paths:
             - path: /
               pathType: Prefix
-              port: 8642
+              port: 8644
       tls:
         - hosts:
             - gh-agent.example.com
