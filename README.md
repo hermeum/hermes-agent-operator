@@ -89,13 +89,17 @@ hermes:
         default: claude-sonnet-4-6
 ```
 
-**`apiServer`** — enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true` and injects the key into the agent container automatically. 
+**`apiServer`** — enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true`, binds the server to all interfaces (`API_SERVER_HOST=0.0.0.0`) so the Service can route to it, sets `API_SERVER_PORT`, and injects the key into the agent container automatically. 
 
 ```yaml
 hermes:
   config:
     apiServer:                     # optional; omit to disable the gateway API
       enabled: true
+      port: 8642                   # optional; defaults to 8642. Also used by the container port,
+                                   # the Service, and the NetworkPolicy ingress rule
+      corsOrigins:                 # optional; browser origins allowed to call the API server
+        - https://app.example.com  # (sets API_SERVER_CORS_ORIGINS). CORS stays disabled when empty
       existingSecret:              # optional; omit to use the operator-generated key
         name: my-api-key-secret    # name of the Secret in the same namespace
         key: API_SERVER_KEY        # key within that Secret
@@ -363,7 +367,7 @@ security:
 
 ### `networking`
 
-Service type and optional Ingress for exposing the agent's gateway (port `8642`).
+Service type and optional Ingress for exposing the agent's API server (`hermes.config.apiServer.port`, default `8642`).
 
 ```yaml
 networking:
@@ -371,10 +375,10 @@ networking:
     type: ClusterIP                # optional; ClusterIP (default) | LoadBalancer | NodePort
     annotations:                   # optional; custom annotations on the Service
       service.beta.kubernetes.io/aws-load-balancer-type: nlb
-    ports:                         # optional; omit to expose only the default gateway port (8642)
-      - name: gateway              # required per port entry
-        port: 8642
-        targetPort: 8642           # optional; defaults to port
+    ports:                         # optional; additional ports. The API server port is always
+      - name: metrics              #   exposed and should not be repeated here
+        port: 9090
+        targetPort: 9090           # optional; defaults to port
         protocol: TCP              # optional; TCP (default) | UDP | SCTP
   ingress:
     enabled: true                  # optional; defaults to false
@@ -383,10 +387,10 @@ networking:
       cert-manager.io/cluster-issuer: letsencrypt
     hosts:                         # optional; omit if Ingress is not needed
       - host: agent.example.com
-        paths:
+        paths:                     # required; at least one path per host
           - path: /                # optional; defaults to /
             pathType: Prefix       # optional; Prefix (default) | Exact | ImplementationSpecific
-            port: 8642             # optional; defaults to the gateway port (8642)
+            port: 8642             # required; backend Service port, e.g. the API server port
     tls:                           # optional; omit if TLS termination is not needed
       - hosts:
           - agent.example.com
