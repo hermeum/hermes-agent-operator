@@ -277,6 +277,16 @@ func (k *KubernetesClient) UpdateServiceOwnedByHermesAgent(ctx context.Context, 
 	return k.client.Update(ctx, param.Service)
 }
 
+func (k *KubernetesClient) DeleteService(ctx context.Context, param usecase.DeleteServiceParam) error {
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      param.NamespacedName.Name,
+			Namespace: param.NamespacedName.Namespace,
+		},
+	}
+	return client.IgnoreNotFound(k.client.Delete(ctx, svc))
+}
+
 func (k *KubernetesClient) GetIngress(ctx context.Context, param usecase.GetIngressParam) (*networkingv1.Ingress, error) {
 	ing := &networkingv1.Ingress{}
 	if err := k.client.Get(ctx, param.NamespacedName, ing); err != nil {
