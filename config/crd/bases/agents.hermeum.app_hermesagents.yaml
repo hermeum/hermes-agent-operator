@@ -2332,6 +2332,15 @@ spec:
                           management required. Set existingSecret to supply your own Secret instead.
                           The Secret is persisted across reconciles; enabling the server injects it into the container.
                         properties:
+                          corsOrigins:
+                            description: |-
+                              corsOrigins lists the browser origins allowed to call the API server
+                              (sets API_SERVER_CORS_ORIGINS as a comma-separated list when enabled).
+                              CORS stays disabled when empty. Keep this narrow: the API grants access
+                              to the agent's full toolset.
+                            items:
+                              type: string
+                            type: array
                           enabled:
                             description: |-
                               enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).

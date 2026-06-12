@@ -286,6 +286,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			{Name: "API_SERVER_ENABLED", Value: "true"},
 			{Name: "API_SERVER_PORT", Value: strconv.Itoa(int(apiServer.GetPort()))},
 		}...)
+		if origins := apiServer.GetCORSOrigins(); len(origins) > 0 {
+			container.Env = append(container.Env, corev1.EnvVar{
+				Name:  "API_SERVER_CORS_ORIGINS",
+				Value: strings.Join(origins, ","),
+			})
+		}
 	}
 
 	// Webhook configuration

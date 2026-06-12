@@ -327,6 +327,12 @@ type HermesAPIServer struct {
 	// +kubebuilder:default=8642
 	// +optional
 	Port *int32 `json:"port,omitempty"`
+	// corsOrigins lists the browser origins allowed to call the API server
+	// (sets API_SERVER_CORS_ORIGINS as a comma-separated list when enabled).
+	// CORS stays disabled when empty. Keep this narrow: the API grants access
+	// to the agent's full toolset.
+	// +optional
+	CORSOrigins []string `json:"corsOrigins,omitempty"`
 	// existingSecret references a user-managed Secret that contains the API key.
 	// When set, its key is injected into the container instead of the operator-generated one.
 	// The referenced Secret must exist in the same namespace as the HermesAgent.
@@ -349,6 +355,13 @@ func (a *HermesAPIServer) GetPort() int32 {
 // GetPortName returns the name of the container port the API server listens on.
 func (a *HermesAPIServer) GetPortName() string {
 	return "api-server"
+}
+
+func (a *HermesAPIServer) GetCORSOrigins() []string {
+	if a == nil {
+		return nil
+	}
+	return a.CORSOrigins
 }
 
 func (a *HermesAPIServer) GetExistingSecret() *corev1.SecretKeySelector {

@@ -200,6 +200,11 @@ func (in *HermesAPIServer) DeepCopyInto(out *HermesAPIServer) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.CORSOrigins != nil {
+		in, out := &in.CORSOrigins, &out.CORSOrigins
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.ExistingSecret != nil {
 		in, out := &in.ExistingSecret, &out.ExistingSecret
 		*out = new(corev1.SecretKeySelector)
