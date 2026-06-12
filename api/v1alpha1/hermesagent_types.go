@@ -315,7 +315,9 @@ const DefaultAPIServerPort = int32(8642)
 
 // HermesAPIServer configures the gateway API server.
 type HermesAPIServer struct {
-	// enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
+	// enabled turns on the gateway API server (sets API_SERVER_ENABLED=true)
+	// bound to all interfaces (sets API_SERVER_HOST=0.0.0.0) so that the
+	// Service can route to it.
 	// The operator always generates an API key Secret automatically.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`

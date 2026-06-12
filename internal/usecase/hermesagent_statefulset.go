@@ -284,6 +284,9 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: apiKeyRef},
 			},
 			{Name: "API_SERVER_ENABLED", Value: "true"},
+			// The default bind is 127.0.0.1, which is unreachable from outside
+			// the pod; bind all interfaces so the Service can route to it.
+			{Name: "API_SERVER_HOST", Value: "0.0.0.0"},
 			{Name: "API_SERVER_PORT", Value: strconv.Itoa(int(apiServer.GetPort()))},
 		}...)
 		if origins := apiServer.GetCORSOrigins(); len(origins) > 0 {
