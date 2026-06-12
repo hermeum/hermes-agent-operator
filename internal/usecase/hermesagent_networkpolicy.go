@@ -84,8 +84,12 @@ func buildNetworkPolicy(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha1.Netwo
 
 func buildNetworkPolicyIngress(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha1.NetworkPolicy) []networkingv1.NetworkPolicyIngressRule {
 	apiServer := intstr.FromInt32(ha.GetHermes().GetAPIServer().GetPort())
+	webhookPort := intstr.FromInt32(ha.GetHermes().GetWebhook().GetPort())
 	tcp := corev1.ProtocolTCP
-	ports := []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &apiServer}}
+	ports := []networkingv1.NetworkPolicyPort{
+		{Protocol: &tcp, Port: &apiServer},
+		{Protocol: &tcp, Port: &webhookPort},
+	}
 
 	peers := make([]networkingv1.NetworkPolicyPeer, 0, len(np.AllowedIngressCIDRs)+len(np.AllowedIngressNamespaces))
 	for _, cidr := range np.AllowedIngressCIDRs {

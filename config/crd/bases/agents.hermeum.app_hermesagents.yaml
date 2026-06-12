@@ -2400,6 +2400,16 @@ spec:
                               When enabled without secretRef, WEBHOOK_SECRET is injected from the
                               operator-managed hermes Secret.
                             type: boolean
+                          port:
+                            default: 8644
+                            description: |-
+                              port is the port the webhook listener binds on (sets WEBHOOK_PORT when enabled).
+                              The container port, the Service port, and the NetworkPolicy ingress rule
+                              follow this value.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
                           secretRef:
                             description: |-
                               secretRef references an existing Secret key to use as the HMAC secret

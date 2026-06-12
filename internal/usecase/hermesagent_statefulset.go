@@ -218,6 +218,11 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				ContainerPort: apiServer.GetPort(),
 				Protocol:      corev1.ProtocolTCP,
 			},
+			{
+				Name:          ha.GetHermes().GetWebhook().GetPortName(),
+				ContainerPort: ha.GetHermes().GetWebhook().GetPort(),
+				Protocol:      corev1.ProtocolTCP,
+			},
 		}, ha.GetHermes().GetPorts()...),
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
@@ -312,6 +317,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: secretRef},
 			},
 			{Name: "WEBHOOK_ENABLED", Value: "true"},
+			{Name: "WEBHOOK_PORT", Value: strconv.Itoa(int(ha.GetHermes().GetWebhook().GetPort()))},
 		}...)
 	}
 
