@@ -88,6 +88,7 @@ type Kubernetes interface {
 	GetService(ctx context.Context, param GetServiceParam) (*corev1.Service, error)
 	CreateServiceOwnedByHermesAgent(ctx context.Context, param CreateServiceOfHermesAgentParam) error
 	UpdateServiceOwnedByHermesAgent(ctx context.Context, param UpdateServiceParam) error
+	DeleteService(ctx context.Context, param DeleteServiceParam) error
 
 	GetIngress(ctx context.Context, param GetIngressParam) (*networkingv1.Ingress, error)
 	CreateIngressOwnedByHermesAgent(ctx context.Context, param CreateIngressOfHermesAgentParam) error
@@ -228,6 +229,10 @@ type CreateServiceOfHermesAgentParam struct {
 type UpdateServiceParam struct {
 	HermesAgent *agentsv1alpha1.HermesAgent
 	Service     *corev1.Service
+}
+
+type DeleteServiceParam struct {
+	NamespacedName types.NamespacedName
 }
 
 type GetIngressParam struct {

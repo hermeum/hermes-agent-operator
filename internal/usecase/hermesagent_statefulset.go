@@ -212,18 +212,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Args:            []string{"gateway", "run"},
 		WorkingDir:      "/opt/hermes",
-		Ports: append([]corev1.ContainerPort{
-			{
-				Name:          apiServer.GetPortName(),
-				ContainerPort: apiServer.GetPort(),
-				Protocol:      corev1.ProtocolTCP,
-			},
-			{
-				Name:          ha.GetHermes().GetWebhook().GetPortName(),
-				ContainerPort: ha.GetHermes().GetWebhook().GetPort(),
-				Protocol:      corev1.ProtocolTCP,
-			},
-		}, ha.GetHermes().GetPorts()...),
+		Ports:           ha.GetHermes().GetPorts(),
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
@@ -276,6 +265,11 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	// API server configuration
 	if apiServer.IsEnabled() {
+		container.Ports = append(container.Ports, corev1.ContainerPort{
+			Name:          apiServer.GetPortName(),
+			ContainerPort: apiServer.GetPort(),
+			Protocol:      corev1.ProtocolTCP,
+		})
 		apiKeyRef := &corev1.SecretKeySelector{
 			LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
 			Key:                  "API_SERVER_KEY",
@@ -304,6 +298,11 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	// Webhook configuration
 	if ha.GetHermes().GetWebhook().IsEnabled() {
+		container.Ports = append(container.Ports, corev1.ContainerPort{
+			Name:          ha.GetHermes().GetWebhook().GetPortName(),
+			ContainerPort: ha.GetHermes().GetWebhook().GetPort(),
+			Protocol:      corev1.ProtocolTCP,
+		})
 		secretRef := ha.GetHermes().GetWebhook().GetSecretRef()
 		if secretRef == nil {
 			secretRef = &corev1.SecretKeySelector{

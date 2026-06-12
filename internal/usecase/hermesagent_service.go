@@ -23,6 +23,20 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 	}
 
 	desired := buildService(ha)
+	if len(desired.Spec.Ports) == 0 {
+		if existing != nil {
+			if err := u.kube.DeleteService(ctx, DeleteServiceParam{NamespacedName: nsName}); err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Debug(ctx, "Service deleted (no ports configured)", "namespacedName", nsName)
+		}
+		ha.Status.ManagedResources.Service = ""
+		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	if existing != nil {
 		desired.ResourceVersion = existing.ResourceVersion
 		// ClusterIP is immutable; carry it over from the existing Service.
@@ -71,19 +85,22 @@ func buildService(ha *agentsv1alpha1.HermesAgent) *corev1.Service {
 func buildServicePorts(ha *agentsv1alpha1.HermesAgent, svc *agentsv1alpha1.Service) []corev1.ServicePort {
 	apiServer := ha.GetHermes().GetAPIServer()
 	webhook := ha.GetHermes().GetWebhook()
-	ports := []corev1.ServicePort{
-		{
+	var ports []corev1.ServicePort
+	if apiServer.IsEnabled() {
+		ports = append(ports, corev1.ServicePort{
 			Name:       apiServer.GetPortName(),
 			Port:       apiServer.GetPort(),
 			TargetPort: intstr.FromInt32(apiServer.GetPort()),
 			Protocol:   corev1.ProtocolTCP,
-		},
-		{
+		})
+	}
+	if webhook.IsEnabled() {
+		ports = append(ports, corev1.ServicePort{
 			Name:       webhook.GetPortName(),
 			Port:       webhook.GetPort(),
 			TargetPort: intstr.FromInt32(webhook.GetPort()),
 			Protocol:   corev1.ProtocolTCP,
-		},
+		})
 	}
 	if svc == nil {
 		return ports
