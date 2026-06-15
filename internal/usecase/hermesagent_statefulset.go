@@ -41,24 +41,22 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	desired := buildStatefulSet(ha)
 
-	var stsOp string
 	if sts != nil {
-		if statefulSetSpecEqual(desired, sts) {
-			return ctrl.Result{}, nil
-		} else {
+		if !statefulSetSpecEqual(desired, sts) {
 			desired.ResourceVersion = sts.ResourceVersion
 			err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			stsOp = "updated"
+			// TODO: fix statefulSetSpecEqual to avoid this misleading log when only non-operator-managed fields differ.
+			// u.tel.Debug(ctx, "StatefulSet updated", "namespacedName", nsName, "phase", ha.Status.Phase)
 		}
 	} else {
 		err = u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{HermesAgent: ha, StatefulSet: desired})
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		stsOp = "created"
+		u.tel.Debug(ctx, "StatefulSet created", "namespacedName", nsName, "phase", ha.Status.Phase)
 	}
 
 	ha.Status.ManagedResources.StatefulSet = ha.Name
@@ -67,7 +65,7 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	u.tel.Debug(ctx, "StatefulSet "+stsOp, "namespacedName", nsName, "phase", ha.Status.Phase)
+	// if the StatefulSet is not ready, requeue to check again after a short delay.
 	if ha.Status.Phase == agentsv1alpha1.PhasePending || ha.Status.Phase == agentsv1alpha1.PhaseUnknown {
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
