@@ -61,6 +61,7 @@ kubectl get pods -l app.kubernetes.io/instance=my-agent
 - [`hermes.config`](#hermesconfig)
 - [`hermes.storage`](#hermesstorage)
 - [`hermes.workspace`](#hermesworkspace)
+- [`hermes.pythonPackages`](#hermespythonpackages)
 - [`hermes.plugins`](#hermesplugins)
 - [`hermes.skills`](#hermesskills)
 - [`hermes.crons`](#hermescrons)
@@ -148,6 +149,25 @@ hermes:
         # My Custom Skill
         ...
 ```
+
+
+### `hermes.pythonPackages`
+
+Pre-install Python packages before the agent starts. Each entry is a [pip specifier](https://pip.pypa.io/en/stable/reference/requirement-specifiers/) — bare name, version-pinned, or extras.
+
+Packages are installed into `$HERMES_HOME/.python-packages` (under `/opt/data`, the persistent volume) and made available to the agent via `PYTHONPATH`. Because the installation runs in an init container that executes on every pod start, packages are always present even when persistence is disabled. When a PVC is attached, the operator skips reinstalling if the desired set has not changed since the last start.
+
+Removing a package from the list wipes and reinstalls the remaining set on the next reconcile, so the installed state always matches the declaration.
+
+```yaml
+hermes:
+  pythonPackages:                  # optional; omit if no extra packages are needed
+    - requests
+    - pandas==2.1.0
+    - "beautifulsoup4[lxml]"
+```
+
+> **Note:** Packages here are available to Python code run *by* the agent (tool execution, scripts, etc.). They do not affect the Hermes agent process itself, which uses its own virtual environment at `/opt/hermes/.venv`.
 
 
 ### `hermes.plugins`

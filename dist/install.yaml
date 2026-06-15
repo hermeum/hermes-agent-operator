@@ -2340,9 +2340,20 @@ spec:
                           management required. Set existingSecret to supply your own Secret instead.
                           The Secret is persisted across reconciles; enabling the server injects it into the container.
                         properties:
+                          corsOrigins:
+                            description: |-
+                              corsOrigins lists the browser origins allowed to call the API server
+                              (sets API_SERVER_CORS_ORIGINS as a comma-separated list when enabled).
+                              CORS stays disabled when empty. Keep this narrow: the API grants access
+                              to the agent's full toolset.
+                            items:
+                              type: string
+                            type: array
                           enabled:
                             description: |-
-                              enabled turns on the gateway API server (sets API_SERVER_ENABLED=true).
+                              enabled turns on the gateway API server (sets API_SERVER_ENABLED=true)
+                              bound to all interfaces (sets API_SERVER_HOST=0.0.0.0) so that the
+                              Service can route to it.
                               The operator always generates an API key Secret automatically.
                             type: boolean
                           existingSecret:
@@ -2373,6 +2384,16 @@ spec:
                             - key
                             type: object
                             x-kubernetes-map-type: atomic
+                          port:
+                            default: 8642
+                            description: |-
+                              port is the port the API server listens on (sets API_SERVER_PORT when enabled).
+                              The container port, the Service port, and the NetworkPolicy ingress rule
+                              follow this value.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
                         type: object
                       raw:
                         description: raw holds the verbatim Hermes agent config.yml
@@ -2387,6 +2408,16 @@ spec:
                               When enabled without secretRef, WEBHOOK_SECRET is injected from the
                               operator-managed hermes Secret.
                             type: boolean
+                          port:
+                            default: 8644
+                            description: |-
+                              port is the port the webhook listener binds on (sets WEBHOOK_PORT when enabled).
+                              The container port, the Service port, and the NetworkPolicy ingress rule
+                              follow this value.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
                           secretRef:
                             description: |-
                               secretRef references an existing Secret key to use as the HMAC secret
@@ -2720,7 +2751,8 @@ spec:
                   ports:
                     description: |-
                       ports declares additional container ports on the hermes-agent container.
-                      The gateway port (8642) is always included and should not be repeated here.
+                      The API server port (config.apiServer.port, default 8642) is always
+                      included and should not be repeated here.
                     items:
                       description: ContainerPort represents a network port in a single
                         container.
@@ -2761,14 +2793,15 @@ spec:
                   probes:
                     description: |-
                       probes overrides the health probe configuration for the hermes-agent container.
-                      Probes target the GET /health endpoint on the gateway port.
+                      Probes exec `hermes gateway status` inside the container, which works
+                      regardless of which ports the gateway listens on.
                     properties:
                       liveness:
                         description: liveness configures the liveness probe. Disabled
-                          unless set.
+                          unless enabled.
                         properties:
                           enabled:
-                            default: true
+                            default: false
                             description: enabled enables the probe.
                             type: boolean
                           failureThreshold:
@@ -2793,11 +2826,11 @@ spec:
                             type: integer
                         type: object
                       readiness:
-                        description: readiness configures the readiness probe. Enabled
-                          by default.
+                        description: readiness configures the readiness probe. Disabled
+                          unless enabled.
                         properties:
                           enabled:
-                            default: true
+                            default: false
                             description: enabled enables the probe.
                             type: boolean
                           failureThreshold:
@@ -2823,10 +2856,10 @@ spec:
                         type: object
                       startup:
                         description: startup configures the startup probe. Disabled
-                          unless set.
+                          unless enabled.
                         properties:
                           enabled:
-                            default: true
+                            default: false
                             description: enabled enables the probe.
                             type: boolean
                           failureThreshold:
@@ -2851,6 +2884,14 @@ spec:
                             type: integer
                         type: object
                     type: object
+                  pythonPackages:
+                    description: |-
+                      pythonPackages is a list of Python package specifiers to pre-install before the
+                      agent starts (e.g. "requests", "pandas==2.1.0"). Packages are installed into
+                      $HERMES_HOME/.python-packages and made available via PYTHONPATH.
+                    items:
+                      type: string
+                    type: array
                   resources:
                     description: resources overrides the resource requests and limits
                       for the hermes-agent container.
@@ -4552,17 +4593,20 @@ spec:
                                     - ImplementationSpecific
                                     type: string
                                   port:
-                                    description: |-
-                                      port is the backend service port number to route traffic to.
-                                      Defaults to the gateway port (8642) when not set.
+                                    description: port is the backend service port
+                                      number to route traffic to.
                                     format: int32
                                     maximum: 65535
                                     minimum: 1
                                     type: integer
+                                required:
+                                - port
                                 type: object
+                              minItems: 1
                               type: array
                           required:
                           - host
+                          - paths
                           type: object
                         type: array
                       tls:
@@ -4594,9 +4638,9 @@ spec:
                         type: object
                       ports:
                         description: |-
-                          ports defines custom ports exposed on the Service.
-                          When set, these replace the default gateway port.
-                          When empty, the operator creates the default gateway port (8642).
+                          ports defines additional ports exposed on the Service.
+                          The API server port (config.apiServer.port, default 8642) is always
+                          exposed and should not be repeated here.
                         items:
                           description: ServicePort defines a port exposed by the Service.
                           properties:
