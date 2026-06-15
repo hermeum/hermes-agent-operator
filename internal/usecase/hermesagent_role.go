@@ -51,6 +51,7 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 		return ctrl.Result{}, nil
 	}
 
+	roleCreated := existingRole == nil
 	desiredRole := buildRole(ha, rules)
 	if existingRole != nil {
 		if !roleEqual(desiredRole, existingRole) {
@@ -69,6 +70,7 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 		u.tel.Debug(ctx, "Role created", "namespacedName", nsName)
 	}
 
+	rbCreated := existingRB == nil
 	desiredRB := buildRoleBinding(ha, saName)
 	if existingRB != nil {
 		if !roleBindingEqual(desiredRB, existingRB) {
@@ -87,8 +89,13 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 		u.tel.Debug(ctx, "RoleBinding created", "namespacedName", nsName)
 	}
 
-	ha.Status.ManagedResources.Role = ha.Name
-	ha.Status.ManagedResources.RoleBinding = ha.Name
+	if roleCreated || rbCreated {
+		ha.Status.ManagedResources.Role = ha.Name
+		ha.Status.ManagedResources.RoleBinding = ha.Name
+		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+	}
 	return ctrl.Result{}, nil
 }
 

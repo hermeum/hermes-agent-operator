@@ -41,7 +41,6 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 	desired := buildIngress(ha, ing)
 	if existing != nil {
 		if ingressEqual(desired, existing) {
-			ha.Status.ManagedResources.Ingress = ha.Name
 			return ctrl.Result{}, nil
 		}
 		desired.ResourceVersion = existing.ResourceVersion
@@ -50,7 +49,6 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "Ingress updated", "namespacedName", nsName)
-		ha.Status.ManagedResources.Ingress = ha.Name
 		return ctrl.Result{}, nil
 	}
 
@@ -60,6 +58,9 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 	}
 	u.tel.Debug(ctx, "Ingress created", "namespacedName", nsName)
 	ha.Status.ManagedResources.Ingress = ha.Name
+	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
 	return ctrl.Result{}, nil
 }
 

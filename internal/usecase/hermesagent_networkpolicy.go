@@ -44,7 +44,6 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	desired := buildNetworkPolicy(ha, np)
 	if existing != nil {
 		if networkPolicyEqual(desired, existing) {
-			ha.Status.ManagedResources.NetworkPolicy = ha.Name
 			return ctrl.Result{}, nil
 		}
 		desired.ResourceVersion = existing.ResourceVersion
@@ -53,7 +52,6 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "NetworkPolicy updated", "namespacedName", nsName)
-		ha.Status.ManagedResources.NetworkPolicy = ha.Name
 		return ctrl.Result{}, nil
 	}
 
@@ -63,6 +61,9 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	}
 	u.tel.Debug(ctx, "NetworkPolicy created", "namespacedName", nsName)
 	ha.Status.ManagedResources.NetworkPolicy = ha.Name
+	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
 	return ctrl.Result{}, nil
 }
 

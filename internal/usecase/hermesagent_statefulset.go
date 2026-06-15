@@ -58,10 +58,10 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
+		ha.Status.ManagedResources.StatefulSet = ha.Name
 		stsOp = "created"
 	}
 
-	ha.Status.ManagedResources.StatefulSet = ha.Name
 	ha.Status.Phase = u.derivePhase(ctx, ha)
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err

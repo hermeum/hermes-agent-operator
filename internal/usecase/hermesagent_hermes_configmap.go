@@ -34,7 +34,6 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 
 	if cm != nil {
 		if configMapDataEqual(desired, cm) {
-			ha.Status.ManagedResources.HermesConfigMap = ha.GetHermesName()
 			return ctrl.Result{}, nil
 		}
 		desired.ResourceVersion = cm.ResourceVersion
@@ -43,7 +42,6 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
 		u.tel.Debug(ctx, "Hermes ConfigMap updated", "namespacedName", nsName)
-		ha.Status.ManagedResources.HermesConfigMap = ha.GetHermesName()
 		return ctrl.Result{}, nil
 	}
 
@@ -53,6 +51,9 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 	}
 	u.tel.Debug(ctx, "Hermes ConfigMap created", "namespacedName", nsName)
 	ha.Status.ManagedResources.HermesConfigMap = ha.GetHermesName()
+	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
 	return ctrl.Result{}, nil
 }
 

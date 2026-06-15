@@ -46,7 +46,8 @@ func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agen
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	if existing == nil {
+	created := existing == nil
+	if created {
 		err = u.kube.CreateSecretOwnedByHermesAgent(ctx, CreateSecretOfHermesAgentParam{HermesAgent: ha, Secret: desired})
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
@@ -60,7 +61,12 @@ func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agen
 		u.tel.Debug(ctx, "Hermes Secret updated", "namespacedName", nsName)
 	}
 
-	ha.Status.ManagedResources.HermesSecret = ha.GetHermesName()
+	if created {
+		ha.Status.ManagedResources.HermesSecret = ha.GetHermesName()
+		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+	}
 	return ctrl.Result{}, nil
 }
 
