@@ -2876,6 +2876,14 @@ spec:
                             type: integer
                         type: object
                     type: object
+                  pythonPackages:
+                    description: |-
+                      pythonPackages is a list of Python package specifiers to pre-install before the
+                      agent starts (e.g. "requests", "pandas==2.1.0"). Packages are installed into
+                      $HERMES_HOME/.python-packages and made available via PYTHONPATH.
+                    items:
+                      type: string
+                    type: array
                   resources:
                     description: resources overrides the resource requests and limits
                       for the hermes-agent container.

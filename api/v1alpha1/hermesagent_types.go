@@ -472,6 +472,11 @@ type Hermes struct {
 	// workspace defines files to seed in the agent's home directory.
 	// +optional
 	Workspace *HermesWorkspace `json:"workspace,omitempty"`
+	// pythonPackages is a list of Python package specifiers to pre-install before the
+	// agent starts (e.g. "requests", "pandas==2.1.0"). Packages are installed into
+	// $HERMES_HOME/.python-packages and made available via PYTHONPATH.
+	// +optional
+	PythonPackages []string `json:"pythonPackages,omitempty"`
 	// plugins is a list of plugins to install in the Hermes agent.
 	// +optional
 	Plugins []HermesPlugin `json:"plugins,omitempty"`
@@ -578,6 +583,13 @@ func (h *Hermes) GetWorkspace() *HermesWorkspace {
 		return nil
 	}
 	return h.Workspace
+}
+
+func (h *Hermes) GetPythonPackages() []string {
+	if h == nil {
+		return nil
+	}
+	return h.PythonPackages
 }
 
 func (h *Hermes) GetPlugins() []HermesPlugin {
