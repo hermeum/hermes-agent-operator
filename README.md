@@ -437,6 +437,8 @@ They aren't. The operator only manages what is explicitly declared in the `Herme
 
 Only the `HERMES_HOME` path (`/opt/data`) is persisted across pod restarts. Anything that needs to survive a restart must be placed under `HERMES_HOME`. The operator sets `HOME=/opt/data/home` so tools that respect `$HOME` will write there automatically.
 
+`/opt/data/.local/bin` is included in the container's default `PATH`, so binaries installed there are both persistent and immediately executable without any extra configuration.
+
 **Q: Why does the Hermes container run as root?**
 
 The official Hermes image uses [s6-overlay](https://github.com/just-containers/s6-overlay), which requires the process to start as root for service supervision setup. Once initialisation is complete, s6-overlay drops privileges and runs the agent as the `hermes` user (`10000:10000`).
