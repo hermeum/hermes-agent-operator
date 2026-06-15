@@ -119,16 +119,6 @@ hermes:
         key: WEBHOOK_SECRET        # key within that Secret
 ```
 
-> NOTE: The operator disables the Hermes curator (automatic skill updates) by default to prevent unintended skill drift in team environments. To re-enable it:
-
-```yaml
-hermes:
-  config:
-    raw:
-      curator:
-        enabled: true
-```
-
 ### `hermes.storage`
 
 Persistent volume for agent data at `/opt/data`. Without persistence, data is lost on pod restart.
