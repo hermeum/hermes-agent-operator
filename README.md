@@ -437,7 +437,7 @@ They aren't. The operator only manages what is explicitly declared in the `Herme
 
 Only the `HERMES_HOME` path (`/opt/data`) is persisted across pod restarts. Anything that needs to survive a restart must be placed under `HERMES_HOME`. The operator sets `HOME=/opt/data/home` so tools that respect `$HOME` will write there automatically.
 
-`/opt/data/.local/bin` is included in the container's default `PATH`, so binaries installed there are both persistent and immediately executable without any extra configuration.
+To make binaries persistent and immediately executable, place them under `/opt/data/.local/bin` — that directory is included in the container's default `PATH`.
 
 **Q: Why does the Hermes container run as root?**
 
