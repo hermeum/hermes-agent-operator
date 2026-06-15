@@ -8,6 +8,7 @@ import (
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -39,6 +40,10 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 
 	desired := buildIngress(ha, ing)
 	if existing != nil {
+		if ingressEqual(desired, existing) {
+			ha.Status.ManagedResources.Ingress = ha.Name
+			return ctrl.Result{}, nil
+		}
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateIngressOwnedByHermesAgent(ctx, UpdateIngressParam{HermesAgent: ha, Ingress: desired})
 		if err != nil {
@@ -56,6 +61,10 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 	u.tel.Debug(ctx, "Ingress created", "namespacedName", nsName)
 	ha.Status.ManagedResources.Ingress = ha.Name
 	return ctrl.Result{}, nil
+}
+
+func ingressEqual(a, b *networkingv1.Ingress) bool {
+	return equality.Semantic.DeepEqual(a.Spec, b.Spec) && maps.Equal(a.Annotations, b.Annotations)
 }
 
 func buildIngress(ha *agentsv1alpha1.HermesAgent, ing *agentsv1alpha1.Ingress) *networkingv1.Ingress {

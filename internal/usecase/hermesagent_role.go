@@ -7,6 +7,7 @@ import (
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -52,12 +53,14 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 
 	desiredRole := buildRole(ha, rules)
 	if existingRole != nil {
-		desiredRole.ResourceVersion = existingRole.ResourceVersion
-		err := u.kube.UpdateRoleOwnedByHermesAgent(ctx, UpdateRoleParam{HermesAgent: ha, Role: desiredRole})
-		if err != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		if !roleEqual(desiredRole, existingRole) {
+			desiredRole.ResourceVersion = existingRole.ResourceVersion
+			err := u.kube.UpdateRoleOwnedByHermesAgent(ctx, UpdateRoleParam{HermesAgent: ha, Role: desiredRole})
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Debug(ctx, "Role updated", "namespacedName", nsName)
 		}
-		u.tel.Debug(ctx, "Role updated", "namespacedName", nsName)
 	} else {
 		err := u.kube.CreateRoleOwnedByHermesAgent(ctx, CreateRoleOfHermesAgentParam{HermesAgent: ha, Role: desiredRole})
 		if err != nil {
@@ -68,12 +71,14 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 
 	desiredRB := buildRoleBinding(ha, saName)
 	if existingRB != nil {
-		desiredRB.ResourceVersion = existingRB.ResourceVersion
-		err := u.kube.UpdateRoleBindingOwnedByHermesAgent(ctx, UpdateRoleBindingParam{HermesAgent: ha, RoleBinding: desiredRB})
-		if err != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		if !roleBindingEqual(desiredRB, existingRB) {
+			desiredRB.ResourceVersion = existingRB.ResourceVersion
+			err := u.kube.UpdateRoleBindingOwnedByHermesAgent(ctx, UpdateRoleBindingParam{HermesAgent: ha, RoleBinding: desiredRB})
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Debug(ctx, "RoleBinding updated", "namespacedName", nsName)
 		}
-		u.tel.Debug(ctx, "RoleBinding updated", "namespacedName", nsName)
 	} else {
 		err := u.kube.CreateRoleBindingOwnedByHermesAgent(ctx, CreateRoleBindingOfHermesAgentParam{HermesAgent: ha, RoleBinding: desiredRB})
 		if err != nil {
@@ -85,6 +90,14 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 	ha.Status.ManagedResources.Role = ha.Name
 	ha.Status.ManagedResources.RoleBinding = ha.Name
 	return ctrl.Result{}, nil
+}
+
+func roleEqual(a, b *rbacv1.Role) bool {
+	return equality.Semantic.DeepEqual(a.Rules, b.Rules)
+}
+
+func roleBindingEqual(a, b *rbacv1.RoleBinding) bool {
+	return equality.Semantic.DeepEqual(a.Subjects, b.Subjects) && a.RoleRef == b.RoleRef
 }
 
 func buildRole(ha *agentsv1alpha1.HermesAgent, rules []agentsv1alpha1.RBACRule) *rbacv1.Role {

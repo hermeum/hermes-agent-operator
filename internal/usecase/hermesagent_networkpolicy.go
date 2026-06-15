@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -42,6 +43,10 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 
 	desired := buildNetworkPolicy(ha, np)
 	if existing != nil {
+		if networkPolicyEqual(desired, existing) {
+			ha.Status.ManagedResources.NetworkPolicy = ha.Name
+			return ctrl.Result{}, nil
+		}
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateNetworkPolicyOwnedByHermesAgent(ctx, UpdateNetworkPolicyParam{HermesAgent: ha, NetworkPolicy: desired})
 		if err != nil {
@@ -59,6 +64,10 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	u.tel.Debug(ctx, "NetworkPolicy created", "namespacedName", nsName)
 	ha.Status.ManagedResources.NetworkPolicy = ha.Name
 	return ctrl.Result{}, nil
+}
+
+func networkPolicyEqual(a, b *networkingv1.NetworkPolicy) bool {
+	return equality.Semantic.DeepEqual(a.Spec, b.Spec)
 }
 
 func buildNetworkPolicy(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha1.NetworkPolicy) *networkingv1.NetworkPolicy {
