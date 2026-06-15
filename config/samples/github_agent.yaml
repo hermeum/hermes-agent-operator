@@ -4,7 +4,8 @@ metadata:
   name: gh-agent-secrets
 stringData:
   OLLAMA_API_KEY: ""
-  GITHUB_TOKEN: ""
+  # _HERMES_FORCE_ allows to pass a GitHub token to subprocesses. Hermes agent blocks GitHub token from being passed to subprocesses by default for security reasons. Setting this variable to any non-empty value will force Hermes to pass the GitHub token to subprocesses.
+  _HERMES_FORCE_GITHUB_TOKEN: ""
 ---
 apiVersion: agents.hermeum.app/v1alpha1
 kind: HermesAgent
@@ -40,6 +41,10 @@ spec:
                   deliver_extra:
                     repo: "{repository.full_name}"
                     pr_number: "{number}"
+    workspace:
+      files:
+        home/.bashrc: |
+          export PATH="$HERMES_HOME/.local/bin:$PATH"
     storage:
       persistence:
         enabled: true
@@ -52,9 +57,6 @@ spec:
     ingress:
       enabled: true
       className: nginx
-      annotations:
-        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
       hosts:
         - host: gh-agent.example.com
           paths:
@@ -75,13 +77,13 @@ spec:
             echo "gh already installed, skipping"
             exit 0
           fi
-          mkdir -p $HOME/bin
+          mkdir -p $HERMES_HOME/.local/bin
           GH_VERSION=2.94.0
           curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
             | tar -xz -C /tmp
-          mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" $HOME/bin/gh
-          chmod +x $HOME/bin/gh
-          echo "gh installed: $($HOME/bin/gh --version)"
+          mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" $HERMES_HOME/.local/bin/gh
+          chmod +x $HERMES_HOME/.local/bin/gh
+          echo "gh installed: $($HERMES_HOME/.local/bin/gh --version)"
       env:
         - name: HERMES_HOME
           value: /opt/data
