@@ -8,6 +8,7 @@ import (
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -38,9 +39,13 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 	}
 
 	if existing != nil {
-		desired.ResourceVersion = existing.ResourceVersion
 		// ClusterIP is immutable; carry it over from the existing Service.
 		desired.Spec.ClusterIP = existing.Spec.ClusterIP
+		if serviceEqual(desired, existing) {
+			ha.Status.ManagedResources.Service = ha.Name
+			return ctrl.Result{}, nil
+		}
+		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateServiceOwnedByHermesAgent(ctx, UpdateServiceParam{HermesAgent: ha, Service: desired})
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
@@ -57,6 +62,12 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 	u.tel.Debug(ctx, "Service created", "namespacedName", nsName)
 	ha.Status.ManagedResources.Service = ha.Name
 	return ctrl.Result{}, nil
+}
+
+func serviceEqual(a, b *corev1.Service) bool {
+	return equality.Semantic.DeepEqual(a.Spec.Ports, b.Spec.Ports) &&
+		a.Spec.Type == b.Spec.Type &&
+		maps.Equal(a.Annotations, b.Annotations)
 }
 
 func buildService(ha *agentsv1alpha1.HermesAgent) *corev1.Service {

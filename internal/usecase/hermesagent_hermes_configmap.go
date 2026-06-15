@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
+	"maps"
 	"strings"
 	"time"
 
@@ -32,6 +33,10 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 	}
 
 	if cm != nil {
+		if configMapDataEqual(desired, cm) {
+			ha.Status.ManagedResources.HermesConfigMap = ha.GetHermesName()
+			return ctrl.Result{}, nil
+		}
 		desired.ResourceVersion = cm.ResourceVersion
 		err := u.kube.UpdateConfigMapOwnedByHermesAgent(ctx, UpdateConfigMapParam{HermesAgent: ha, ConfigMap: desired})
 		if err != nil {
@@ -49,6 +54,10 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 	u.tel.Debug(ctx, "Hermes ConfigMap created", "namespacedName", nsName)
 	ha.Status.ManagedResources.HermesConfigMap = ha.GetHermesName()
 	return ctrl.Result{}, nil
+}
+
+func configMapDataEqual(a, b *corev1.ConfigMap) bool {
+	return maps.Equal(a.Data, b.Data)
 }
 
 // applySearXNGConfigDefaults applies default values to the SearXNG config if they are not set by the user.

@@ -38,6 +38,10 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 
 	desired := buildServiceAccount(ha)
 	if existing != nil {
+		if serviceAccountEqual(desired, existing) {
+			ha.Status.ManagedResources.ServiceAccount = ha.Name
+			return ctrl.Result{}, nil
+		}
 		desired.ResourceVersion = existing.ResourceVersion
 		err := u.kube.UpdateServiceAccountOwnedByHermesAgent(ctx, UpdateServiceAccountParam{HermesAgent: ha, ServiceAccount: desired})
 		if err != nil {
@@ -55,6 +59,10 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 	u.tel.Debug(ctx, "ServiceAccount created", "namespacedName", nsName)
 	ha.Status.ManagedResources.ServiceAccount = ha.Name
 	return ctrl.Result{}, nil
+}
+
+func serviceAccountEqual(a, b *corev1.ServiceAccount) bool {
+	return maps.Equal(a.Labels, b.Labels) && maps.Equal(a.Annotations, b.Annotations)
 }
 
 func buildServiceAccount(ha *agentsv1alpha1.HermesAgent) *corev1.ServiceAccount {

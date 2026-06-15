@@ -12,6 +12,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -42,12 +43,16 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	var stsOp string
 	if sts != nil {
-		desired.ResourceVersion = sts.ResourceVersion
-		err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
-		if err != nil {
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		if statefulSetSpecEqual(desired, sts) {
+			return ctrl.Result{}, nil
+		} else {
+			desired.ResourceVersion = sts.ResourceVersion
+			err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
+			if err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			stsOp = "updated"
 		}
-		stsOp = "updated"
 	} else {
 		err = u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{HermesAgent: ha, StatefulSet: desired})
 		if err != nil {
@@ -107,6 +112,16 @@ func configMapDataHash(data map[string]string) string {
 		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", k, data[k])
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
+}
+
+// statefulSetSpecEqual compares the operator-managed portions of a StatefulSet spec.
+// The full Spec is not compared because existing objects carry Kubernetes-defaulted
+// fields (PodManagementPolicy, UpdateStrategy, etc.) that buildStatefulSet does not set,
+// which would otherwise cause a permanent diff on every reconcile.
+func statefulSetSpecEqual(a, b *appsv1.StatefulSet) bool {
+	return equality.Semantic.DeepEqual(a.Spec.Replicas, b.Spec.Replicas) &&
+		equality.Semantic.DeepEqual(a.Spec.Template, b.Spec.Template) &&
+		equality.Semantic.DeepEqual(a.Spec.VolumeClaimTemplates, b.Spec.VolumeClaimTemplates)
 }
 
 func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
