@@ -74,30 +74,6 @@ func applySearXNGConfigDefaults(raw []byte) ([]byte, error) {
 	return out, nil
 }
 
-// applyCuratorConfigDefaults disables the curator by default unless the user has
-// explicitly configured it.
-func applyCuratorConfigDefaults(raw []byte) ([]byte, error) {
-	cfg := map[string]any{}
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return nil, fmt.Errorf("unmarshaling config: %w", err)
-	}
-
-	curator, _ := cfg["curator"].(map[string]any)
-	if curator == nil {
-		curator = map[string]any{}
-		cfg["curator"] = curator
-	}
-	if _, ok := curator["enabled"]; !ok {
-		curator["enabled"] = false
-	}
-
-	out, err := json.Marshal(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("marshaling config: %w", err)
-	}
-	return out, nil
-}
-
 // applyCamofoxConfigDefaults injects browser.camofox.managed_persistence: true into
 // the Hermes config when Camofox managed persistence is active, unless already set.
 func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
@@ -129,36 +105,30 @@ func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
 
 func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, error) {
 	data := map[string]string{}
-
-	raw := json.RawMessage(`{}`)
 	if hc := ha.GetHermes().GetConfig(); hc != nil {
-		raw = hc.Raw
-	}
+		raw := hc.Raw
+		if ha.GetSearXNG().IsEnabled() {
+			var err error
+			raw, err = applySearXNGConfigDefaults(raw)
+			if err != nil {
+				return nil, err
+			}
+		}
+		cx := ha.GetCamofox()
+		if cx.IsEnabled() && cx.GetPersistence().IsEnabled() && cx.GetPersistence().GetExistingClaim() == "" {
+			var err error
+			raw, err = applyCamofoxConfigDefaults(raw)
+			if err != nil {
+				return nil, err
+			}
+		}
 
-	var err error
-	raw, err = applyCuratorConfigDefaults(raw)
-	if err != nil {
-		return nil, err
-	}
-	if ha.GetSearXNG().IsEnabled() {
-		raw, err = applySearXNGConfigDefaults(raw)
+		yamlBytes, err := sigsyaml.JSONToYAML(raw)
 		if err != nil {
 			return nil, err
 		}
+		data["config.yaml"] = string(yamlBytes)
 	}
-	cx := ha.GetCamofox()
-	if cx.IsEnabled() && cx.GetPersistence().IsEnabled() && cx.GetPersistence().GetExistingClaim() == "" {
-		raw, err = applyCamofoxConfigDefaults(raw)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	yamlBytes, err := sigsyaml.JSONToYAML(raw)
-	if err != nil {
-		return nil, err
-	}
-	data["config.yaml"] = string(yamlBytes)
 
 	if hw := ha.GetHermes().GetWorkspace(); hw != nil {
 		for path, content := range hw.Files {
