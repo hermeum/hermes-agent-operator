@@ -48,7 +48,8 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "StatefulSet updated", "namespacedName", nsName, "phase", ha.Status.Phase)
+			// TODO: fix statefulSetSpecEqual to avoid this misleading log when only non-operator-managed fields differ. 
+			// u.tel.Debug(ctx, "StatefulSet updated", "namespacedName", nsName, "phase", ha.Status.Phase)
 		}
 	} else {
 		err = u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{HermesAgent: ha, StatefulSet: desired})
