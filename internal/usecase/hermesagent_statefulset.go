@@ -798,7 +798,7 @@ if [ -f "$MANIFEST" ]; then
     [ -z "$name" ] && continue
     case "$name" in
       %s) ;;
-      *) /hermes plugins remove "$name" || true ;;
+      *) hermes plugins remove "$name" || true ;;
     esac
   done < "$MANIFEST"
 fi
@@ -975,13 +975,13 @@ func buildCronsScript(crons []agentsv1alpha1.HermesCron) string {
 	manifestContent := strings.Join(desiredNames, "\n")
 
 	return fmt.Sprintf(`set -eu
-MANIFEST="/opt/data/.hermes-agent-operator/crons"
-mkdir -p "/opt/data/.hermes-agent-operator"
+MANIFEST="$HERMES_HOME/.hermes-agent-operator/crons"
+mkdir -p "$HERMES_HOME/.hermes-agent-operator"
 
 get_job_id() {
   python3 - "$1" <<'PY'
 import json, os, sys
-p = "/opt/data/cron/jobs.json"
+p = os.environ.get("HERMES_HOME", "/opt/data") + "/cron/jobs.json"
 if not os.path.exists(p):
     sys.exit(0)
 with open(p) as f:

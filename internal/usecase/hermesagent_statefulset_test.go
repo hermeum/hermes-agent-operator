@@ -50,6 +50,18 @@ func TestBuildPluginsScript(t *testing.T) {
 		}
 	})
 
+	t.Run("remove command uses bare hermes not absolute path", func(t *testing.T) {
+		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+			{Identifier: "owner/hermes-plugin-a"},
+		})
+		if strings.Contains(got, "/hermes ") {
+			t.Errorf("expected bare 'hermes' command, not absolute '/hermes' path, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes plugins remove "$name"`) {
+			t.Errorf("expected plugin remove command in script, got:\n%s", got)
+		}
+	})
+
 	t.Run("multiple plugins build case pattern and manifest", func(t *testing.T) {
 		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
 			{Identifier: "owner/hermes-plugin-a"},
