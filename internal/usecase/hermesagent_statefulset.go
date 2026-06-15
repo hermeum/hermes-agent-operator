@@ -189,8 +189,6 @@ func buildInitContainerSecurityContext() *corev1.SecurityContext {
 // and volumes/PVCs for persistence, bootstrap config, and shared memory.
 func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
 	const (
-		hermesDefaultPathEnv  = "/opt/data/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-		hermesPathEnv         = hermesDefaultPathEnv + ":/opt/hermes/.venv/bin"
 		hermesHomeVolume      = "hermes-data"
 		hermesHomeMount       = "/opt/data"
 		hermesDSHMVolume      = "dshm"
@@ -216,7 +214,6 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
-			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:   ha.GetHermes().GetEnvFrom(),
 		Resources: ha.GetHermes().GetResources(),
@@ -362,7 +359,6 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "HOME", Value: hermesHomeMount + "/home"},
-				{Name: "PATH", Value: hermesPathEnv},
 			}, ha.GetHermes().GetEnv()...),
 			EnvFrom: ha.GetHermes().GetEnvFrom(),
 			VolumeMounts: []corev1.VolumeMount{
@@ -382,7 +378,6 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "HOME", Value: hermesHomeMount + "/home"},
-				{Name: "PATH", Value: hermesPathEnv},
 			}, ha.GetHermes().GetEnv()...),
 			EnvFrom:         ha.GetHermes().GetEnvFrom(),
 			SecurityContext: buildInitContainerSecurityContext(),
@@ -405,7 +400,6 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
-			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
@@ -427,7 +421,6 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
-			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
@@ -448,7 +441,6 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
-			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
@@ -469,7 +461,6 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
-			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
@@ -490,7 +481,6 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
-			{Name: "PATH", Value: hermesPathEnv},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:         ha.GetHermes().GetEnvFrom(),
 		SecurityContext: buildInitContainerSecurityContext(),
