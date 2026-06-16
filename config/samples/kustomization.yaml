@@ -1,5 +1,5 @@
 ## Append samples of your project ##
 resources:
 - web_search.yaml
-- github_agent.yaml
+- github_reviewer.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
