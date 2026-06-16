@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: gh-agent-secrets
+  name: github-reviewer-secrets
 stringData:
   OLLAMA_API_KEY: ""
   # _HERMES_FORCE_ allows to pass a GitHub token to subprocesses. Hermes agent blocks GitHub token from being passed to subprocesses by default for security reasons. Setting this variable to any non-empty value will force Hermes to pass the GitHub token to subprocesses.
@@ -10,7 +10,7 @@ stringData:
 apiVersion: agents.hermeum.app/v1alpha1
 kind: HermesAgent
 metadata:
-  name: gh-agent
+  name: github-reviewer
 spec:
   hermes:
     config:
@@ -25,7 +25,10 @@ spec:
           webhook:
             extra:
               routes:
-                # NOTE: you have to configure the webhook in your GitHub repo to point to /webhook/github-pr for this to work
+                # NOTE: you have to configure the webhook in your GitHub repo to point to
+                # http://<service-external-ip>:8644/webhook/github-pr for this to work.
+                # This sample exposes the webhook via a LoadBalancer Service (no TLS termination);
+                # add your own TLS in front (e.g. cloud LB) if you need HTTPS.
                 github-pr:
                   events: ["pull_request"]
                   prompt: |
@@ -43,6 +46,7 @@ spec:
                     pr_number: "{number}"
     workspace:
       files:
+        # Mount a .bashrc to set PATH for gh CLI installed in the initContainer below.
         home/.bashrc: |
           export PATH="$HERMES_HOME/.local/bin:$PATH"
     storage:
@@ -51,22 +55,11 @@ spec:
         size: 1Gi
     envFrom:
       - secretRef:
-          name: gh-agent-secrets
+          name: github-reviewer-secrets
     initChownData: true
   networking:
-    ingress:
-      enabled: true
-      className: nginx
-      hosts:
-        - host: gh-agent.example.com
-          paths:
-            - path: /
-              pathType: Prefix
-              port: 8644
-      tls:
-        - hosts:
-            - gh-agent.example.com
-          secretName: gh-agent-tls
+    service:
+      type: LoadBalancer
   initContainers:
     - name: install-gh
       image: nousresearch/hermes-agent:latest
