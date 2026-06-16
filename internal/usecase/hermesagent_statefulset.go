@@ -227,6 +227,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
+			{Name: "PYTHONPATH", Value: hermesHomeMount + "/.python-packages"},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:   ha.GetHermes().GetEnvFrom(),
 		Resources: ha.GetHermes().GetResources(),
@@ -419,6 +420,26 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
 			{Name: hermesBootstrapVolume, MountPath: hermesBootstrapMount, ReadOnly: true},
+			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
+		},
+	})
+
+	// python-packages: init container installs desired packages into $HERMES_HOME/.python-packages.
+	pkgs := ha.GetHermes().GetPythonPackages()
+	initContainers = append(initContainers, corev1.Container{
+		Name:            "init-python-packages",
+		Image:           ha.GetHermes().GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{buildPythonPackagesScript(pkgs)},
+		Env: append([]corev1.EnvVar{
+			{Name: "HERMES_HOME", Value: hermesHomeMount},
+			{Name: "HOME", Value: hermesHomeMount + "/home"},
+		}, ha.GetHermes().GetEnv()...),
+		EnvFrom:         ha.GetHermes().GetEnvFrom(),
+		SecurityContext: buildInitContainerSecurityContext(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
 			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
 		},
 	})
@@ -944,6 +965,42 @@ cat > "$MANIFEST" << 'BUNDLES_EOF'
 %s
 BUNDLES_EOF
 `, casePattern, createScript, manifestContent)
+}
+
+func buildPythonPackagesScript(packages []string) string {
+	if len(packages) == 0 {
+		return "echo 'No Python packages configured'"
+	}
+
+	quoted := make([]string, len(packages))
+	for i, p := range packages {
+		quoted[i] = fmt.Sprintf("%q", p)
+	}
+	installCmd := "uv pip install --python /opt/hermes/.venv/bin/python --target \"$TARGET\" " +
+		strings.Join(quoted, " ")
+	manifestContent := strings.Join(packages, "\n")
+
+	return fmt.Sprintf(`set -eu
+TARGET="$HERMES_HOME/.python-packages"
+MANIFEST="$HERMES_HOME/.hermes-agent-operator/python-packages"
+mkdir -p "$HERMES_HOME/.hermes-agent-operator"
+
+DESIRED=$(cat <<'PKGS_EOF'
+%s
+PKGS_EOF
+)
+
+if [ -f "$MANIFEST" ] && [ "$(cat "$MANIFEST")" = "$DESIRED" ]; then
+  echo "Python packages up-to-date, skipping"
+  exit 0
+fi
+
+rm -rf "$TARGET"
+mkdir -p "$TARGET"
+%s
+
+printf '%%s' "$DESIRED" > "$MANIFEST"
+`, manifestContent, installCmd)
 }
 
 func buildCronsScript(crons []agentsv1alpha1.HermesCron) string {

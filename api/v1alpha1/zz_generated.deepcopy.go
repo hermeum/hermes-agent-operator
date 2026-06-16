@@ -125,6 +125,11 @@ func (in *Hermes) DeepCopyInto(out *Hermes) {
 		*out = new(HermesWorkspace)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.PythonPackages != nil {
+		in, out := &in.PythonPackages, &out.PythonPackages
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Plugins != nil {
 		in, out := &in.Plugins, &out.Plugins
 		*out = make([]HermesPlugin, len(*in))
