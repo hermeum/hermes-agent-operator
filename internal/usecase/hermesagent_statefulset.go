@@ -229,6 +229,27 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		hermesBootstrapMount  = "/bootstrap"
 	)
 
+	initContainer := func(name, script string) corev1.Container {
+		return corev1.Container{
+			Name:            name,
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{script},
+			Env: append([]corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "HOME", Value: hermesHomeMount + "/home"},
+			}, ha.GetHermes().GetEnv()...),
+			EnvFrom:         ha.GetHermes().GetEnvFrom(),
+			SecurityContext: buildInitContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+				{Name: hermesBootstrapVolume, MountPath: hermesBootstrapMount, ReadOnly: true},
+				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
+			},
+		}
+	}
+
 	sts = sts.DeepCopy()
 	sizeLimit := resource.MustParse("1Gi")
 	apiServer := ha.GetHermes().GetAPIServer()
@@ -400,146 +421,32 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	// config: init container copies config.yaml from the bootstrap ConfigMap to the data volume.
 	if hc := ha.GetHermes().GetConfig(); hc != nil {
-		initContainers = append(initContainers, corev1.Container{
-			Name:            "init-config",
-			Image:           ha.GetHermes().GetImage(),
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-ec"},
-			Args:            []string{buildConfigScript()},
-			Env: append([]corev1.EnvVar{
-				{Name: "HERMES_HOME", Value: hermesHomeMount},
-				{Name: "HOME", Value: hermesHomeMount + "/home"},
-			}, ha.GetHermes().GetEnv()...),
-			EnvFrom:         ha.GetHermes().GetEnvFrom(),
-			SecurityContext: buildInitContainerSecurityContext(),
-			VolumeMounts: []corev1.VolumeMount{
-				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-				{Name: hermesBootstrapVolume, MountPath: hermesBootstrapMount, ReadOnly: true},
-				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-			},
-		})
+		initContainers = append(initContainers, initContainer("init-config", buildConfigScript()))
 	}
 
 	// workspace: init container copies workspace files from the bootstrap ConfigMap.
 	// ConfigMap keys use the format "workspace.<path>" with "/" replaced by "--".
-	initContainers = append(initContainers, corev1.Container{
-		Name:            "init-workspace",
-		Image:           ha.GetHermes().GetImage(),
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{buildWorkspaceScript()},
-		Env: append([]corev1.EnvVar{
-			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount + "/home"},
-		}, ha.GetHermes().GetEnv()...),
-		EnvFrom:         ha.GetHermes().GetEnvFrom(),
-		SecurityContext: buildInitContainerSecurityContext(),
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-			{Name: hermesBootstrapVolume, MountPath: hermesBootstrapMount, ReadOnly: true},
-			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-		},
-	})
+	initContainers = append(initContainers, initContainer("init-workspace", buildWorkspaceScript()))
 
 	// python-packages: init container installs desired packages into $HERMES_HOME/.python-packages.
 	pythonPackages := ha.GetHermes().GetPythonPackages()
-	initContainers = append(initContainers, corev1.Container{
-		Name:            "init-python-packages",
-		Image:           ha.GetHermes().GetImage(),
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{buildPythonPackagesScript(pythonPackages)},
-		Env: append([]corev1.EnvVar{
-			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount + "/home"},
-		}, ha.GetHermes().GetEnv()...),
-		EnvFrom:         ha.GetHermes().GetEnvFrom(),
-		SecurityContext: buildInitContainerSecurityContext(),
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-		},
-	})
+	initContainers = append(initContainers, initContainer("init-python-packages", buildPythonPackagesScript(pythonPackages)))
 
 	// plugins: init container installs desired plugins and removes stale ones.
 	plugins := ha.GetHermes().GetPlugins()
-	initContainers = append(initContainers, corev1.Container{
-		Name:            "init-plugins",
-		Image:           ha.GetHermes().GetImage(),
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{buildPluginsScript(plugins)},
-		Env: append([]corev1.EnvVar{
-			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount + "/home"},
-		}, ha.GetHermes().GetEnv()...),
-		EnvFrom:         ha.GetHermes().GetEnvFrom(),
-		SecurityContext: buildInitContainerSecurityContext(),
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-		},
-	})
+	initContainers = append(initContainers, initContainer("init-plugins", buildPluginsScript(plugins)))
 
 	// skills: init container installs/uninstalls skills via the hermes CLI.
 	skills := ha.GetHermes().GetSkills()
-	initContainers = append(initContainers, corev1.Container{
-		Name:            "init-skills",
-		Image:           ha.GetHermes().GetImage(),
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{buildSkillsScript(skills)},
-		Env: append([]corev1.EnvVar{
-			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount + "/home"},
-		}, ha.GetHermes().GetEnv()...),
-		EnvFrom:         ha.GetHermes().GetEnvFrom(),
-		SecurityContext: buildInitContainerSecurityContext(),
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-		},
-	})
+	initContainers = append(initContainers, initContainer("init-skills", buildSkillsScript(skills)))
 
 	// bundles: init container reconciles bundles via the hermes CLI.
 	bundles := ha.GetHermes().GetBundles()
-	initContainers = append(initContainers, corev1.Container{
-		Name:            "init-bundles",
-		Image:           ha.GetHermes().GetImage(),
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{buildBundlesScript(bundles)},
-		Env: append([]corev1.EnvVar{
-			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount + "/home"},
-		}, ha.GetHermes().GetEnv()...),
-		EnvFrom:         ha.GetHermes().GetEnvFrom(),
-		SecurityContext: buildInitContainerSecurityContext(),
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-		},
-	})
+	initContainers = append(initContainers, initContainer("init-bundles", buildBundlesScript(bundles)))
 
 	// crons: init container reconciles scheduled jobs via the hermes CLI.
 	crons := ha.GetHermes().GetCrons()
-	initContainers = append(initContainers, corev1.Container{
-		Name:            "init-crons",
-		Image:           ha.GetHermes().GetImage(),
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{buildCronsScript(crons)},
-		Env: append([]corev1.EnvVar{
-			{Name: "HERMES_HOME", Value: hermesHomeMount},
-			{Name: "HOME", Value: hermesHomeMount + "/home"},
-		}, ha.GetHermes().GetEnv()...),
-		EnvFrom:         ha.GetHermes().GetEnvFrom(),
-		SecurityContext: buildInitContainerSecurityContext(),
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: hermesHomeVolume, MountPath: hermesHomeMount},
-			{Name: hermesTmpVolume, MountPath: hermesTmpMount},
-		},
-	})
+	initContainers = append(initContainers, initContainer("init-crons", buildCronsScript(crons)))
 
 	// initScripts: user-provided scripts run as init containers after all managed ones.
 	for _, is := range ha.GetHermes().GetInitScripts() {
