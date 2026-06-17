@@ -425,13 +425,13 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	})
 
 	// python-packages: init container installs desired packages into $HERMES_HOME/.python-packages.
-	pkgs := ha.GetHermes().GetPythonPackages()
+	pythonPackages := ha.GetHermes().GetPythonPackages()
 	initContainers = append(initContainers, corev1.Container{
 		Name:            "init-python-packages",
 		Image:           ha.GetHermes().GetImage(),
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{buildPythonPackagesScript(pkgs)},
+		Args:            []string{buildPythonPackagesScript(pythonPackages)},
 		Env: append([]corev1.EnvVar{
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
@@ -967,18 +967,28 @@ BUNDLES_EOF
 `, casePattern, createScript, manifestContent)
 }
 
-func buildPythonPackagesScript(packages []string) string {
-	if len(packages) == 0 {
+func buildPythonPackagesScript(cfg *agentsv1alpha1.HermesPythonPackages) string {
+	if cfg == nil || len(cfg.Packages) == 0 {
 		return "echo 'No Python packages configured'"
 	}
 
-	quoted := make([]string, len(packages))
-	for i, p := range packages {
+	quoted := make([]string, len(cfg.Packages))
+	for i, p := range cfg.Packages {
 		quoted[i] = fmt.Sprintf("%q", p)
 	}
-	installCmd := "uv pip install --python /opt/hermes/.venv/bin/python --target \"$TARGET\" " +
-		strings.Join(quoted, " ")
-	manifestContent := strings.Join(packages, "\n")
+
+	var extraArgs string
+	if len(cfg.ExtraArgs) > 0 {
+		quotedExtra := make([]string, len(cfg.ExtraArgs))
+		for i, a := range cfg.ExtraArgs {
+			quotedExtra[i] = fmt.Sprintf("%q", a)
+		}
+		extraArgs = " " + strings.Join(quotedExtra, " ")
+	}
+
+	installCmd := "uv pip install --python /opt/hermes/.venv/bin/python --target \"$TARGET\"" +
+		extraArgs + " " + strings.Join(quoted, " ")
+	manifestContent := strings.Join(cfg.Packages, "\n")
 
 	return fmt.Sprintf(`set -eu
 TARGET="$HERMES_HOME/.python-packages"

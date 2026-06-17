@@ -16,7 +16,8 @@ spec:
   hermes:
     # Install the Langfuse Python package to enable the observability plugin.
     pythonPackages:
-      - langfuse
+      packages:
+        - langfuse
     config:
       raw:
         model:

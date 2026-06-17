@@ -153,7 +153,7 @@ hermes:
 
 ### `hermes.pythonPackages`
 
-Pre-install Python packages before the agent starts. Each entry is a [pip specifier](https://pip.pypa.io/en/stable/reference/requirement-specifiers/) — bare name, version-pinned, or extras.
+Pre-install Python packages before the agent starts. `packages` entries are [pip specifiers](https://pip.pypa.io/en/stable/reference/requirement-specifiers/) — bare name, version-pinned, or extras. `extraArgs` are appended verbatim to the `uv pip install` command, which is useful for custom index URLs or other `uv pip` flags.
 
 Packages are installed into `$HERMES_HOME/.python-packages` (under `/opt/data`, the persistent volume) and made available to the agent via `PYTHONPATH`. Because the installation runs in an init container that executes on every pod start, packages are always present even when persistence is disabled. When a PVC is attached, the operator skips reinstalling if the desired set has not changed since the last start.
 
@@ -162,9 +162,13 @@ Removing a package from the list wipes and reinstalls the remaining set on the n
 ```yaml
 hermes:
   pythonPackages:                  # optional; omit if no extra packages are needed
-    - requests
-    - pandas==2.1.0
-    - "beautifulsoup4[lxml]"
+    packages:                      # optional; pip specifiers to install
+      - requests
+      - pandas==2.1.0
+      - "beautifulsoup4[lxml]"
+    extraArgs:                     # optional; extra flags passed to `uv pip install`
+      - "--index-url=https://my-private-index.example.com/simple"
+      - "--extra-index-url=https://pypi.org/simple"
 ```
 
 > **Note:** Packages here are available to Python code run *by* the agent (tool execution, scripts, etc.). They do not affect the Hermes agent process itself, which uses its own virtual environment at `/opt/hermes/.venv`.
