@@ -46,7 +46,7 @@ spec:
                     pr_number: "{number}"
     workspace:
       files:
-        # Mount a .bashrc to set PATH for gh CLI installed in the initContainer below.
+        # Mount a .bashrc to set PATH for gh CLI installed by initScripts.
         home/.bashrc: |
           export PATH="$HERMES_HOME/.local/bin:$PATH"
     storage:
@@ -57,15 +57,9 @@ spec:
       - secretRef:
           name: github-reviewer-secrets
     initChownData: true
-  networking:
-    service:
-      type: LoadBalancer
-  initContainers:
-    - name: install-gh
-      image: nousresearch/hermes-agent:latest
-      command: ["/bin/sh", "-ec"]
-      args:
-        - |
+    initScripts:
+      - name: install-gh
+        script: |
           if command -v gh >/dev/null 2>&1; then
             echo "gh already installed, skipping"
             exit 0
@@ -77,11 +71,6 @@ spec:
           mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" $HERMES_HOME/.local/bin/gh
           chmod +x $HERMES_HOME/.local/bin/gh
           echo "gh installed: $($HERMES_HOME/.local/bin/gh --version)"
-      env:
-        - name: HERMES_HOME
-          value: /opt/data
-        - name: HOME
-          value: /opt/data/home
-      volumeMounts:
-        - name: hermes-data
-          mountPath: /opt/data
+  networking:
+    service:
+      type: LoadBalancer

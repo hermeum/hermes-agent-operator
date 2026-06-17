@@ -541,6 +541,27 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		},
 	})
 
+	// initScripts: user-provided scripts run as init containers after all managed ones.
+	for _, is := range ha.GetHermes().GetInitScripts() {
+		initContainers = append(initContainers, corev1.Container{
+			Name:            is.Name,
+			Image:           ha.GetHermes().GetImage(),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-ec"},
+			Args:            []string{is.Script},
+			Env: append([]corev1.EnvVar{
+				{Name: "HERMES_HOME", Value: hermesHomeMount},
+				{Name: "HOME", Value: hermesHomeMount + "/home"},
+			}, ha.GetHermes().GetEnv()...),
+			EnvFrom:         ha.GetHermes().GetEnvFrom(),
+			SecurityContext: buildInitContainerSecurityContext(),
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: hermesHomeVolume, MountPath: hermesHomeMount},
+				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
+			},
+		})
+	}
+
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, container)
 	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, volumes...)
