@@ -173,6 +173,19 @@ hermes:
       - "--extra-index-url=https://pypi.org/simple"
 ```
 
+Installed binaries land in `$HERMES_HOME/.python-packages/bin`. To make them available on `PATH` for shell-based tools, seed a `.bashrc` via `hermes.workspace`:
+
+```yaml
+hermes:
+  pythonPackages:
+    packages:
+      - requests
+  workspace:
+    files:
+      home/.bashrc: |
+        export PATH="$HERMES_HOME/.python-packages/bin:$PATH"
+```
+
 > **Note:** Packages here are available to Python code run *by* the agent (tool execution, scripts, etc.). They do not affect the Hermes agent process itself, which uses its own virtual environment at `/opt/hermes/.venv`.
 
 
