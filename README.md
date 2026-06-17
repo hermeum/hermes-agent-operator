@@ -69,6 +69,7 @@ kubectl get pods -l app.kubernetes.io/instance=my-agent
 - [`hermes.env` / `hermes.envFrom`](#hermesenv--hermesenvfrom)
 - [`hermes.resources`](#hermesresources)
 - [`hermes.initChownData`](#hermesinit​chowndata)
+- [`hermes.initScripts`](#hermesinitscripts)
 - [`searxng`](#searxng)
 - [`camofox`](#camofox)
 - [`security.rbac`](#securityrbac)
@@ -280,6 +281,28 @@ Run an init container that sets `/opt/data` ownership to the hermes user (`10000
 hermes:
   initChownData: true              # optional; defaults to false
 ```
+
+
+### `hermes.initScripts`
+
+Run shell scripts in init containers before the agent starts. The operator automatically uses the hermes-agent image and wires up the environment variables (`HERMES_HOME`, `HOME`, and any `hermes.env` / `hermes.envFrom`), volume mounts, and security context.
+
+Scripts run after all operator-managed init containers. 
+
+```yaml
+hermes:
+  initScripts:                       # optional; omit if no custom init scripts are needed
+    - name: install-gh               # required; must be unique within the pod
+      script: |                      # required; executed via /bin/sh -ec
+        mkdir -p $HERMES_HOME/.local/bin
+        GH_VERSION=2.94.0
+        curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+          | tar -xz -C /tmp
+        mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" $HERMES_HOME/.local/bin/gh
+        chmod +x $HERMES_HOME/.local/bin/gh
+```
+
+Use `spec.initContainers` instead when you need a different image, custom volume mounts, or fine-grained resource limits on the init step.
 
 
 ### `searxng`
