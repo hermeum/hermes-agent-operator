@@ -176,6 +176,18 @@ type HermesBundle struct {
 	Force bool `json:"force,omitempty"`
 }
 
+// HermesPythonPackages configures Python packages to pre-install via `uv pip install`.
+type HermesPythonPackages struct {
+	// packages is a list of Python package specifiers to install
+	// (e.g. "requests", "pandas==2.1.0").
+	// +optional
+	Packages []string `json:"packages,omitempty"`
+	// extraArgs is a list of additional arguments appended to the `uv pip install` command
+	// (e.g. "--index-url=https://...", "--extra-index-url=https://...").
+	// +optional
+	ExtraArgs []string `json:"extraArgs,omitempty"`
+}
+
 // HermesImage specifies the container image repository and tag.
 type HermesImage struct {
 	// repository is the image repository (e.g. "nousresearch/hermes-agent").
@@ -472,11 +484,10 @@ type Hermes struct {
 	// workspace defines files to seed in the agent's home directory.
 	// +optional
 	Workspace *HermesWorkspace `json:"workspace,omitempty"`
-	// pythonPackages is a list of Python package specifiers to pre-install before the
-	// agent starts (e.g. "requests", "pandas==2.1.0"). Packages are installed into
-	// $HERMES_HOME/.python-packages and made available via PYTHONPATH.
+	// pythonPackages configures Python packages to pre-install before the agent starts.
+	// Packages are installed into $HERMES_HOME/.python-packages and made available via PYTHONPATH.
 	// +optional
-	PythonPackages []string `json:"pythonPackages,omitempty"`
+	PythonPackages *HermesPythonPackages `json:"pythonPackages,omitempty"`
 	// plugins is a list of plugins to install in the Hermes agent.
 	// +optional
 	Plugins []HermesPlugin `json:"plugins,omitempty"`
@@ -585,7 +596,7 @@ func (h *Hermes) GetWorkspace() *HermesWorkspace {
 	return h.Workspace
 }
 
-func (h *Hermes) GetPythonPackages() []string {
+func (h *Hermes) GetPythonPackages() *HermesPythonPackages {
 	if h == nil {
 		return nil
 	}

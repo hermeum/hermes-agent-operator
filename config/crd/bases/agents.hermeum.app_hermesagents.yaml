@@ -2878,12 +2878,24 @@ spec:
                     type: object
                   pythonPackages:
                     description: |-
-                      pythonPackages is a list of Python package specifiers to pre-install before the
-                      agent starts (e.g. "requests", "pandas==2.1.0"). Packages are installed into
-                      $HERMES_HOME/.python-packages and made available via PYTHONPATH.
-                    items:
-                      type: string
-                    type: array
+                      pythonPackages configures Python packages to pre-install before the agent starts.
+                      Packages are installed into $HERMES_HOME/.python-packages and made available via PYTHONPATH.
+                    properties:
+                      extraArgs:
+                        description: |-
+                          extraArgs is a list of additional arguments appended to the `uv pip install` command
+                          (e.g. "--index-url=https://...", "--extra-index-url=https://...").
+                        items:
+                          type: string
+                        type: array
+                      packages:
+                        description: |-
+                          packages is a list of Python package specifiers to install
+                          (e.g. "requests", "pandas==2.1.0").
+                        items:
+                          type: string
+                        type: array
+                    type: object
                   resources:
                     description: resources overrides the resource requests and limits
                       for the hermes-agent container.
