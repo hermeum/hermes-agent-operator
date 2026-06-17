@@ -469,6 +469,17 @@ func (c *HermesConfig) GetWebhook() *HermesWebhook {
 	return c.Webhook
 }
 
+// HermesInitScript defines a simple init container that runs a shell script.
+type HermesInitScript struct {
+	// name is the name of the init container. Must be unique within the pod.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// script is the shell script body to execute via /bin/sh -ec.
+	// The hermes-agent environment (HERMES_HOME, HOME, user env) is available.
+	// +kubebuilder:validation:Required
+	Script string `json:"script"`
+}
+
 // Hermes defines the hermes-specific section of the spec.
 type Hermes struct {
 	// image overrides the container image used for the hermes-agent container
@@ -525,6 +536,13 @@ type Hermes struct {
 	// provisioners) and the agent would otherwise fail to write to it.
 	// +optional
 	InitChownData bool `json:"initChownData,omitempty"`
+	// initScripts is a list of simple init containers that run shell scripts before
+	// the agent starts. Unlike spec.initContainers, these only require a name and
+	// script body — the image, volumes, env, and security context are inherited
+	// from the hermes-agent configuration automatically.
+	// +optional
+	// +kubebuilder:validation:MaxItems=10
+	InitScripts []HermesInitScript `json:"initScripts,omitempty"`
 }
 
 // Probes defines health probe configuration for the hermes-agent container.
@@ -728,6 +746,13 @@ func (p *Probe) GetProbe(command []string, defaults corev1.Probe) *corev1.Probe 
 
 func (h *Hermes) ShouldInitChownData() bool {
 	return h != nil && h.InitChownData
+}
+
+func (h *Hermes) GetInitScripts() []HermesInitScript {
+	if h == nil {
+		return nil
+	}
+	return h.InitScripts
 }
 
 func (h *Hermes) GetImage() string {

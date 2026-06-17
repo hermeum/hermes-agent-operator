@@ -2719,6 +2719,31 @@ spec:
                       volume is provisioned with root ownership (e.g. most cloud block-storage
                       provisioners) and the agent would otherwise fail to write to it.
                     type: boolean
+                  initScripts:
+                    description: |-
+                      initScripts is a list of simple init containers that run shell scripts before
+                      the agent starts. Unlike spec.initContainers, these only require a name and
+                      script body — the image, volumes, env, and security context are inherited
+                      from the hermes-agent configuration automatically.
+                    items:
+                      description: HermesInitScript defines a simple init container
+                        that runs a shell script.
+                      properties:
+                        name:
+                          description: name is the name of the init container. Must
+                            be unique within the pod.
+                          type: string
+                        script:
+                          description: |-
+                            script is the shell script body to execute via /bin/sh -ec.
+                            The hermes-agent environment (HERMES_HOME, HOME, user env) is available.
+                          type: string
+                      required:
+                      - name
+                      - script
+                      type: object
+                    maxItems: 10
+                    type: array
                   plugins:
                     description: plugins is a list of plugins to install in the Hermes
                       agent.
