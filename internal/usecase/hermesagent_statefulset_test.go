@@ -206,6 +206,79 @@ func TestBuildBundlesScript(t *testing.T) {
 	})
 }
 
+func TestBuildPythonPackagesScript(t *testing.T) {
+
+	t.Run("nil config returns no-op", func(t *testing.T) {
+		got := buildPythonPackagesScript(nil)
+		if !strings.Contains(got, "No Python packages configured") {
+			t.Errorf("expected no-op message, got:\n%s", got)
+		}
+	})
+
+	t.Run("empty packages returns no-op", func(t *testing.T) {
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{})
+		if !strings.Contains(got, "No Python packages configured") {
+			t.Errorf("expected no-op message, got:\n%s", got)
+		}
+	})
+
+	t.Run("single package install command", func(t *testing.T) {
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
+			Packages: []string{"requests"},
+		})
+
+		wantCmd := `uv pip install --python /opt/hermes/.venv/bin/python --target "$TARGET" "requests"`
+		if !strings.Contains(got, wantCmd) {
+			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
+		}
+	})
+
+	t.Run("multiple packages all quoted", func(t *testing.T) {
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
+			Packages: []string{"requests", "pandas==2.1.0", "beautifulsoup4[lxml]"},
+		})
+
+		wantCmd := `uv pip install --python /opt/hermes/.venv/bin/python --target "$TARGET" "requests" "pandas==2.1.0" "beautifulsoup4[lxml]"`
+		if !strings.Contains(got, wantCmd) {
+			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
+		}
+	})
+
+	t.Run("extraArgs inserted before packages", func(t *testing.T) {
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
+			Packages:  []string{"langfuse"},
+			ExtraArgs: []string{"--index-url=https://private.example.com/simple"},
+		})
+
+		wantCmd := `uv pip install --python /opt/hermes/.venv/bin/python --target "$TARGET" "--index-url=https://private.example.com/simple" "langfuse"`
+		if !strings.Contains(got, wantCmd) {
+			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
+		}
+	})
+
+	t.Run("multiple extraArgs all quoted", func(t *testing.T) {
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
+			Packages:  []string{"requests"},
+			ExtraArgs: []string{"--index-url=https://a.example.com/simple", "--extra-index-url=https://pypi.org/simple"},
+		})
+
+		wantCmd := `uv pip install --python /opt/hermes/.venv/bin/python --target "$TARGET" "--index-url=https://a.example.com/simple" "--extra-index-url=https://pypi.org/simple" "requests"`
+		if !strings.Contains(got, wantCmd) {
+			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
+		}
+	})
+
+	t.Run("manifest contains package list", func(t *testing.T) {
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
+			Packages: []string{"alpha", "beta"},
+		})
+
+		if !strings.Contains(got, "alpha\nbeta") {
+			t.Errorf("expected manifest content 'alpha\\nbeta', got:\n%s", got)
+		}
+	})
+}
+
 func TestBuildCronsScript(t *testing.T) {
 
 	t.Run("minimal", func(t *testing.T) {
