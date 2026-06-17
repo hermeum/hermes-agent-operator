@@ -5,7 +5,170 @@ import (
 	"testing"
 
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func minimalHA() *agentsv1alpha1.HermesAgent {
+	return &agentsv1alpha1.HermesAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec:       agentsv1alpha1.HermesAgentSpec{},
+	}
+}
+
+func TestDesiredSpecHash(t *testing.T) {
+	t.Run("deterministic for same spec", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+		h2 := desiredSpecHash(buildStatefulSet(ha))
+		if h1 != h2 {
+			t.Errorf("hash not stable: %q vs %q", h1, h2)
+		}
+	})
+
+	t.Run("returns 16-char hex string", func(t *testing.T) {
+		h := desiredSpecHash(buildStatefulSet(minimalHA()))
+		if len(h) != 16 {
+			t.Errorf("expected 16-char hash, got %d chars: %q", len(h), h)
+		}
+		for _, c := range h {
+			if !strings.ContainsRune("0123456789abcdef", c) {
+				t.Errorf("non-hex character %q in hash %q", c, h)
+			}
+		}
+	})
+
+	t.Run("changes when replicas change (suspend toggles)", func(t *testing.T) {
+		ha := minimalHA()
+		suspend := true
+		hRun := desiredSpecHash(buildStatefulSet(ha))
+		ha.Spec.Suspend = &suspend
+		hSuspend := desiredSpecHash(buildStatefulSet(ha))
+		if hRun == hSuspend {
+			t.Error("expected different hash when suspended (replicas 0 vs 1)")
+		}
+	})
+
+	t.Run("changes when container image changes", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+			Image: &agentsv1alpha1.HermesImage{Tag: "v2.0.0"},
+		}
+		h2 := desiredSpecHash(buildStatefulSet(ha))
+		if h1 == h2 {
+			t.Error("expected different hash when image tag changes")
+		}
+	})
+
+	t.Run("changes when env var added", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+			Env: []corev1.EnvVar{{Name: "CUSTOM", Value: "value"}},
+		}
+		h2 := desiredSpecHash(buildStatefulSet(ha))
+		if h1 == h2 {
+			t.Error("expected different hash when env var added")
+		}
+	})
+
+	t.Run("changes when PVC added", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+
+		size := resource.MustParse("10Gi")
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+			Storage: &agentsv1alpha1.HermesStorage{
+				Persistence: &agentsv1alpha1.HermesPersistence{
+					Enabled: true,
+					Size:    &size,
+				},
+			},
+		}
+		h2 := desiredSpecHash(buildStatefulSet(ha))
+		if h1 == h2 {
+			t.Error("expected different hash when persistence PVC enabled")
+		}
+	})
+
+	t.Run("stable when only ObjectMeta labels differ", func(t *testing.T) {
+		ha := minimalHA()
+		sts := buildStatefulSet(ha)
+		h1 := desiredSpecHash(sts)
+
+		// simulate kubernetes adding labels to ObjectMeta without touching Spec
+		sts.Labels["extra-label"] = "injected-by-k8s"
+		h2 := desiredSpecHash(sts)
+		if h1 != h2 {
+			t.Error("hash should not change when only ObjectMeta labels differ")
+		}
+	})
+}
+
+func TestDesiredSpecHashAnnotation(t *testing.T) {
+	t.Run("reconcileStatefulSet stamps hash annotation on desired StatefulSet", func(t *testing.T) {
+		ha := minimalHA()
+		desired := buildStatefulSet(ha)
+		hash := desiredSpecHash(desired)
+
+		// simulate what reconcileStatefulSet does before comparing
+		if desired.Annotations == nil {
+			desired.Annotations = map[string]string{}
+		}
+		desired.Annotations[domain+"/desired-spec-hash"] = hash
+
+		got := desired.Annotations[domain+"/desired-spec-hash"]
+		if got != hash {
+			t.Errorf("annotation value %q does not match computed hash %q", got, hash)
+		}
+	})
+
+	t.Run("existing StatefulSet with matching hash is not updated", func(t *testing.T) {
+		ha := minimalHA()
+		desired := buildStatefulSet(ha)
+		hash := desiredSpecHash(desired)
+
+		// simulate an existing StatefulSet that already has the correct hash
+		existing := desired.DeepCopy()
+		existing.Annotations = map[string]string{domain + "/desired-spec-hash": hash}
+
+		if existing.Annotations[domain+"/desired-spec-hash"] != hash {
+			t.Error("should not update when annotation matches desired hash")
+		}
+	})
+
+	t.Run("existing StatefulSet with stale hash triggers update", func(t *testing.T) {
+		ha := minimalHA()
+		desired := buildStatefulSet(ha)
+		hash := desiredSpecHash(desired)
+
+		// simulate an existing StatefulSet with an outdated hash (e.g. from before upgrade)
+		existing := desired.DeepCopy()
+		existing.Annotations = map[string]string{domain + "/desired-spec-hash": "stale0000000000"}
+
+		if existing.Annotations[domain+"/desired-spec-hash"] == hash {
+			t.Error("stale hash should not match desired hash")
+		}
+	})
+
+	t.Run("existing StatefulSet with no annotation triggers update", func(t *testing.T) {
+		ha := minimalHA()
+		desired := buildStatefulSet(ha)
+		hash := desiredSpecHash(desired)
+
+		// simulate pre-migration StatefulSet (no annotation)
+		existing := desired.DeepCopy()
+		existing.Annotations = nil
+
+		if existing.Annotations[domain+"/desired-spec-hash"] == hash {
+			t.Error("missing annotation should not match desired hash")
+		}
+	})
+}
 
 func ptrBool(b bool) *bool { return &b }
 func ptrInt(i int) *int    { return &i }

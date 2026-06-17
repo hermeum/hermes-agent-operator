@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"sort"
@@ -12,7 +13,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -40,16 +40,20 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	}
 
 	desired := buildStatefulSet(ha)
+	hash := desiredSpecHash(desired)
+	if desired.Annotations == nil {
+		desired.Annotations = map[string]string{}
+	}
+	desired.Annotations[domain+"/desired-spec-hash"] = hash
 
 	if sts != nil {
-		if !statefulSetSpecEqual(desired, sts) {
+		if sts.Annotations[domain+"/desired-spec-hash"] != hash {
 			desired.ResourceVersion = sts.ResourceVersion
 			err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			// TODO: fix statefulSetSpecEqual to avoid this misleading log when only non-operator-managed fields differ.
-			// u.tel.Debug(ctx, "StatefulSet updated", "namespacedName", nsName, "phase", ha.Status.Phase)
+			u.tel.Debug(ctx, "StatefulSet updated", "namespacedName", nsName, "phase", ha.Status.Phase)
 		}
 	} else {
 		err = u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{HermesAgent: ha, StatefulSet: desired})
@@ -112,14 +116,21 @@ func configMapDataHash(data map[string]string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
 
-// statefulSetSpecEqual compares the operator-managed portions of a StatefulSet spec.
-// The full Spec is not compared because existing objects carry Kubernetes-defaulted
-// fields (PodManagementPolicy, UpdateStrategy, etc.) that buildStatefulSet does not set,
-// which would otherwise cause a permanent diff on every reconcile.
-func statefulSetSpecEqual(a, b *appsv1.StatefulSet) bool {
-	return equality.Semantic.DeepEqual(a.Spec.Replicas, b.Spec.Replicas) &&
-		equality.Semantic.DeepEqual(a.Spec.Template, b.Spec.Template) &&
-		equality.Semantic.DeepEqual(a.Spec.VolumeClaimTemplates, b.Spec.VolumeClaimTemplates)
+// desiredSpecHash hashes the operator-managed portions of a StatefulSet spec so that
+// reconcile can detect changes without comparing against the live object (which carries
+// Kubernetes-defaulted fields that buildStatefulSet does not set).
+func desiredSpecHash(sts *appsv1.StatefulSet) string {
+	data, _ := json.Marshal(struct {
+		Replicas             *int32                         `json:"replicas"`
+		Template             corev1.PodTemplateSpec         `json:"template"`
+		VolumeClaimTemplates []corev1.PersistentVolumeClaim `json:"volumeClaimTemplates"`
+	}{
+		Replicas:             sts.Spec.Replicas,
+		Template:             sts.Spec.Template,
+		VolumeClaimTemplates: sts.Spec.VolumeClaimTemplates,
+	})
+	h := sha256.Sum256(data)
+	return fmt.Sprintf("%x", h[:])[:16]
 }
 
 func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
