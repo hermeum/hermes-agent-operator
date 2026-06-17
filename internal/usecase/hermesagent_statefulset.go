@@ -22,6 +22,7 @@ import (
 const (
 	hermesContainerName          = "hermes-agent"
 	hermesWorkspacePathSeparator = "--"
+	annotationDesiredSpecHash    = domain + "/desired-spec-hash"
 )
 
 // hermesHealthCheckCommand reports the gateway state regardless of which
@@ -44,10 +45,10 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	if desired.Annotations == nil {
 		desired.Annotations = map[string]string{}
 	}
-	desired.Annotations[domain+"/desired-spec-hash"] = hash
+	desired.Annotations[annotationDesiredSpecHash] = hash
 
 	if sts != nil {
-		if sts.Annotations[domain+"/desired-spec-hash"] != hash {
+		if sts.Annotations[annotationDesiredSpecHash] != hash {
 			desired.ResourceVersion = sts.ResourceVersion
 			err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
 			if err != nil {
