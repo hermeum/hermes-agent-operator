@@ -45,6 +45,10 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	if desired.Annotations == nil {
 		desired.Annotations = map[string]string{}
 	}
+	// Store the hash of the desired spec as an annotation so the next reconcile
+	// can compare against it instead of the live object. Comparing against the
+	// live object causes spurious updates because Kubernetes defaults fields
+	// (PodManagementPolicy, UpdateStrategy, etc.) that the operator never sets.
 	desired.Annotations[annotationDesiredSpecHash] = hash
 
 	if sts != nil {
@@ -72,7 +76,8 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	// if the StatefulSet is not ready, requeue to check again after a short delay.
 	if ha.Status.Phase == agentsv1alpha1.PhasePending || ha.Status.Phase == agentsv1alpha1.PhaseUnknown {
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		u.tel.Debug(ctx, "StatefulSet not ready", "namespacedName", nsName, "phase", ha.Status.Phase)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 	return ctrl.Result{}, nil
 }
