@@ -5,7 +5,69 @@ import (
 	"testing"
 
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
+
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func minimalHA() *agentsv1alpha1.HermesAgent {
+	return &agentsv1alpha1.HermesAgent{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		Spec:       agentsv1alpha1.HermesAgentSpec{},
+	}
+}
+
+func TestDesiredSpecHash(t *testing.T) {
+	t.Run("stable for identical spec", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+		h2 := desiredSpecHash(buildStatefulSet(ha))
+		if h1 != h2 {
+			t.Error("hash must be deterministic")
+		}
+	})
+
+	t.Run("changes when replicas change", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+		suspend := true
+		ha.Spec.Suspend = &suspend
+		if desiredSpecHash(buildStatefulSet(ha)) == h1 {
+			t.Error("expected different hash when replicas change")
+		}
+	})
+
+	t.Run("changes when pod template changes", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Image: &agentsv1alpha1.HermesImage{Tag: "v2"}}
+		if desiredSpecHash(buildStatefulSet(ha)) == h1 {
+			t.Error("expected different hash when pod template changes")
+		}
+	})
+
+	t.Run("changes when volume claim templates change", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+		size := resource.MustParse("10Gi")
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Storage: &agentsv1alpha1.HermesStorage{
+			Persistence: &agentsv1alpha1.HermesPersistence{Enabled: true, Size: &size},
+		}}
+		if desiredSpecHash(buildStatefulSet(ha)) == h1 {
+			t.Error("expected different hash when PVC added")
+		}
+	})
+
+	t.Run("stable when only ObjectMeta differs", func(t *testing.T) {
+		ha := minimalHA()
+		sts := buildStatefulSet(ha)
+		h1 := desiredSpecHash(sts)
+		sts.Labels["k8s-injected"] = "true"
+		if desiredSpecHash(sts) != h1 {
+			t.Error("hash must not change when only ObjectMeta differs")
+		}
+	})
+}
 
 func ptrBool(b bool) *bool { return &b }
 func ptrInt(i int) *int    { return &i }
