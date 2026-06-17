@@ -266,6 +266,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			{Name: "HERMES_HOME", Value: hermesHomeMount},
 			{Name: "HOME", Value: hermesHomeMount + "/home"},
 			{Name: "PYTHONPATH", Value: hermesHomeMount + "/.python-packages"},
+			{Name: "NODE_PATH", Value: hermesHomeMount + "/.npm-packages/lib/node_modules"},
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:   ha.GetHermes().GetEnvFrom(),
 		Resources: ha.GetHermes().GetResources(),
@@ -431,6 +432,10 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	// python-packages: init container installs desired packages into $HERMES_HOME/.python-packages.
 	pythonPackages := ha.GetHermes().GetPythonPackages()
 	initContainers = append(initContainers, initContainer("init-python-packages", buildPythonPackagesScript(pythonPackages)))
+
+	// npm-packages: init container installs desired packages into $HERMES_HOME/.npm-packages.
+	npmPackages := ha.GetHermes().GetNPMPackages()
+	initContainers = append(initContainers, initContainer("init-npm-packages", buildNPMPackagesScript(npmPackages)))
 
 	// plugins: init container installs desired plugins and removes stale ones.
 	plugins := ha.GetHermes().GetPlugins()
@@ -947,6 +952,42 @@ PKGS_EOF
 
 if [ -f "$MANIFEST" ] && [ "$(cat "$MANIFEST")" = "$DESIRED" ]; then
   echo "Python packages up-to-date, skipping"
+  exit 0
+fi
+
+rm -rf "$TARGET"
+mkdir -p "$TARGET"
+%s
+
+printf '%%s' "$DESIRED" > "$MANIFEST"
+`, manifestContent, installCmd)
+}
+
+func buildNPMPackagesScript(cfg *agentsv1alpha1.HermesNPMPackages) string {
+	if cfg == nil || len(cfg.Packages) == 0 {
+		return "echo 'No npm packages configured'"
+	}
+
+	quoted := make([]string, len(cfg.Packages))
+	for i, p := range cfg.Packages {
+		quoted[i] = fmt.Sprintf("%q", p)
+	}
+
+	installCmd := "npm install -g --prefix \"$TARGET\" " + strings.Join(quoted, " ")
+	manifestContent := strings.Join(cfg.Packages, "\n")
+
+	return fmt.Sprintf(`set -eu
+TARGET="$HERMES_HOME/.npm-packages"
+MANIFEST="$HERMES_HOME/.hermes-agent-operator/npm-packages"
+mkdir -p "$HERMES_HOME/.hermes-agent-operator"
+
+DESIRED=$(cat <<'PKGS_EOF'
+%s
+PKGS_EOF
+)
+
+if [ -f "$MANIFEST" ] && [ "$(cat "$MANIFEST")" = "$DESIRED" ]; then
+  echo "npm packages up-to-date, skipping"
   exit 0
 fi
 

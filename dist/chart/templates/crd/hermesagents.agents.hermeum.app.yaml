@@ -2747,6 +2747,19 @@ spec:
                       type: object
                     maxItems: 10
                     type: array
+                  npmPackages:
+                    description: |-
+                      npmPackages configures npm packages to pre-install before the agent starts.
+                      Packages are installed into $HERMES_HOME/.npm-packages and made available via NODE_PATH.
+                    properties:
+                      packages:
+                        description: |-
+                          packages is a list of npm package specifiers to install
+                          (e.g. "@anthropic-ai/sdk", "typescript@^5.0.0").
+                        items:
+                          type: string
+                        type: array
+                    type: object
                   plugins:
                     description: plugins is a list of plugins to install in the Hermes
                       agent.

@@ -188,6 +188,14 @@ type HermesPythonPackages struct {
 	ExtraArgs []string `json:"extraArgs,omitempty"`
 }
 
+// HermesNPMPackages configures npm packages to pre-install via `npm install`.
+type HermesNPMPackages struct {
+	// packages is a list of npm package specifiers to install
+	// (e.g. "@anthropic-ai/sdk", "typescript@^5.0.0").
+	// +optional
+	Packages []string `json:"packages,omitempty"`
+}
+
 // HermesImage specifies the container image repository and tag.
 type HermesImage struct {
 	// repository is the image repository (e.g. "nousresearch/hermes-agent").
@@ -499,6 +507,10 @@ type Hermes struct {
 	// Packages are installed into $HERMES_HOME/.python-packages and made available via PYTHONPATH.
 	// +optional
 	PythonPackages *HermesPythonPackages `json:"pythonPackages,omitempty"`
+	// npmPackages configures npm packages to pre-install before the agent starts.
+	// Packages are installed into $HERMES_HOME/.npm-packages and made available via NODE_PATH.
+	// +optional
+	NPMPackages *HermesNPMPackages `json:"npmPackages,omitempty"`
 	// plugins is a list of plugins to install in the Hermes agent.
 	// +optional
 	Plugins []HermesPlugin `json:"plugins,omitempty"`
@@ -619,6 +631,13 @@ func (h *Hermes) GetPythonPackages() *HermesPythonPackages {
 		return nil
 	}
 	return h.PythonPackages
+}
+
+func (h *Hermes) GetNPMPackages() *HermesNPMPackages {
+	if h == nil {
+		return nil
+	}
+	return h.NPMPackages
 }
 
 func (h *Hermes) GetPlugins() []HermesPlugin {

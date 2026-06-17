@@ -62,6 +62,7 @@ kubectl get pods -l app.kubernetes.io/instance=my-agent
 - [`hermes.storage`](#hermesstorage)
 - [`hermes.workspace`](#hermesworkspace)
 - [`hermes.pythonPackages`](#hermespythonpackages)
+- [`hermes.npmPackages`](#hermesnpmpackages)
 - [`hermes.plugins`](#hermesplugins)
 - [`hermes.skills`](#hermesskills)
 - [`hermes.crons`](#hermescrons)
@@ -156,7 +157,7 @@ hermes:
 
 Pre-install Python packages before the agent starts. `packages` entries are [pip specifiers](https://pip.pypa.io/en/stable/reference/requirement-specifiers/) — bare name, version-pinned, or extras. `extraArgs` are appended verbatim to the `uv pip install` command, which is useful for custom index URLs or other `uv pip` flags.
 
-Packages are installed into `$HERMES_HOME/.python-packages` (under `/opt/data`, the persistent volume) and made available to the agent via `PYTHONPATH`. Because the installation runs in an init container that executes on every pod start, packages are always present even when persistence is disabled. When a PVC is attached, the operator skips reinstalling if the desired set has not changed since the last start.
+Packages are installed into `$HERMES_HOME/.python-packages` (under `/opt/data`, the persistent volume) and made available to the agent via `PYTHONPATH`. 
 
 Removing a package from the list wipes and reinstalls the remaining set on the next reconcile, so the installed state always matches the declaration.
 
@@ -172,7 +173,51 @@ hermes:
       - "--extra-index-url=https://pypi.org/simple"
 ```
 
+Installed binaries land in `$HERMES_HOME/.python-packages/bin`. To make them available on `PATH` for shell-based tools, seed a `.bashrc` via `hermes.workspace`:
+
+```yaml
+hermes:
+  pythonPackages:
+    packages:
+      - requests
+  workspace:
+    files:
+      home/.bashrc: |
+        export PATH="$HERMES_HOME/.python-packages/bin:$PATH"
+```
+
 > **Note:** Packages here are available to Python code run *by* the agent (tool execution, scripts, etc.). They do not affect the Hermes agent process itself, which uses its own virtual environment at `/opt/hermes/.venv`.
+
+
+### `hermes.npmPackages`
+
+Pre-install npm packages before the agent starts. `packages` entries are standard npm package specifiers — bare name, scoped (`@scope/name`), or version-pinned (`pkg@^1.0.0`).
+
+Packages are installed into `$HERMES_HOME/.npm-packages` (under `/opt/data`, the persistent volume) via `npm install -g --prefix`, and made available to the agent via `NODE_PATH`. 
+
+Removing a package from the list wipes and reinstalls the remaining set on the next reconcile, so the installed state always matches the declaration.
+
+```yaml
+hermes:
+  npmPackages:                     # optional; omit if no npm packages are needed
+    packages:                      # optional; npm package specifiers to install
+      - "@anthropic-ai/sdk"
+      - "@anthropic-ai/mcp-server-puppeteer"
+      - "typescript@^5.0.0"
+```
+
+Installed binaries land in `$HERMES_HOME/.npm-packages/bin`. To make them available on `PATH` for shell-based tools, seed a `.bashrc` via `hermes.workspace`:
+
+```yaml
+hermes:
+  npmPackages:
+    packages:
+      - typescript
+  workspace:
+    files:
+      home/.bashrc: |
+        export PATH="$HERMES_HOME/.npm-packages/bin:$PATH"
+```
 
 
 ### `hermes.plugins`
