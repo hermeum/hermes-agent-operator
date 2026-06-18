@@ -56,6 +56,14 @@ kubectl get hermesagent my-agent
 kubectl get pods -l app.kubernetes.io/instance=my-agent
 ```
 
+## Examples
+
+Ready-to-apply manifests live in [`config/samples/`](./config/samples/). Each file includes a Secret for credentials and a `HermesAgent` resource. Fill in the Secret values, then apply:
+
+```sh
+kubectl apply -f config/samples/web_search.yaml
+```
+
 ## Configuration
 
 - [`hermes.config`](#hermesconfig)
