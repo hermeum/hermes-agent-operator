@@ -34,14 +34,14 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "RoleBinding deleted", "namespacedName", nsName)
+			u.tel.Debug(ctx, "RoleBinding deleted")
 		}
 		if existingRole != nil {
 			err := u.kube.DeleteRole(ctx, DeleteRoleParam{NamespacedName: nsName})
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "Role deleted", "namespacedName", nsName)
+			u.tel.Debug(ctx, "Role deleted")
 		}
 		ha.Status.ManagedResources.Role = ""
 		ha.Status.ManagedResources.RoleBinding = ""
@@ -60,14 +60,14 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "Role updated", "namespacedName", nsName)
+			u.tel.Debug(ctx, "Role updated")
 		}
 	} else {
 		err := u.kube.CreateRoleOwnedByHermesAgent(ctx, CreateRoleOfHermesAgentParam{HermesAgent: ha, Role: desiredRole})
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "Role created", "namespacedName", nsName)
+		u.tel.Debug(ctx, "Role created")
 	}
 
 	rbCreated := existingRB == nil
@@ -79,14 +79,14 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "RoleBinding updated", "namespacedName", nsName)
+			u.tel.Debug(ctx, "RoleBinding updated")
 		}
 	} else {
 		err := u.kube.CreateRoleBindingOwnedByHermesAgent(ctx, CreateRoleBindingOfHermesAgentParam{HermesAgent: ha, RoleBinding: desiredRB})
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "RoleBinding created", "namespacedName", nsName)
+		u.tel.Debug(ctx, "RoleBinding created")
 	}
 
 	if roleCreated || rbCreated {

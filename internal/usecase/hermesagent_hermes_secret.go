@@ -33,7 +33,6 @@ import (
 )
 
 func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
-	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 	secretNsName := types.NamespacedName{Name: ha.GetHermesName(), Namespace: ha.Namespace}
 
 	existing, err := u.kube.GetSecret(ctx, GetSecretParam{NamespacedName: secretNsName})
@@ -52,13 +51,13 @@ func (u *HermesAgentUseCase) reconcileHermesSecret(ctx context.Context, ha *agen
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "Hermes Secret created", "namespacedName", nsName)
+		u.tel.Debug(ctx, "Hermes Secret created")
 	} else if !maps.EqualFunc(existing.Data, desired.Data, bytes.Equal) {
 		existing.Data = desired.Data
 		if err := u.kube.UpdateSecretOwnedByHermesAgent(ctx, UpdateSecretOfHermesAgentParam{HermesAgent: ha, Secret: existing}); err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "Hermes Secret updated", "namespacedName", nsName)
+		u.tel.Debug(ctx, "Hermes Secret updated")
 	}
 
 	if created {

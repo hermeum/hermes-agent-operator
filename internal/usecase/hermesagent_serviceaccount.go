@@ -27,7 +27,7 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "ServiceAccount deleted", "namespacedName", nsName)
+			u.tel.Debug(ctx, "ServiceAccount deleted")
 		}
 		ha.Status.ManagedResources.ServiceAccount = ""
 		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
@@ -46,7 +46,7 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "ServiceAccount updated", "namespacedName", nsName)
+		u.tel.Debug(ctx, "ServiceAccount updated")
 		return ctrl.Result{}, nil
 	}
 
@@ -54,7 +54,7 @@ func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *ag
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
-	u.tel.Debug(ctx, "ServiceAccount created", "namespacedName", nsName)
+	u.tel.Debug(ctx, "ServiceAccount created")
 	ha.Status.ManagedResources.ServiceAccount = ha.Name
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err

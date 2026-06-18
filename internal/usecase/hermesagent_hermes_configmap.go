@@ -17,8 +17,6 @@ import (
 )
 
 func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
-	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
-
 	cmName := ha.GetHermesName()
 	cm, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{
 		NamespacedName: types.NamespacedName{Name: cmName, Namespace: ha.Namespace},
@@ -41,7 +39,7 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "Hermes ConfigMap updated", "namespacedName", nsName)
+		u.tel.Debug(ctx, "Hermes ConfigMap updated")
 		return ctrl.Result{}, nil
 	}
 
@@ -49,7 +47,7 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
-	u.tel.Debug(ctx, "Hermes ConfigMap created", "namespacedName", nsName)
+	u.tel.Debug(ctx, "Hermes ConfigMap created")
 	ha.Status.ManagedResources.HermesConfigMap = ha.GetHermesName()
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err

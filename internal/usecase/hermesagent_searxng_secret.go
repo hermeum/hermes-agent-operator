@@ -15,7 +15,6 @@ import (
 )
 
 func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
-	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 	secretNsName := types.NamespacedName{Name: ha.GetSearXNGName(), Namespace: ha.Namespace}
 
 	existing, err := u.kube.GetSecret(ctx, GetSecretParam{NamespacedName: secretNsName})
@@ -29,7 +28,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "SearXNG Secret deleted", "namespacedName", nsName)
+			u.tel.Debug(ctx, "SearXNG Secret deleted")
 		}
 		ha.Status.ManagedResources.SearXNGSecret = ""
 		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
@@ -51,7 +50,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *age
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
-	u.tel.Debug(ctx, "SearXNG Secret created", "namespacedName", nsName)
+	u.tel.Debug(ctx, "SearXNG Secret created")
 	ha.Status.ManagedResources.SearXNGSecret = ha.GetSearXNGName()
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
