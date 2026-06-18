@@ -58,14 +58,14 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "StatefulSet updated", "namespacedName", nsName, "phase", ha.Status.Phase)
+			u.tel.Debug(ctx, "StatefulSet updated", "phase", ha.Status.Phase)
 		}
 	} else {
 		err = u.kube.CreateStatefulSetOwnedByHermesAgent(ctx, CreateStatefulSetOfHermesAgentParam{HermesAgent: ha, StatefulSet: desired})
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "StatefulSet created", "namespacedName", nsName, "phase", ha.Status.Phase)
+		u.tel.Debug(ctx, "StatefulSet created", "phase", ha.Status.Phase)
 	}
 
 	ha.Status.ManagedResources.StatefulSet = ha.Name
@@ -76,7 +76,7 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	// if the StatefulSet is not ready, requeue to check again after a short delay.
 	if ha.Status.Phase == agentsv1alpha1.PhasePending || ha.Status.Phase == agentsv1alpha1.PhaseUnknown {
-		u.tel.Debug(ctx, "StatefulSet not ready", "namespacedName", nsName, "phase", ha.Status.Phase)
+		u.tel.Debug(ctx, "StatefulSet not ready", "phase", ha.Status.Phase)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 	return ctrl.Result{}, nil

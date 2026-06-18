@@ -29,7 +29,7 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 			if err := u.kube.DeleteService(ctx, DeleteServiceParam{NamespacedName: nsName}); err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "Service deleted (no ports configured)", "namespacedName", nsName)
+			u.tel.Debug(ctx, "Service deleted (no ports configured)")
 		}
 		ha.Status.ManagedResources.Service = ""
 		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
@@ -49,7 +49,7 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "Service updated", "namespacedName", nsName)
+		u.tel.Debug(ctx, "Service updated")
 		return ctrl.Result{}, nil
 	}
 
@@ -57,7 +57,7 @@ func (u *HermesAgentUseCase) reconcileService(ctx context.Context, ha *agentsv1a
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
-	u.tel.Debug(ctx, "Service created", "namespacedName", nsName)
+	u.tel.Debug(ctx, "Service created")
 	ha.Status.ManagedResources.Service = ha.Name
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err

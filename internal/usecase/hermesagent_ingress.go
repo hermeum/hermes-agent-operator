@@ -29,7 +29,7 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "Ingress deleted", "namespacedName", nsName)
+			u.tel.Debug(ctx, "Ingress deleted")
 		}
 		ha.Status.ManagedResources.Ingress = ""
 		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
@@ -48,7 +48,7 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "Ingress updated", "namespacedName", nsName)
+		u.tel.Debug(ctx, "Ingress updated")
 		return ctrl.Result{}, nil
 	}
 
@@ -56,7 +56,7 @@ func (u *HermesAgentUseCase) reconcileIngress(ctx context.Context, ha *agentsv1a
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
-	u.tel.Debug(ctx, "Ingress created", "namespacedName", nsName)
+	u.tel.Debug(ctx, "Ingress created")
 	ha.Status.ManagedResources.Ingress = ha.Name
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err

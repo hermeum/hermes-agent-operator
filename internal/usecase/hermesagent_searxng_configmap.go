@@ -13,7 +13,6 @@ import (
 )
 
 func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
-	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 	cmNsName := types.NamespacedName{Name: ha.GetSearXNGName(), Namespace: ha.Namespace}
 
 	existing, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{NamespacedName: cmNsName})
@@ -27,7 +26,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "SearXNG ConfigMap deleted", "namespacedName", nsName)
+			u.tel.Debug(ctx, "SearXNG ConfigMap deleted")
 		}
 		ha.Status.ManagedResources.SearXNGConfigMap = ""
 		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
@@ -46,7 +45,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "SearXNG ConfigMap updated", "namespacedName", nsName)
+		u.tel.Debug(ctx, "SearXNG ConfigMap updated")
 		return ctrl.Result{}, nil
 	}
 
@@ -54,7 +53,7 @@ func (u *HermesAgentUseCase) reconcileSearXNGConfigMap(ctx context.Context, ha *
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
-	u.tel.Debug(ctx, "SearXNG ConfigMap created", "namespacedName", nsName)
+	u.tel.Debug(ctx, "SearXNG ConfigMap created")
 	ha.Status.ManagedResources.SearXNGConfigMap = ha.GetSearXNGName()
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err

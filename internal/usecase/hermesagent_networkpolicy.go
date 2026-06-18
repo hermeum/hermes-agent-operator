@@ -32,7 +32,7 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
-			u.tel.Debug(ctx, "NetworkPolicy deleted", "namespacedName", nsName)
+			u.tel.Debug(ctx, "NetworkPolicy deleted")
 		}
 		ha.Status.ManagedResources.NetworkPolicy = ""
 		if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
@@ -51,7 +51,7 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 		if err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
-		u.tel.Debug(ctx, "NetworkPolicy updated", "namespacedName", nsName)
+		u.tel.Debug(ctx, "NetworkPolicy updated")
 		return ctrl.Result{}, nil
 	}
 
@@ -59,7 +59,7 @@ func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *age
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
-	u.tel.Debug(ctx, "NetworkPolicy created", "namespacedName", nsName)
+	u.tel.Debug(ctx, "NetworkPolicy created")
 	ha.Status.ManagedResources.NetworkPolicy = ha.Name
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
