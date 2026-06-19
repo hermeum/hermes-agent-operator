@@ -1,0 +1,3 @@
+{{- if and .Values.rbac.namespaced .Values.metrics.enable .Values.metrics.secure }}
+{{- fail "metrics.secure=true requires cluster-scoped RBAC for TokenReview/SubjectAccessReview; set metrics.secure=false for rbac.namespaced=true team installs" }}
+{{- end }}

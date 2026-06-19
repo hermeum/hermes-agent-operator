@@ -6,7 +6,7 @@ kind: ClusterRole
 {{- end }}
 metadata:
 {{- if .Values.rbac.namespaced }}
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ include "hermes-agent-operator.watchNamespace" . }}
 {{- end }}
   name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
 rules:

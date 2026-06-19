@@ -53,6 +53,14 @@ spec:
         {{- end }}
         {{- end }}
     spec:
+      {{- if .Values.manager.hostNetwork }}
+      hostNetwork: true
+      {{- end }}
+      {{- if .Values.manager.dnsPolicy }}
+      dnsPolicy: {{ .Values.manager.dnsPolicy | quote }}
+      {{- else if .Values.manager.hostNetwork }}
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
       {{- with .Values.manager.topologySpreadConstraints }}
       topologySpreadConstraints: {{ toYaml . | nindent 10 }}
       {{- end }}
@@ -84,12 +92,17 @@ spec:
         - --metrics-bind-address=0
         {{- end }}
         - --health-probe-bind-address=:8081
+        {{- if .Values.rbac.namespaced }}
+        - --watch-namespace={{ include "hermes-agent-operator.watchNamespace" . }}
+        {{- else if .Values.manager.watchNamespace }}
+        - --watch-namespace={{ .Values.manager.watchNamespace }}
+        {{- end }}
         {{- range .Values.manager.args }}
         - {{ . }}
         {{- end }}
         command:
         - /manager
-        image: "{{ .Values.manager.image.repository }}{{- if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
+        image: "{{ .Values.manager.image.repository }}{{- if .Values.manager.image.digest }}@{{ .Values.manager.image.digest }}{{- else if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.manager.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}
@@ -122,6 +135,10 @@ spec:
           {{- else }}
           {}
           {{- end }}
+        {{- with .Values.manager.env }}
+        env:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         volumeMounts:
           {{- if .Values.manager.extraVolumeMounts }}
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}

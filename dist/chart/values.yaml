@@ -17,10 +17,37 @@ manager:
 
   image:
     repository: ghcr.io/hermeum/hermes-agent-operator
-    ## Image tag (defaults to Chart.appVersion if not set)
+    ## Image tag (defaults to Chart.appVersion if not set). Avoid mutable tags for team installs.
     ##
-    # tag: "latest"
+    tag: "0.5.0"
+    ## Optional immutable digest. When set, the chart renders repository@digest and ignores tag.
+    ## Example: sha256:...
+    ##
+    digest: ""
     pullPolicy: IfNotPresent
+
+  ## Namespace watched by the controller. Empty means all namespaces.
+  ## When rbac.namespaced=true, the chart defaults this to the release namespace.
+  ##
+  watchNamespace: ""
+
+  ## Run the manager in the node network namespace. This is normally false, but
+  ## can be required on Orgo+k3s clusters where Pods cannot reach the Kubernetes
+  ## API through kubernetes.default.svc while the node-local k3s API is reachable.
+  ##
+  hostNetwork: false
+
+  ## Pod DNS policy. Defaults to ClusterFirstWithHostNet when hostNetwork=true.
+  ##
+  dnsPolicy: ""
+
+  ## Extra environment variables for the manager container. For Orgo+k3s, set:
+  ## - name: KUBERNETES_SERVICE_HOST
+  ##   value: "127.0.0.1"
+  ## - name: KUBERNETES_SERVICE_PORT
+  ##   value: "6443"
+  ##
+  env: []
 
   ## Arguments
   ##

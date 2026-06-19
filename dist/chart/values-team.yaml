@@ -1,0 +1,13 @@
+# Team/namespace-scoped install defaults.
+# Platform admins must install/upgrade CRDs separately before applying this file.
+crd:
+  enable: false
+
+rbac:
+  namespaced: true
+  helpers:
+    enable: false
+
+metrics:
+  # Secure metrics require cluster-scoped TokenReview/SubjectAccessReview RBAC.
+  secure: false

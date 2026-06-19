@@ -32,6 +32,14 @@ Always uses the Helm release namespace.
 {{- end }}
 
 {{/*
+Namespace the manager watches in namespaced mode.
+Defaults to the Helm release namespace for least-privilege team installs.
+*/}}
+{{- define "hermes-agent-operator.watchNamespace" -}}
+{{- .Values.manager.watchNamespace | default .Release.Namespace }}
+{{- end }}
+
+{{/*
 Resource name with proper truncation for Kubernetes 63-character limit.
 Takes a dict with:
   - .suffix: Resource name suffix (e.g., "metrics", "webhook")

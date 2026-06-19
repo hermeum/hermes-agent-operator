@@ -1,0 +1,13 @@
+# Orgo/k3s install overlay for clusters where Pods cannot reach the
+# Kubernetes API service IP (kubernetes.default.svc / 10.43.0.1), but the
+# node-local k3s API is reachable from host networking.
+manager:
+  hostNetwork: true
+  # Defaults to ClusterFirstWithHostNet when hostNetwork=true; keep explicit
+  # here so the rendered pod spec is stable for team installs.
+  dnsPolicy: ClusterFirstWithHostNet
+  env:
+    - name: KUBERNETES_SERVICE_HOST
+      value: "127.0.0.1"
+    - name: KUBERNETES_SERVICE_PORT
+      value: "6443"

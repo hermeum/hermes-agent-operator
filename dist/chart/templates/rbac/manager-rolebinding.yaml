@@ -6,7 +6,7 @@ kind: ClusterRoleBinding
 {{- end }}
 metadata:
 {{- if .Values.rbac.namespaced }}
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ include "hermes-agent-operator.watchNamespace" . }}
 {{- end }}
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}

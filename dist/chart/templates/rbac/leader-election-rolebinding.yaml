@@ -7,7 +7,7 @@ metadata:
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
   name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "leader-election-rolebinding" "context" $) }}
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ include "hermes-agent-operator.watchNamespace" . }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
