@@ -10,15 +10,15 @@ subjects:
   - kind: ServiceAccount
     name: devops-agent
     namespace: default
-# ---
-# apiVersion: v1
-# kind: Secret
-# metadata:
-#   name: devops-agent-secrets
-# stringData:
-#   OLLAMA_API_KEY: ""
-#   SLACK_BOT_TOKEN: ""
-#   SLACK_APP_TOKEN: ""
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: devops-agent-secrets
+stringData:
+  OLLAMA_API_KEY: ""
+  SLACK_BOT_TOKEN: ""
+  SLACK_APP_TOKEN: ""
 ---
 apiVersion: agents.hermeum.app/v1alpha1
 kind: HermesAgent
