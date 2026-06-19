@@ -811,6 +811,10 @@ func skillName(s agentsv1alpha1.HermesSkill) string {
 	return strings.TrimSuffix(parts[len(parts)-1], ".md")
 }
 
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 func buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
 	desiredNames := make([]string, 0, len(skills))
 	installLines := make([]string, 0, len(skills))
@@ -823,17 +827,17 @@ func buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
 		cmd.WriteString("hermes skills install --yes")
 		if s.Category != "" {
 			cmd.WriteString(" --category ")
-			cmd.WriteString(s.Category)
+			cmd.WriteString(shellQuote(s.Category))
 		}
 		if s.Name != "" {
 			cmd.WriteString(" --name ")
-			cmd.WriteString(s.Name)
+			cmd.WriteString(shellQuote(s.Name))
 		}
 		if s.Force {
 			cmd.WriteString(" --force")
 		}
 		cmd.WriteString(" ")
-		cmd.WriteString(s.Identifier)
+		cmd.WriteString(shellQuote(s.Identifier))
 		installLines = append(installLines, cmd.String())
 	}
 

@@ -16,9 +16,42 @@ Hermes agent is a powerful tool for automating tasks — but it is designed for 
 
 ### 1. Install the operator
 
+Cluster-wide/admin install (installs or upgrades the CRD and watches all namespaces):
+
 ```sh
 helm upgrade hermes-agent-operator oci://ghcr.io/hermeum/charts/hermes-agent-operator \
-  --install --namespace hermes-agent --create-namespace
+  --install --namespace hermes-agent --create-namespace \
+  --version 0.3.0 \
+  --set manager.image.tag=0.5.0
+```
+
+Namespace-scoped/team install (requires a platform admin to install or upgrade the CRD first):
+
+```sh
+helm upgrade hermes-agent-operator oci://ghcr.io/hermeum/charts/hermes-agent-operator \
+  --install --namespace team-a-hermes --create-namespace \
+  --version 0.3.0 \
+  -f dist/chart/values-team.yaml \
+  --set manager.image.tag=0.5.0
+```
+
+In namespace-scoped mode the operator is granted only a namespaced Role/RoleBinding and watches only the release namespace. Secure metrics authentication requires cluster-scoped TokenReview/SubjectAccessReview RBAC, so `values-team.yaml` disables secure metrics.
+
+#### Orgo+k3s Kubernetes API connectivity
+
+Some Orgo+k3s clusters do not allow Pods to reach the Kubernetes API through `kubernetes.default.svc`, while the node-local k3s API is reachable at `127.0.0.1:6443`. If the manager logs Kubernetes API connection errors or `HermesAgent` resources remain unreconciled, install with host networking and explicit API environment variables:
+
+```sh
+helm upgrade hermes-agent-operator oci://ghcr.io/hermeum/charts/hermes-agent-operator \
+  --install --namespace hermes-agent --create-namespace \
+  --version 0.3.0 \
+  --set manager.hostNetwork=true \
+  --set manager.dnsPolicy=ClusterFirstWithHostNet \
+  --set manager.env[0].name=KUBERNETES_SERVICE_HOST \
+  --set-string manager.env[0].value=127.0.0.1 \
+  --set manager.env[1].name=KUBERNETES_SERVICE_PORT \
+  --set-string manager.env[1].value=6443 \
+  --wait --timeout 5m
 ```
 
 ### 2. Create a secret with your API key
@@ -55,6 +88,39 @@ EOF
 kubectl get hermesagent my-agent
 kubectl get pods -l app.kubernetes.io/instance=my-agent
 ```
+
+### 4. Smoke test the operator and a HermesAgent
+
+Run the bundled, timeout-bounded smoke test against an already installed operator:
+
+```sh
+make smoke
+# or: NS=hermes-agent hack/smoke.sh
+```
+
+The smoke is namespace-aware (`NS`, or `HELM_NAMESPACE` through `make smoke`) and verifies operator rollout, `HermesAgent` apply/reconciliation, generated StatefulSet rollout, agent Pod `Running`/`Ready`, and the agent API `/health` endpoint via `kubectl port-forward`. By default it cleans up the smoke `HermesAgent` and Secret on exit; set `CLEANUP=false` to inspect resources after the run.
+
+To have the script install/upgrade the chart first, run:
+
+```sh
+HELM_INSTALL=true make smoke
+```
+
+To additionally ask the agent a prompt, provide model credentials/config. The answer check is optional and runs automatically when `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` is present:
+
+```sh
+ANTHROPIC_API_KEY=sk-ant-... RUN_AGENT_QUERY=true make smoke
+```
+
+Useful overrides include `AGENT`, `OPERATOR_DEPLOYMENT`, `MODEL_PROVIDER`, `MODEL_DEFAULT`, `API_PORT`, `LOCAL_PORT`, `ROLLOUT_TIMEOUT`, and `AGENT_TIMEOUT`.
+
+## Upgrades
+
+For production and team installations, pin both the chart and controller image, for example `--version 0.3.0 --set manager.image.tag=0.5.0` or `--set manager.image.digest=sha256:...`. Do not rely on mutable `latest` tags.
+
+CRDs are cluster-scoped. In team mode, a platform admin should apply CRD upgrades first, then teams upgrade their namespace-scoped release with `crd.enable=false` (or `dist/chart/values-team.yaml`). Helm rollback does not safely downgrade CRD schemas; validate rollback plans against existing `HermesAgent` objects before changing CRDs in production.
+
+For namespace-scoped installs, External Secrets integration, Orgo/k3s API connectivity, and admission guardrails, see [`docs/team-install.md`](./docs/team-install.md).
 
 ## Examples
 
@@ -129,6 +195,52 @@ hermes:
         name: my-webhook-secret    # name of the Secret in the same namespace
         key: WEBHOOK_SECRET        # key within that Secret
 ```
+
+#### External Secrets integration
+
+The operator consumes ordinary Kubernetes Secrets through `hermes.envFrom`, `apiServer.existingSecret`, and `webhook.secretRef`, so it works with External Secrets Operator, Vault Secrets Operator, or any controller that materializes a Secret in the same namespace as the `HermesAgent`. Install the secret sync controller separately, then reference the resulting Secret:
+
+```yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: my-hermes-secret
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: team-secret-store
+    kind: SecretStore
+  target:
+    name: my-hermes-secret
+  data:
+    - secretKey: ANTHROPIC_API_KEY
+      remoteRef:
+        key: /teams/team-a/anthropic-api-key
+---
+apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: my-agent
+spec:
+  hermes:
+    envFrom:
+      - secretRef:
+          name: my-hermes-secret
+```
+
+Create the `ExternalSecret` before the `HermesAgent` where possible. If the Secret is delayed, Kubernetes will keep the agent Pod pending or restarting until the key appears. Do not commit literal provider API keys in sample manifests or GitOps repositories.
+
+#### Team-install guardrails
+
+A `HermesAgent` can influence Pod containers, volumes, Services, Ingresses, NetworkPolicies, and optional namespaced RBAC. Treat write access to `HermesAgent` as the ability to run code in that namespace. For shared team clusters:
+
+- prefer `dist/chart/values-team.yaml` (`crd.enable=false`, `rbac.namespaced=true`, `metrics.secure=false`);
+- keep CRD installation and upgrades platform-admin owned;
+- pin chart versions and image tags or digests;
+- avoid `networking.service.type: LoadBalancer`/`NodePort` and public Ingress unless reviewed;
+- review `spec.security.rbac.additionalRules` because it can grant the agent ServiceAccount additional namespace permissions;
+- avoid arbitrary `sidecars`, `initContainers`, and `extraVolumes` unless the namespace owner explicitly allows them;
+- use cluster admission policy (Kyverno/Gatekeeper/CEL ValidatingAdmissionPolicy) to block hostPath volumes, privileged containers, wildcard RBAC rules, public exposure, and missing NetworkPolicies for externally exposed agents.
 
 ### `hermes.storage`
 

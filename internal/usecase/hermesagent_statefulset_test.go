@@ -156,7 +156,7 @@ func TestBuildSkillsScript(t *testing.T) {
 			{Identifier: "openai/skills/skill-creator"},
 		})
 
-		wantCmd := "hermes skills install --yes openai/skills/skill-creator"
+		wantCmd := `hermes skills install --yes 'openai/skills/skill-creator'`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
 		}
@@ -177,7 +177,7 @@ func TestBuildSkillsScript(t *testing.T) {
 			},
 		})
 
-		wantCmd := "hermes skills install --yes --category writing --name my-skill --force https://example.com/SKILL.md"
+		wantCmd := `hermes skills install --yes --category 'writing' --name 'my-skill' --force 'https://example.com/SKILL.md'`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
 		}
@@ -211,8 +211,22 @@ func TestBuildSkillsScript(t *testing.T) {
 			t.Errorf("expected manifest content, got:\n%s", got)
 		}
 	})
-}
 
+	t.Run("quotes shell metacharacters", func(t *testing.T) {
+		got := buildSkillsScript([]agentsv1alpha1.HermesSkill{
+			{
+				Identifier: `https://example.com/skill; touch /tmp/pwned.md`,
+				Category:   `writing; touch /tmp/category`,
+				Name:       `evil$(touch /tmp/name)`,
+			},
+		})
+
+		wantCmd := `hermes skills install --yes --category 'writing; touch /tmp/category' --name 'evil$(touch /tmp/name)' 'https://example.com/skill; touch /tmp/pwned.md'`
+		if !strings.Contains(got, wantCmd) {
+			t.Errorf("expected quoted install command %q in script, got:\n%s", wantCmd, got)
+		}
+	})
+}
 func TestBuildBundlesScript(t *testing.T) {
 
 	t.Run("minimal", func(t *testing.T) {

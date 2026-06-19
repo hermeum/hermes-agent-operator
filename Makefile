@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= ghcr.io/hermeum/hermes-agent-operator:latest
+IMG ?= ghcr.io/hermeum/hermes-agent-operator:0.5.0
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
@@ -292,6 +292,10 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)
+
+.PHONY: smoke
+smoke: ## Run bounded Kubernetes smoke test against deployed operator (set HELM_INSTALL=true to install first).
+	NS=$(HELM_NAMESPACE) HELM=$(HELM) HELM_RELEASE=$(HELM_RELEASE) HELM_CHART=$(HELM_CHART_DIR) HELM_ARGS='$(HELM_EXTRA_ARGS)' hack/smoke.sh
 
 .PHONY: helm-uninstall
 helm-uninstall: ## Uninstall the Helm release from the K8s cluster.

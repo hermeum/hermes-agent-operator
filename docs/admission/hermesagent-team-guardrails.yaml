@@ -1,0 +1,50 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: hermesagent-team-guardrails
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["agents.hermeum.app"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["hermesagents"]
+  validations:
+    - expression: "!has(object.spec.extraVolumes) || object.spec.extraVolumes.all(v, !has(v.hostPath))"
+      message: "HermesAgent spec.extraVolumes must not use hostPath volumes"
+    - expression: "!has(object.spec.sidecars) || object.spec.sidecars.all(c, !has(c.securityContext) || !has(c.securityContext.privileged) || c.securityContext.privileged != true)"
+      message: "HermesAgent sidecars must not set securityContext.privileged=true"
+    - expression: "!has(object.spec.initContainers) || object.spec.initContainers.all(c, !has(c.securityContext) || !has(c.securityContext.privileged) || c.securityContext.privileged != true)"
+      message: "HermesAgent initContainers must not set securityContext.privileged=true"
+    - expression: "!has(object.spec.sidecars) || object.spec.sidecars.all(c, !has(c.securityContext) || !has(c.securityContext.allowPrivilegeEscalation) || c.securityContext.allowPrivilegeEscalation != true)"
+      message: "HermesAgent sidecars must not set allowPrivilegeEscalation=true"
+    - expression: "!has(object.spec.initContainers) || object.spec.initContainers.all(c, !has(c.securityContext) || !has(c.securityContext.allowPrivilegeEscalation) || c.securityContext.allowPrivilegeEscalation != true)"
+      message: "HermesAgent initContainers must not set allowPrivilegeEscalation=true"
+    - expression: "!has(object.spec.sidecars) || size(object.spec.sidecars) == 0 || (has(object.metadata.labels) && 'hermeum.app/allow-custom-containers' in object.metadata.labels && object.metadata.labels['hermeum.app/allow-custom-containers'] == 'true')"
+      message: "HermesAgent sidecars require review label hermeum.app/allow-custom-containers=true"
+    - expression: "!has(object.spec.initContainers) || size(object.spec.initContainers) == 0 || (has(object.metadata.labels) && 'hermeum.app/allow-custom-containers' in object.metadata.labels && object.metadata.labels['hermeum.app/allow-custom-containers'] == 'true')"
+      message: "HermesAgent initContainers require review label hermeum.app/allow-custom-containers=true"
+    - expression: "!has(object.spec.networking) || !has(object.spec.networking.service) || !has(object.spec.networking.service.type) || object.spec.networking.service.type == '' || object.spec.networking.service.type == 'ClusterIP' || (has(object.metadata.labels) && 'hermeum.app/allow-public-exposure' in object.metadata.labels && object.metadata.labels['hermeum.app/allow-public-exposure'] == 'true')"
+      message: "HermesAgent LoadBalancer/NodePort Services require review label hermeum.app/allow-public-exposure=true"
+    - expression: "!has(object.spec.networking) || !has(object.spec.networking.ingress) || !has(object.spec.networking.ingress.enabled) || object.spec.networking.ingress.enabled != true || (has(object.metadata.labels) && 'hermeum.app/allow-public-exposure' in object.metadata.labels && object.metadata.labels['hermeum.app/allow-public-exposure'] == 'true')"
+      message: "HermesAgent Ingress requires review label hermeum.app/allow-public-exposure=true"
+    - expression: "!has(object.spec.security) || !has(object.spec.security.rbac) || !has(object.spec.security.rbac.additionalRules) || object.spec.security.rbac.additionalRules.all(r, !('*' in r.apiGroups) && !('*' in r.resources) && !('*' in r.verbs))"
+      message: "HermesAgent spec.security.rbac.additionalRules must not contain wildcard apiGroups, resources, or verbs"
+    - expression: "!(has(object.spec.networking) && has(object.spec.networking.ingress) && has(object.spec.networking.ingress.enabled) && object.spec.networking.ingress.enabled == true) || (has(object.spec.security) && has(object.spec.security.networkPolicy) && (!has(object.spec.security.networkPolicy.enabled) || object.spec.security.networkPolicy.enabled == true))"
+      message: "Externally exposed HermesAgent Ingress requires spec.security.networkPolicy enabled"
+    - expression: "!(has(object.spec.networking) && has(object.spec.networking.service) && has(object.spec.networking.service.type) && object.spec.networking.service.type in ['LoadBalancer', 'NodePort']) || (has(object.spec.security) && has(object.spec.security.networkPolicy) && (!has(object.spec.security.networkPolicy.enabled) || object.spec.security.networkPolicy.enabled == true))"
+      message: "Externally exposed HermesAgent Service requires spec.security.networkPolicy enabled"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: hermesagent-team-guardrails
+spec:
+  policyName: hermesagent-team-guardrails
+  validationActions: [Deny]
+  # Uncomment to limit enforcement to namespaces explicitly enrolled by the platform team.
+  # matchResources:
+  #   namespaceSelector:
+  #     matchLabels:
+  #       hermeum.app/hermesagent-guardrails: "enabled"
