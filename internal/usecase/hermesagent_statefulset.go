@@ -270,6 +270,10 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		}, ha.GetHermes().GetEnv()...),
 		EnvFrom:   ha.GetHermes().GetEnvFrom(),
 		Resources: ha.GetHermes().GetResources(),
+		// The Hermes container intentionally starts as root so s6-overlay's /init (PID 1) can
+		// remap UID/GID and chown /opt/data before dropping to the hermes user (UID 10000)
+		// via s6-setuidgid. This prevents setting runAsNonRoot, allowPrivilegeEscalation, and readOnlyRootFilesystem.
+		// RuntimeDefault seccomp is the strongest isolation available without changing the upstream image.
 		SecurityContext: &corev1.SecurityContext{
 			SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 		},
