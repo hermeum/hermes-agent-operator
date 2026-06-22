@@ -976,10 +976,10 @@ type SearXNG struct {
 	// +optional
 	Persistence *SearXNGPersistence `json:"persistence,omitempty"`
 
-	// ExtraEnv specifies additional environment variables for the SearXNG
+	// Env specifies additional environment variables for the SearXNG
 	// sidecar container, merged with the operator-managed variables.
 	// +optional
-	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+	Env []corev1.EnvVar `json:"env,omitempty"`
 }
 
 // GetResources returns the SearXNG container resource requirements.
@@ -990,12 +990,12 @@ func (s *SearXNG) GetResources() corev1.ResourceRequirements {
 	return corev1.ResourceRequirements{}
 }
 
-// GetExtraEnv returns the additional environment variables for the SearXNG container.
-func (s *SearXNG) GetExtraEnv() []corev1.EnvVar {
+// GetEnv returns the additional environment variables for the SearXNG container.
+func (s *SearXNG) GetEnv() []corev1.EnvVar {
 	if s == nil {
 		return nil
 	}
-	return s.ExtraEnv
+	return s.Env
 }
 
 // GetPersistence returns the SearXNG persistence configuration, if any.
@@ -1108,10 +1108,10 @@ type Camofox struct {
 	// state is lost on restart.
 	// +optional
 	Persistence CamofoxPersistenceSpec `json:"persistence,omitempty"`
-	// ExtraEnv specifies additional environment variables for the Camofox
+	// Env specifies additional environment variables for the Camofox
 	// sidecar container, merged with the operator-managed variables.
 	// +optional
-	ExtraEnv []corev1.EnvVar `json:"extraEnv,omitempty"`
+	Env []corev1.EnvVar `json:"env,omitempty"`
 }
 
 // IsEnabled reports whether the Camofox sidecar should be created.
@@ -1142,12 +1142,12 @@ func (c *Camofox) GetResources() corev1.ResourceRequirements {
 	return corev1.ResourceRequirements{}
 }
 
-// GetExtraEnv returns the additional environment variables for the Camofox container.
-func (c *Camofox) GetExtraEnv() []corev1.EnvVar {
+// GetEnv returns the additional environment variables for the Camofox container.
+func (c *Camofox) GetEnv() []corev1.EnvVar {
 	if c == nil {
 		return nil
 	}
-	return c.ExtraEnv
+	return c.Env
 }
 
 // GetPersistence returns a pointer to the Camofox persistence configuration.

@@ -575,7 +575,7 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 					},
 				},
 			},
-		}, sx.GetExtraEnv()...),
+		}, sx.GetEnv()...),
 		Resources: sx.GetResources(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: searxngConfigVolume, MountPath: searxngConfigMount},
@@ -667,7 +667,7 @@ func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		Name:            camofoxContainerName,
 		Image:           cx.GetImage(),
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Env:             cx.GetExtraEnv(),
+		Env:             cx.GetEnv(),
 		Resources:       cx.GetResources(),
 		SecurityContext: buildCamofoxContainerSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
