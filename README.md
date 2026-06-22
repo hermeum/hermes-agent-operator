@@ -392,7 +392,7 @@ searxng:
     size: 1Gi                      # optional; defaults to 1Gi
     storageClassName: standard     # optional; omit to use the cluster default StorageClass
     existingClaim: my-searxng-pvc  # optional; omit to provision a new PVC automatically
-  extraEnv:                        # optional; additional env vars for the SearXNG container
+  env:                             # optional; additional env vars for the SearXNG container
     - name: SEARXNG_SECRET
       value: my-secret
 ```
@@ -420,7 +420,7 @@ camofox:
     size: 1Gi                      # optional; defaults to 1Gi
     storageClassName: standard     # optional; omit to use the cluster default StorageClass
     existingClaim: my-camofox-pvc  # optional; omit to provision a new PVC automatically
-  extraEnv:                        # optional; additional env vars for the Camofox container
+  env:                             # optional; additional env vars for the Camofox container
     - name: DISPLAY
       value: ":99"
 ```
