@@ -38,8 +38,8 @@ func (in *Camofox) DeepCopyInto(out *Camofox) {
 		(*in).DeepCopyInto(*out)
 	}
 	in.Persistence.DeepCopyInto(&out.Persistence)
-	if in.ExtraEnv != nil {
-		in, out := &in.ExtraEnv, &out.ExtraEnv
+	if in.Env != nil {
+		in, out := &in.Env, &out.Env
 		*out = make([]corev1.EnvVar, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
@@ -1033,8 +1033,8 @@ func (in *SearXNG) DeepCopyInto(out *SearXNG) {
 		*out = new(SearXNGPersistence)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.ExtraEnv != nil {
-		in, out := &in.ExtraEnv, &out.ExtraEnv
+	if in.Env != nil {
+		in, out := &in.Env, &out.Env
 		*out = make([]corev1.EnvVar, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
