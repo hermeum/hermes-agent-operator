@@ -433,6 +433,27 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	// ConfigMap keys use the format "workspace.<path>" with "/" replaced by "--".
 	initContainers = append(initContainers, initContainer("init-workspace", buildWorkspaceScript()))
 
+	// dotenv: init container writes $HERMES_HOME/.env from a Kubernetes Secret.
+	if de := ha.GetHermes().GetWorkspace().GetDotEnv(); de != nil {
+		const dotenvVolume = "hermes-dotenv"
+		const dotenvMount = "/hermes-dotenv"
+		volumes = append(volumes, corev1.Volume{
+			Name: dotenvVolume,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: de.SecretRef.Name,
+				},
+			},
+		})
+		ic := initContainer("init-dotenv", buildDotEnvScript(dotenvMount))
+		ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
+			Name:      dotenvVolume,
+			MountPath: dotenvMount,
+			ReadOnly:  true,
+		})
+		initContainers = append(initContainers, ic)
+	}
+
 	// python-packages: init container installs desired packages into $HERMES_HOME/.python-packages.
 	pythonPackages := ha.GetHermes().GetPythonPackages()
 	initContainers = append(initContainers, initContainer("init-python-packages", buildPythonPackagesScript(pythonPackages)))
@@ -1001,6 +1022,21 @@ mkdir -p "$TARGET"
 
 printf '%%s' "$DESIRED" > "$MANIFEST"
 `, manifestContent, installCmd)
+}
+
+func buildDotEnvScript(secretMountPath string) string {
+	return fmt.Sprintf(`set -eu
+TARGET="$HERMES_HOME/.env"
+{
+  for f in "%s"/*; do
+    [ -f "$f" ] || continue
+    key="$(basename "$f")"
+    value="$(cat "$f")"
+    printf '%%s=%%s\n' "$key" "$value"
+  done
+} > "$TARGET"
+echo "Generated .env"
+`, secretMountPath)
 }
 
 func buildCronsScript(crons []agentsv1alpha1.HermesCron) string {

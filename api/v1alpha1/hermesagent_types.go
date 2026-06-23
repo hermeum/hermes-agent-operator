@@ -87,12 +87,31 @@ type HermesStorage struct {
 	Persistence *HermesPersistence `json:"persistence,omitempty"`
 }
 
+// HermesDotEnv configures generation of a $HERMES_HOME/.env file from a Kubernetes Secret.
+type HermesDotEnv struct {
+	// secretRef references the Kubernetes Secret whose keys and values are
+	// written as KEY=VALUE lines to $HERMES_HOME/.env.
+	// +kubebuilder:validation:Required
+	SecretRef corev1.LocalObjectReference `json:"secretRef"`
+}
+
 // HermesWorkspace defines files to seed in the agent workspace.
 type HermesWorkspace struct {
 	// files is a map of file path to content.
 	// Paths may contain "/" for subdirectories (e.g. "skills/test/SKILL.md").
 	// +optional
 	Files map[string]string `json:"files,omitempty"`
+	// dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret.
+	// Each key in the referenced Secret becomes a KEY=VALUE line in the file.
+	// +optional
+	DotEnv *HermesDotEnv `json:"dotEnv,omitempty"`
+}
+
+func (w *HermesWorkspace) GetDotEnv() *HermesDotEnv {
+	if w == nil {
+		return nil
+	}
+	return w.DotEnv
 }
 
 // HermesPlugin defines a plugin to install in the Hermes agent.
