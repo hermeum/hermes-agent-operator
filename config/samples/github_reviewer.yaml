@@ -45,6 +45,9 @@ spec:
                     repo: "{repository.full_name}"
                     pr_number: "{number}"
     workspace:
+      dotEnv:
+        secretRef:
+          name: github-reviewer-secrets
       files:
         # Mount a .bashrc to set PATH for gh CLI installed by initScripts.
         home/.bashrc: |
@@ -53,9 +56,6 @@ spec:
       persistence:
         enabled: true
         size: 1Gi
-    envFrom:
-      - secretRef:
-          name: github-reviewer-secrets
     initChownData: true
     initScripts:
       - name: install-gh

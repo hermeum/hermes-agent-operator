@@ -25,8 +25,9 @@ spec:
       persistence:
         enabled: true
         size: 1Gi
-    envFrom:
-      - secretRef:
+    workspace:
+      dotEnv:
+        secretRef:
           name: web-search-secrets
   # Enable web_search tool with searxng
   searxng:

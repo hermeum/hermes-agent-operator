@@ -30,6 +30,7 @@ spec:
         plugins:
           enabled:
             - observability/langfuse
-    envFrom:
-      - secretRef:
+    workspace:
+      dotEnv:
+        secretRef:
           name: langfuse-observability

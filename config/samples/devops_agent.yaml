@@ -40,10 +40,10 @@ spec:
         value: C0BBJ8SLA2X
       - name: SLACK_ALLOWED_USERS
         value: "U01NC888PJT"
-    envFrom:
-      - secretRef:
-          name: devops-agent-secrets
     workspace:
+      dotEnv:
+        secretRef:
+          name: devops-agent-secrets
       files:
         SOUL.md: |
           You are a DevOps assistant with read-only access to a Kubernetes cluster via `kubectl`.
