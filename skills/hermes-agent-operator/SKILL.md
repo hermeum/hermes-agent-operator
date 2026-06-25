@@ -20,13 +20,10 @@ kubectl get crd hermesagents.agents.hermeum.app -o yaml 2>/dev/null
 ```
 Use the `spec.versions[0].schema.openAPIV3Schema` block as the authoritative field reference.
 
-**2. GitHub (fallback when kubectl is unavailable or the CRD is not installed):**
+**2. Bundled CRD (fallback when kubectl is unavailable or the CRD is not installed):**
 
-Fetch:
-```
-https://raw.githubusercontent.com/hermeum/hermes-agent-operator/main/skills/hermes-agent-operator/crd.yaml
-```
-This file is kept in sync with the operator's CRD and lives alongside this skill.
+Read `crd.yaml` from the same directory as this skill file.
+It is kept in sync with the operator's CRD and ships alongside this skill.
 
 Use the schema only to understand field semantics and inline comment text. Do **not** dump the raw schema into the output.
 
