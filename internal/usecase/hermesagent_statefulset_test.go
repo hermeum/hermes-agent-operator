@@ -278,15 +278,15 @@ func TestBuildPythonPackagesScript(t *testing.T) {
 	})
 
 	t.Run("empty packages returns no-op", func(t *testing.T) {
-		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{})
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPipPackages{})
 		if !strings.Contains(got, "No Python packages configured") {
 			t.Errorf("expected no-op message, got:\n%s", got)
 		}
 	})
 
 	t.Run("single package install command", func(t *testing.T) {
-		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
-			Packages: []string{"requests"},
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPipPackages{
+			Install: []string{"requests"},
 		})
 
 		wantCmd := `uv pip install --python /opt/hermes/.venv/bin/python --target "$TARGET" "requests"`
@@ -296,8 +296,8 @@ func TestBuildPythonPackagesScript(t *testing.T) {
 	})
 
 	t.Run("multiple packages all quoted", func(t *testing.T) {
-		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
-			Packages: []string{"requests", "pandas==2.1.0", "beautifulsoup4[lxml]"},
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPipPackages{
+			Install: []string{"requests", "pandas==2.1.0", "beautifulsoup4[lxml]"},
 		})
 
 		wantCmd := `uv pip install --python /opt/hermes/.venv/bin/python --target "$TARGET" "requests" "pandas==2.1.0" "beautifulsoup4[lxml]"`
@@ -307,8 +307,8 @@ func TestBuildPythonPackagesScript(t *testing.T) {
 	})
 
 	t.Run("extraArgs inserted before packages", func(t *testing.T) {
-		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
-			Packages:  []string{"langfuse"},
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPipPackages{
+			Install:   []string{"langfuse"},
 			ExtraArgs: []string{"--index-url=https://private.example.com/simple"},
 		})
 
@@ -319,8 +319,8 @@ func TestBuildPythonPackagesScript(t *testing.T) {
 	})
 
 	t.Run("multiple extraArgs all quoted", func(t *testing.T) {
-		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
-			Packages:  []string{"requests"},
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPipPackages{
+			Install:   []string{"requests"},
 			ExtraArgs: []string{"--index-url=https://a.example.com/simple", "--extra-index-url=https://pypi.org/simple"},
 		})
 
@@ -331,8 +331,8 @@ func TestBuildPythonPackagesScript(t *testing.T) {
 	})
 
 	t.Run("manifest contains package list", func(t *testing.T) {
-		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPythonPackages{
-			Packages: []string{"alpha", "beta"},
+		got := buildPythonPackagesScript(&agentsv1alpha1.HermesPipPackages{
+			Install: []string{"alpha", "beta"},
 		})
 
 		if !strings.Contains(got, "alpha\nbeta") {

@@ -195,24 +195,34 @@ type HermesBundle struct {
 	Force bool `json:"force,omitempty"`
 }
 
-// HermesPythonPackages configures Python packages to pre-install via `uv pip install`.
-type HermesPythonPackages struct {
-	// packages is a list of Python package specifiers to install
+// HermesPackages configures language-specific package managers for pre-installing packages.
+type HermesPackages struct {
+	// pip configures Python packages to pre-install via `uv pip install`.
+	// +optional
+	Pip *HermesPipPackages `json:"pip,omitempty"`
+	// npm configures npm packages to pre-install via `npm install`.
+	// +optional
+	Npm *HermesNpmPackages `json:"npm,omitempty"`
+}
+
+// HermesPipPackages configures Python packages to pre-install via `uv pip install`.
+type HermesPipPackages struct {
+	// install is a list of Python package specifiers to install
 	// (e.g. "requests", "pandas==2.1.0").
 	// +optional
-	Packages []string `json:"packages,omitempty"`
+	Install []string `json:"install,omitempty"`
 	// extraArgs is a list of additional arguments appended to the `uv pip install` command
 	// (e.g. "--index-url=https://...", "--extra-index-url=https://...").
 	// +optional
 	ExtraArgs []string `json:"extraArgs,omitempty"`
 }
 
-// HermesNPMPackages configures npm packages to pre-install via `npm install`.
-type HermesNPMPackages struct {
-	// packages is a list of npm package specifiers to install
+// HermesNpmPackages configures npm packages to pre-install via `npm install`.
+type HermesNpmPackages struct {
+	// install is a list of npm package specifiers to install
 	// (e.g. "@anthropic-ai/sdk", "typescript@^5.0.0").
 	// +optional
-	Packages []string `json:"packages,omitempty"`
+	Install []string `json:"install,omitempty"`
 }
 
 // HermesImage specifies the container image repository and tag.
@@ -522,14 +532,9 @@ type Hermes struct {
 	// workspace defines files to seed in the agent's home directory.
 	// +optional
 	Workspace *HermesWorkspace `json:"workspace,omitempty"`
-	// pythonPackages configures Python packages to pre-install before the agent starts.
-	// Packages are installed into $HERMES_HOME/.python-packages and made available via PYTHONPATH.
+	// packages configures language-specific package managers for pre-installing packages before the agent starts.
 	// +optional
-	PythonPackages *HermesPythonPackages `json:"pythonPackages,omitempty"`
-	// npmPackages configures npm packages to pre-install before the agent starts.
-	// Packages are installed into $HERMES_HOME/.npm-packages and made available via NODE_PATH.
-	// +optional
-	NPMPackages *HermesNPMPackages `json:"npmPackages,omitempty"`
+	Packages *HermesPackages `json:"packages,omitempty"`
 	// plugins is a list of plugins to install in the Hermes agent.
 	// +optional
 	Plugins []HermesPlugin `json:"plugins,omitempty"`
@@ -645,18 +650,25 @@ func (h *Hermes) GetWorkspace() *HermesWorkspace {
 	return h.Workspace
 }
 
-func (h *Hermes) GetPythonPackages() *HermesPythonPackages {
+func (h *Hermes) GetPackages() *HermesPackages {
 	if h == nil {
 		return nil
 	}
-	return h.PythonPackages
+	return h.Packages
 }
 
-func (h *Hermes) GetNPMPackages() *HermesNPMPackages {
-	if h == nil {
+func (p *HermesPackages) GetPip() *HermesPipPackages {
+	if p == nil {
 		return nil
 	}
-	return h.NPMPackages
+	return p.Pip
+}
+
+func (p *HermesPackages) GetNpm() *HermesNpmPackages {
+	if p == nil {
+		return nil
+	}
+	return p.Npm
 }
 
 func (h *Hermes) GetPlugins() []HermesPlugin {

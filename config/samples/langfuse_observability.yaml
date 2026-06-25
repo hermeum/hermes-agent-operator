@@ -15,9 +15,10 @@ metadata:
 spec:
   hermes:
     # Install the Langfuse Python package to enable the observability plugin.
-    pythonPackages:
-      packages:
-        - langfuse
+    packages:
+      pip:
+        install:
+          - langfuse
     config:
       raw:
         model:
