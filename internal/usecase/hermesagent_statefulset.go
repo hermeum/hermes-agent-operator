@@ -159,7 +159,7 @@ func (u *HermesAgentUseCase) deleteStuckPod(ctx context.Context, ha *agentsv1alp
 	pod, err := u.kube.GetPod(ctx, GetPodParam{
 		NamespacedName: types.NamespacedName{Name: ha.Name + "-0", Namespace: ha.Namespace},
 	})
-	if err != nil || pod == nil || pod.DeletionTimestamp != nil {
+	if err != nil || pod == nil {
 		return err
 	}
 	if !podIsStuck(pod) {
