@@ -90,7 +90,9 @@ kubectl apply -f config/samples/web_search.yaml
 
 Configure the Hermes agent runtime. `raw`, `apiServer`, and `webhook` can be used independently or together.
 
-**`raw`** — pass a verbatim `config.yml` as free-form YAML. Anything valid in a Hermes config file is accepted here.
+#### `raw`
+
+Pass a verbatim `config.yml` as free-form YAML. Anything valid in a Hermes config file is accepted here.
 
 ```yaml
 hermes:
@@ -101,7 +103,9 @@ hermes:
         default: claude-sonnet-4-6
 ```
 
-**`apiServer`** — enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true`, `API_SERVER_PORT`, and injects the key into the agent container automatically. 
+#### `apiServer`
+
+Enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true`, `API_SERVER_PORT`, and injects the key into the agent container automatically.
 
 ```yaml
 hermes:
@@ -116,7 +120,9 @@ hermes:
         key: API_SERVER_KEY        # key within that Secret
 ```
 
-**`webhook`** — enable the webhook ingress. When `enabled: true`, the operator sets `WEBHOOK_ENABLED=true` and injects a `WEBHOOK_SECRET` (the HMAC secret) into the agent container. By default the secret is generated once and stored in the operator-managed `<agent-name>-hermes` Secret, then preserved across reconciles so it is not rotated. 
+#### `webhook`
+
+Enable the webhook ingress. When `enabled: true`, the operator sets `WEBHOOK_ENABLED=true` and injects a `WEBHOOK_SECRET` (the HMAC secret) into the agent container. By default the secret is generated once and stored in the operator-managed `<agent-name>-hermes` Secret, then preserved across reconciles so it is not rotated.
 
 ```yaml
 hermes:
@@ -166,7 +172,7 @@ Pre-install language packages before the agent starts. Each sub-key corresponds 
 
 Removing a package from any list wipes and reinstalls the remaining set on the next reconcile, so the installed state always matches the declaration.
 
-#### `hermes.packages.pip`
+#### `pip`
 
 Installs Python packages via `uv pip install`. `install` entries are [pip specifiers](https://pip.pypa.io/en/stable/reference/requirement-specifiers/) — bare name, version-pinned, or extras. `extraArgs` are appended verbatim to the `uv pip install` command, useful for custom index URLs or other flags.
 
@@ -201,7 +207,7 @@ hermes:
 
 > **Note:** These packages are available to Python code run *by* the agent (tool execution, scripts, etc.). They do not affect the Hermes agent process itself, which uses its own virtual environment at `/opt/hermes/.venv`.
 
-#### `hermes.packages.npm`
+#### `npm`
 
 Installs npm packages via `npm install -g --prefix`. `install` entries are standard npm package specifiers — bare name, scoped (`@scope/name`), or version-pinned (`pkg@^1.0.0`).
 
