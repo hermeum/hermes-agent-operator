@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -53,10 +54,27 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	if sts != nil {
 		if sts.Annotations[annotationDesiredSpecHash] != hash {
-			desired.ResourceVersion = sts.ResourceVersion
-			err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired})
+			pod, err := u.kube.GetPod(ctx, GetPodParam{
+				NamespacedName: types.NamespacedName{Name: ha.Name + "-0", Namespace: ha.Namespace},
+			})
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			podWasRunning := pod != nil && pod.Status.Phase == corev1.PodRunning
+
+			desired.ResourceVersion = sts.ResourceVersion
+			if err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired}); err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			// If the pod was not running before the update, the StatefulSet controller
+			// will not replace it on its own — the unavailability budget is already
+			// exhausted. Delete it so it is recreated immediately at the new revision.
+			if !podWasRunning {
+				if err := u.kube.DeletePod(ctx, DeletePodParam{
+					NamespacedName: types.NamespacedName{Name: ha.Name + "-0", Namespace: ha.Namespace},
+				}); err != nil {
+					return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+				}
 			}
 			u.tel.Debug(ctx, "StatefulSet updated", "phase", ha.Status.Phase)
 		}
@@ -149,6 +167,7 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 	cm, _ := buildHermesConfigMap(ha)
 	configHash := configMapDataHash(cm.Data)
 
+	maxUnavailable := intstr.FromInt32(1)
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.Name,
@@ -159,6 +178,12 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: selectorLabels(ha),
+			},
+			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
+					MaxUnavailable: &maxUnavailable,
+				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{

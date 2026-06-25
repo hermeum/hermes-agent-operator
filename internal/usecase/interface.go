@@ -55,6 +55,7 @@ type Kubernetes interface {
 	UpdateHermesAgentStatus(ctx context.Context, param UpdateHermesAgentStatusParam) error
 
 	GetPod(ctx context.Context, param GetPodParam) (*corev1.Pod, error)
+	DeletePod(ctx context.Context, param DeletePodParam) error
 
 	GetConfigMap(ctx context.Context, param GetConfigMapParam) (*corev1.ConfigMap, error)
 	CreateConfigMapOwnedByHermesAgent(ctx context.Context, param CreateConfigMapOfHermesAgentParam) error
@@ -110,6 +111,10 @@ type UpdateHermesAgentStatusParam struct {
 }
 
 type GetPodParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type DeletePodParam struct {
 	NamespacedName types.NamespacedName
 }
 
