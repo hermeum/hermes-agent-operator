@@ -6962,6 +6962,12 @@ spec:
                   phase is the current lifecycle phase of the HermesAgent, mirroring the underlying pod phase.
                   One of Pending, Running, Succeeded, Failed, Unknown, or Suspended.
                 type: string
+              reason:
+                description: |-
+                  reason is a short, CamelCase code indicating why the agent is in its current phase.
+                  Populated when the pod is pending (e.g. "Unschedulable") or unhealthy
+                  (e.g. "CrashLoopBackOff", "OOMKilled"). Empty when the agent is running normally.
+                type: string
             type: object
         required:
         - spec

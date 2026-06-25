@@ -1332,6 +1332,12 @@ type HermesAgentStatus struct {
 	// +optional
 	Phase HermesAgentPhase `json:"phase,omitempty"`
 
+	// reason is a short, CamelCase code indicating why the agent is in its current phase.
+	// Populated when the pod is pending (e.g. "Unschedulable") or unhealthy
+	// (e.g. "CrashLoopBackOff", "OOMKilled"). Empty when the agent is running normally.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
 	// conditions represent the current state of the HermesAgent resource.
 	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
 	//
