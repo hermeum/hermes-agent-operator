@@ -96,23 +96,25 @@ func (u *HermesAgentUseCase) deriveStatus(ctx context.Context, ha *agentsv1alpha
 		return agentsv1alpha1.PhasePending, ""
 	}
 
-	var phase agentsv1alpha1.HermesAgentPhase
-	switch pod.Status.Phase {
-	case corev1.PodPending:
-		phase = agentsv1alpha1.PhasePending
-	case corev1.PodRunning:
-		phase = agentsv1alpha1.PhaseRunning
-	case corev1.PodSucceeded:
-		phase = agentsv1alpha1.PhaseSucceeded
-	case corev1.PodFailed:
-		phase = agentsv1alpha1.PhaseFailed
-	default:
-		phase = agentsv1alpha1.PhaseUnknown
-	}
-	return phase, podReason(pod)
+	return hermesAgentPhase(pod), hermesAgentReason(pod)
 }
 
-func podReason(pod *corev1.Pod) string {
+func hermesAgentPhase(pod *corev1.Pod) agentsv1alpha1.HermesAgentPhase {
+	switch pod.Status.Phase {
+	case corev1.PodPending:
+		return agentsv1alpha1.PhasePending
+	case corev1.PodRunning:
+		return agentsv1alpha1.PhaseRunning
+	case corev1.PodSucceeded:
+		return agentsv1alpha1.PhaseSucceeded
+	case corev1.PodFailed:
+		return agentsv1alpha1.PhaseFailed
+	default:
+		return agentsv1alpha1.PhaseUnknown
+	}
+}
+
+func hermesAgentReason(pod *corev1.Pod) string {
 	if pod.Status.Phase == corev1.PodPending {
 		for _, c := range pod.Status.Conditions {
 			if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason != "" {
