@@ -128,13 +128,15 @@ func configMapDataHash(data map[string]string) string {
 // Kubernetes-defaulted fields that buildStatefulSet does not set).
 func desiredSpecHash(sts *appsv1.StatefulSet) string {
 	data, _ := json.Marshal(struct {
-		Replicas             *int32                         `json:"replicas"`
-		Template             corev1.PodTemplateSpec         `json:"template"`
-		VolumeClaimTemplates []corev1.PersistentVolumeClaim `json:"volumeClaimTemplates"`
+		Replicas             *int32                           `json:"replicas"`
+		Template             corev1.PodTemplateSpec           `json:"template"`
+		VolumeClaimTemplates []corev1.PersistentVolumeClaim   `json:"volumeClaimTemplates"`
+		UpdateStrategy       appsv1.StatefulSetUpdateStrategy `json:"updateStrategy"`
 	}{
 		Replicas:             sts.Spec.Replicas,
 		Template:             sts.Spec.Template,
 		VolumeClaimTemplates: sts.Spec.VolumeClaimTemplates,
+		UpdateStrategy:       sts.Spec.UpdateStrategy,
 	})
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h[:])[:16]
