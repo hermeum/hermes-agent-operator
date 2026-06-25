@@ -66,6 +66,9 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 			if err := u.kube.UpdateStatefulSetOwnedByHermesAgent(ctx, UpdateStatefulSetParam{HermesAgent: ha, StatefulSet: desired}); err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
+			// If the pod was not running before the update, the StatefulSet controller
+			// will not replace it on its own — the unavailability budget is already
+			// exhausted. Delete it so it is recreated immediately at the new revision.
 			if !podWasRunning {
 				if err := u.kube.DeletePod(ctx, DeletePodParam{
 					NamespacedName: types.NamespacedName{Name: ha.Name + "-0", Namespace: ha.Namespace},
