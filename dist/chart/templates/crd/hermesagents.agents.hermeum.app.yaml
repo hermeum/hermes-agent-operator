@@ -57,9 +57,9 @@ spec:
                     default: false
                     description: Enabled enables the Camofox sidecar for browser automation
                     type: boolean
-                  extraEnv:
+                  env:
                     description: |-
-                      ExtraEnv specifies additional environment variables for the Camofox
+                      Env specifies additional environment variables for the Camofox
                       sidecar container, merged with the operator-managed variables.
                     items:
                       description: EnvVar represents an environment variable present
@@ -2747,18 +2747,41 @@ spec:
                       type: object
                     maxItems: 10
                     type: array
-                  npmPackages:
-                    description: |-
-                      npmPackages configures npm packages to pre-install before the agent starts.
-                      Packages are installed into $HERMES_HOME/.npm-packages and made available via NODE_PATH.
+                  packages:
+                    description: packages configures language-specific package managers
+                      for pre-installing packages before the agent starts.
                     properties:
-                      packages:
-                        description: |-
-                          packages is a list of npm package specifiers to install
-                          (e.g. "@anthropic-ai/sdk", "typescript@^5.0.0").
-                        items:
-                          type: string
-                        type: array
+                      npm:
+                        description: npm configures npm packages to pre-install via
+                          `npm install`.
+                        properties:
+                          install:
+                            description: |-
+                              install is a list of npm package specifiers to install
+                              (e.g. "@anthropic-ai/sdk", "typescript@^5.0.0").
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                      pip:
+                        description: pip configures Python packages to pre-install
+                          via `uv pip install`.
+                        properties:
+                          extraArgs:
+                            description: |-
+                              extraArgs is a list of additional arguments appended to the `uv pip install` command
+                              (e.g. "--index-url=https://...", "--extra-index-url=https://...").
+                            items:
+                              type: string
+                            type: array
+                          install:
+                            description: |-
+                              install is a list of Python package specifiers to install
+                              (e.g. "requests", "pandas==2.1.0").
+                            items:
+                              type: string
+                            type: array
+                        type: object
                     type: object
                   plugins:
                     description: plugins is a list of plugins to install in the Hermes
@@ -2917,26 +2940,6 @@ spec:
                             type: integer
                         type: object
                     type: object
-                  pythonPackages:
-                    description: |-
-                      pythonPackages configures Python packages to pre-install before the agent starts.
-                      Packages are installed into $HERMES_HOME/.python-packages and made available via PYTHONPATH.
-                    properties:
-                      extraArgs:
-                        description: |-
-                          extraArgs is a list of additional arguments appended to the `uv pip install` command
-                          (e.g. "--index-url=https://...", "--extra-index-url=https://...").
-                        items:
-                          type: string
-                        type: array
-                      packages:
-                        description: |-
-                          packages is a list of Python package specifiers to install
-                          (e.g. "requests", "pandas==2.1.0").
-                        items:
-                          type: string
-                        type: array
-                    type: object
                   resources:
                     description: resources overrides the resource requests and limits
                       for the hermes-agent container.
@@ -3057,6 +3060,30 @@ spec:
                     description: workspace defines files to seed in the agent's home
                       directory.
                     properties:
+                      dotEnv:
+                        description: |-
+                          dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret.
+                          Each key in the referenced Secret becomes a KEY=VALUE line in the file.
+                        properties:
+                          secretRef:
+                            description: |-
+                              secretRef references the Kubernetes Secret whose keys and values are
+                              written as KEY=VALUE lines to $HERMES_HOME/.env.
+                            properties:
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        required:
+                        - secretRef
+                        type: object
                       files:
                         additionalProperties:
                           type: string
@@ -4749,9 +4776,9 @@ spec:
                     description: Enabled enables the SearXNG sidecar that is used
                       by the web_search tool.
                     type: boolean
-                  extraEnv:
+                  env:
                     description: |-
-                      ExtraEnv specifies additional environment variables for the SearXNG
+                      Env specifies additional environment variables for the SearXNG
                       sidecar container, merged with the operator-managed variables.
                     items:
                       description: EnvVar represents an environment variable present

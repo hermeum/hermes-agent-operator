@@ -69,8 +69,7 @@ kubectl apply -f config/samples/web_search.yaml
 - [`hermes.config`](#hermesconfig)
 - [`hermes.storage`](#hermesstorage)
 - [`hermes.workspace`](#hermesworkspace)
-- [`hermes.pythonPackages`](#hermespythonpackages)
-- [`hermes.npmPackages`](#hermesnpmpackages)
+- [`hermes.packages`](#hermespackages)
 - [`hermes.plugins`](#hermesplugins)
 - [`hermes.skills`](#hermesskills)
 - [`hermes.crons`](#hermescrons)
@@ -91,7 +90,9 @@ kubectl apply -f config/samples/web_search.yaml
 
 Configure the Hermes agent runtime. `raw`, `apiServer`, and `webhook` can be used independently or together.
 
-**`raw`** — pass a verbatim `config.yml` as free-form YAML. Anything valid in a Hermes config file is accepted here.
+#### `raw`
+
+Pass a verbatim `config.yml` as free-form YAML. Anything valid in a Hermes config file is accepted here.
 
 ```yaml
 hermes:
@@ -102,7 +103,9 @@ hermes:
         default: claude-sonnet-4-6
 ```
 
-**`apiServer`** — enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true`, `API_SERVER_PORT`, and injects the key into the agent container automatically. 
+#### `apiServer`
+
+Enable the built-in gateway API. The operator always generates a Kubernetes Secret named `<agent-name>-hermes` containing a random `API_SERVER_KEY`. When `enabled: true`, the operator sets `API_SERVER_ENABLED=true`, `API_SERVER_PORT`, and injects the key into the agent container automatically.
 
 ```yaml
 hermes:
@@ -117,7 +120,9 @@ hermes:
         key: API_SERVER_KEY        # key within that Secret
 ```
 
-**`webhook`** — enable the webhook ingress. When `enabled: true`, the operator sets `WEBHOOK_ENABLED=true` and injects a `WEBHOOK_SECRET` (the HMAC secret) into the agent container. By default the secret is generated once and stored in the operator-managed `<agent-name>-hermes` Secret, then preserved across reconciles so it is not rotated. 
+#### `webhook`
+
+Enable the webhook ingress. When `enabled: true`, the operator sets `WEBHOOK_ENABLED=true` and injects a `WEBHOOK_SECRET` (the HMAC secret) into the agent container. By default the secret is generated once and stored in the operator-managed `<agent-name>-hermes` Secret, then preserved across reconciles so it is not rotated.
 
 ```yaml
 hermes:
@@ -161,66 +166,71 @@ hermes:
 ```
 
 
-### `hermes.pythonPackages`
+### `hermes.packages`
 
-Pre-install Python packages before the agent starts. `packages` entries are [pip specifiers](https://pip.pypa.io/en/stable/reference/requirement-specifiers/) — bare name, version-pinned, or extras. `extraArgs` are appended verbatim to the `uv pip install` command, which is useful for custom index URLs or other `uv pip` flags.
+Pre-install language packages before the agent starts. Each sub-key corresponds to a package manager (`pip`, `npm`). Packages are installed via init containers and stored on the persistent volume, so they survive pod restarts.
 
-Packages are installed into `$HERMES_HOME/.python-packages` (under `/opt/data`, the persistent volume) and made available to the agent via `PYTHONPATH`. 
+Removing a package from any list wipes and reinstalls the remaining set on the next reconcile, so the installed state always matches the declaration.
 
-Removing a package from the list wipes and reinstalls the remaining set on the next reconcile, so the installed state always matches the declaration.
+#### `pip`
+
+Installs Python packages via `uv pip install`. `install` entries are [pip specifiers](https://pip.pypa.io/en/stable/reference/requirement-specifiers/) — bare name, version-pinned, or extras. `extraArgs` are appended verbatim to the `uv pip install` command, useful for custom index URLs or other flags.
+
+Packages are installed into `$HERMES_HOME/.python-packages` and made available via `PYTHONPATH`.
 
 ```yaml
 hermes:
-  pythonPackages:                  # optional; omit if no extra packages are needed
-    packages:                      # optional; pip specifiers to install
-      - requests
-      - pandas==2.1.0
-      - "beautifulsoup4[lxml]"
-    extraArgs:                     # optional; extra flags passed to `uv pip install`
-      - "--index-url=https://my-private-index.example.com/simple"
-      - "--extra-index-url=https://pypi.org/simple"
+  packages:
+    pip:                           # optional
+      install:                     # pip specifiers to install
+        - requests
+        - pandas==2.1.0
+        - "beautifulsoup4[lxml]"
+      extraArgs:                   # optional; extra flags passed to `uv pip install`
+        - "--index-url=https://my-private-index.example.com/simple"
+        - "--extra-index-url=https://pypi.org/simple"
 ```
 
-Installed binaries land in `$HERMES_HOME/.python-packages/bin`. To make them available on `PATH` for shell-based tools, seed a `.bashrc` via `hermes.workspace`:
+Installed binaries land in `$HERMES_HOME/.python-packages/bin`. To add them to `PATH` for shell-based tools, seed a `.bashrc` via `hermes.workspace`:
 
 ```yaml
 hermes:
-  pythonPackages:
-    packages:
-      - requests
+  packages:
+    pip:
+      install:
+        - requests
   workspace:
     files:
       home/.bashrc: |
         export PATH="$HERMES_HOME/.python-packages/bin:$PATH"
 ```
 
-> **Note:** Packages here are available to Python code run *by* the agent (tool execution, scripts, etc.). They do not affect the Hermes agent process itself, which uses its own virtual environment at `/opt/hermes/.venv`.
+> **Note:** These packages are available to Python code run *by* the agent (tool execution, scripts, etc.). They do not affect the Hermes agent process itself, which uses its own virtual environment at `/opt/hermes/.venv`.
 
+#### `npm`
 
-### `hermes.npmPackages`
+Installs npm packages via `npm install -g --prefix`. `install` entries are standard npm package specifiers — bare name, scoped (`@scope/name`), or version-pinned (`pkg@^1.0.0`).
 
-Pre-install npm packages before the agent starts. `packages` entries are standard npm package specifiers — bare name, scoped (`@scope/name`), or version-pinned (`pkg@^1.0.0`).
-
-Packages are installed into `$HERMES_HOME/.npm-packages` (under `/opt/data`, the persistent volume) via `npm install -g --prefix`, and made available to the agent via `NODE_PATH`. 
-
-Removing a package from the list wipes and reinstalls the remaining set on the next reconcile, so the installed state always matches the declaration.
+Packages are installed into `$HERMES_HOME/.npm-packages` and made available via `NODE_PATH`.
 
 ```yaml
 hermes:
-  npmPackages:                     # optional; omit if no npm packages are needed
-    packages:                      # optional; npm package specifiers to install
-      - "@anthropic-ai/sdk"
-      - "@anthropic-ai/mcp-server-puppeteer"
-      - "typescript@^5.0.0"
+  packages:
+    npm:                           # optional
+      install:                     # npm package specifiers to install
+        - "@anthropic-ai/sdk"
+        - "@anthropic-ai/mcp-server-puppeteer"
+        - "typescript@^5.0.0"
 ```
 
-Installed binaries land in `$HERMES_HOME/.npm-packages/bin`. To make them available on `PATH` for shell-based tools, seed a `.bashrc` via `hermes.workspace`:
+Installed binaries land in `$HERMES_HOME/.npm-packages/bin`. To add them to `PATH` for shell-based tools, seed a `.bashrc` via `hermes.workspace`:
 
 ```yaml
 hermes:
-  npmPackages:
-    packages:
-      - typescript
+  packages:
+    npm:
+      install:
+        - typescript
   workspace:
     files:
       home/.bashrc: |

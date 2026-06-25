@@ -455,11 +455,11 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	}
 
 	// python-packages: init container installs desired packages into $HERMES_HOME/.python-packages.
-	pythonPackages := ha.GetHermes().GetPythonPackages()
+	pythonPackages := ha.GetHermes().GetPackages().GetPip()
 	initContainers = append(initContainers, initContainer("init-python-packages", buildPythonPackagesScript(pythonPackages)))
 
 	// npm-packages: init container installs desired packages into $HERMES_HOME/.npm-packages.
-	npmPackages := ha.GetHermes().GetNPMPackages()
+	npmPackages := ha.GetHermes().GetPackages().GetNpm()
 	initContainers = append(initContainers, initContainer("init-npm-packages", buildNPMPackagesScript(npmPackages)))
 
 	// plugins: init container installs desired plugins and removes stale ones.
@@ -942,13 +942,13 @@ BUNDLES_EOF
 `, casePattern, createScript, manifestContent)
 }
 
-func buildPythonPackagesScript(cfg *agentsv1alpha1.HermesPythonPackages) string {
-	if cfg == nil || len(cfg.Packages) == 0 {
+func buildPythonPackagesScript(cfg *agentsv1alpha1.HermesPipPackages) string {
+	if cfg == nil || len(cfg.Install) == 0 {
 		return "echo 'No Python packages configured'"
 	}
 
-	quoted := make([]string, len(cfg.Packages))
-	for i, p := range cfg.Packages {
+	quoted := make([]string, len(cfg.Install))
+	for i, p := range cfg.Install {
 		quoted[i] = fmt.Sprintf("%q", p)
 	}
 
@@ -963,7 +963,7 @@ func buildPythonPackagesScript(cfg *agentsv1alpha1.HermesPythonPackages) string 
 
 	installCmd := "uv pip install --python /opt/hermes/.venv/bin/python --target \"$TARGET\"" +
 		extraArgs + " " + strings.Join(quoted, " ")
-	manifestContent := strings.Join(cfg.Packages, "\n")
+	manifestContent := strings.Join(cfg.Install, "\n")
 
 	return fmt.Sprintf(`set -eu
 TARGET="$HERMES_HOME/.python-packages"
@@ -988,18 +988,18 @@ printf '%%s' "$DESIRED" > "$MANIFEST"
 `, manifestContent, installCmd)
 }
 
-func buildNPMPackagesScript(cfg *agentsv1alpha1.HermesNPMPackages) string {
-	if cfg == nil || len(cfg.Packages) == 0 {
+func buildNPMPackagesScript(cfg *agentsv1alpha1.HermesNpmPackages) string {
+	if cfg == nil || len(cfg.Install) == 0 {
 		return "echo 'No npm packages configured'"
 	}
 
-	quoted := make([]string, len(cfg.Packages))
-	for i, p := range cfg.Packages {
+	quoted := make([]string, len(cfg.Install))
+	for i, p := range cfg.Install {
 		quoted[i] = fmt.Sprintf("%q", p)
 	}
 
 	installCmd := "npm install -g --prefix \"$TARGET\" " + strings.Join(quoted, " ")
-	manifestContent := strings.Join(cfg.Packages, "\n")
+	manifestContent := strings.Join(cfg.Install, "\n")
 
 	return fmt.Sprintf(`set -eu
 TARGET="$HERMES_HOME/.npm-packages"
