@@ -52,6 +52,16 @@ func (k *KubernetesClient) GetPod(ctx context.Context, param usecase.GetPodParam
 	return pod, nil
 }
 
+func (k *KubernetesClient) DeletePod(ctx context.Context, param usecase.DeletePodParam) error {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      param.NamespacedName.Name,
+			Namespace: param.NamespacedName.Namespace,
+		},
+	}
+	return client.IgnoreNotFound(k.client.Delete(ctx, pod))
+}
+
 func (k *KubernetesClient) GetConfigMap(ctx context.Context, param usecase.GetConfigMapParam) (*corev1.ConfigMap, error) {
 	cm := &corev1.ConfigMap{}
 	if err := k.client.Get(ctx, param.NamespacedName, cm); err != nil {

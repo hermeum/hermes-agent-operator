@@ -59,6 +59,9 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 			if err != nil {
 				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 			}
+			if err := u.deleteStuckPod(ctx, ha); err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
 			u.tel.Debug(ctx, "StatefulSet updated", "phase", ha.Status.Phase)
 		}
 	} else {
@@ -138,6 +141,34 @@ func desiredSpecHash(sts *appsv1.StatefulSet) string {
 	})
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h[:])[:16]
+}
+
+func podIsStuck(pod *corev1.Pod) bool {
+	if pod.Status.Phase == corev1.PodFailed {
+		return true
+	}
+	for _, cs := range append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...) {
+		if cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff" {
+			return true
+		}
+	}
+	return false
+}
+
+func (u *HermesAgentUseCase) deleteStuckPod(ctx context.Context, ha *agentsv1alpha1.HermesAgent) error {
+	pod, err := u.kube.GetPod(ctx, GetPodParam{
+		NamespacedName: types.NamespacedName{Name: ha.Name + "-0", Namespace: ha.Namespace},
+	})
+	if err != nil || pod == nil || pod.DeletionTimestamp != nil {
+		return err
+	}
+	if !podIsStuck(pod) {
+		return nil
+	}
+	u.tel.Debug(ctx, "deleting stuck pod to unblock StatefulSet rollout", "pod", pod.Name)
+	return u.kube.DeletePod(ctx, DeletePodParam{
+		NamespacedName: types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace},
+	})
 }
 
 func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
