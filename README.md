@@ -152,7 +152,11 @@ hermes:
 
 ### `hermes.workspace`
 
-Seed files into the agent's home directory before startup. Keys are relative paths; use `/` as a separator for subdirectories.
+Seed files and secrets into the agent's home directory before startup.
+
+#### `files`
+
+Seed files into the agent's home directory. Keys are relative paths; use `/` as a separator for subdirectories.
 
 ```yaml
 hermes:
@@ -163,6 +167,18 @@ hermes:
       skills/custom/SKILL.md: |   # subdirectory path — operator creates parent dirs automatically
         # My Custom Skill
         ...
+```
+
+#### `dotEnv`
+
+Generate a `$HERMES_HOME/.env` file from a Kubernetes Secret. Each key in the Secret becomes a `KEY=VALUE` line in the file. Useful for tools that read `.env` files at startup.
+
+```yaml
+hermes:
+  workspace:
+    dotEnv:                        # optional; omit if no .env file is needed
+      secretRef:
+        name: my-env-secret        # name of the Secret in the same namespace
 ```
 
 
