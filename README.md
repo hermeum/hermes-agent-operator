@@ -58,7 +58,7 @@ kubectl get pods -l app.kubernetes.io/instance=my-agent
 
 ## Create a HermesAgent with the Skill
 
-The `hermes-agent-operator` skill lets a running Hermes agent scaffold and apply `HermesAgent` manifests on your behalf. Install it once into any agent:
+The `hermes-agent-operator` skill lets a running Hermes agent scaffold and apply `HermesAgent` manifests on your behalf. Install it once into your Hermes agent:
 
 ```sh
 hermes skills install hermeum/hermes-agent-operator/skills/hermes-agent-operator
