@@ -1,0 +1,72 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: devops-agent-view
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: devops-agent
+    namespace: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: devops-agent-secrets
+stringData:
+  OLLAMA_API_KEY: ""
+  SLACK_BOT_TOKEN: ""
+  SLACK_APP_TOKEN: ""
+---
+apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: devops-agent
+spec:
+  security:
+    rbac:
+      createServiceAccount: true
+  hermes:
+    config:
+      raw:
+        model:
+          base_url: https://ollama.com/v1
+          default: kimi-k2.6
+          provider: ollama-cloud
+    env:
+      - name: SLACK_HOME_CHANNEL
+        value: C0BBJ8SLA2X
+      - name: SLACK_ALLOWED_USERS
+        value: "U01NC888PJT"
+    workspace:
+      dotEnv:
+        secretRef:
+          name: devops-agent-secrets
+      files:
+        SOUL.md: |
+          You are a DevOps assistant with read-only access to a Kubernetes cluster via `kubectl`.
+
+          - Use `kubectl` to inspect real cluster state before drawing any conclusions
+          - Diagnose issues clearly: what is wrong, why, and what to do next
+          - Never create, patch, or delete resources — read-only only
+        .profile: |
+          export PATH="$HERMES_HOME/.local/bin:$PATH"
+    initChownData: true
+    initScripts:
+      - name: install-kubectl
+        script: |
+          KUBECTL_BIN=$HERMES_HOME/.local/bin/kubectl
+          if [ -x "$KUBECTL_BIN" ]; then
+            echo "kubectl already installed, skipping"
+            exit 0
+          fi
+          mkdir -p $HERMES_HOME/.local/bin
+          KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+          curl -L "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
+          curl -L "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256" -o /tmp/kubectl.sha256
+          echo "$(cat /tmp/kubectl.sha256)  /tmp/kubectl" | sha256sum --check
+          chmod +x /tmp/kubectl
+          mv /tmp/kubectl $KUBECTL_BIN
+          echo "kubectl installed: $($KUBECTL_BIN version --client)"

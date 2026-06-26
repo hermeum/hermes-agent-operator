@@ -10,6 +10,18 @@ description: >
 
 When this skill is invoked, generate a ready-to-apply HermesAgent custom resource YAML by following these steps in order.
 
+## Step 0 — Load example manifests
+
+Read the example manifests bundled alongside this skill for reference patterns before generating anything:
+
+- `minimal_spec.yaml` — bare-minimum HermesAgent
+- `github_reviewer.yaml` — PR review agent
+- `web_search.yaml` — agent with SearXNG sidecar
+- `devops_agent.yaml` — agent with persistence and RBAC
+- `langfuse_observability.yaml` — agent with observability config
+
+Use these as structural references when building the manifest in Step 3. Do **not** copy them verbatim — adapt to what the user actually asked for.
+
 ## Step 1 — Fetch the CRD schema
 
 Try each source in order, stopping at the first success:

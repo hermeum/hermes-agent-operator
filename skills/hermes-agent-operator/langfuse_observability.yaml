@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: langfuse-observability
+stringData:
+  OLLAMA_API_KEY: ""
+  HERMES_LANGFUSE_PUBLIC_KEY: "pk-lf-..."
+  HERMES_LANGFUSE_SECRET_KEY: "sk-lf-..."
+  HERMES_LANGFUSE_BASE_URL: "https://cloud.langfuse.com"
+---
+apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: langfuse-observability
+spec:
+  hermes:
+    # Install the Langfuse Python package to enable the observability plugin.
+    packages:
+      pip:
+        install:
+          - langfuse
+    config:
+      raw:
+        model:
+          base_url: https://ollama.com/v1
+          default: kimi-k2.6
+          provider: ollama-cloud
+        # Enable the built-in Langfuse observability plugin.
+        # Credentials (HERMES_LANGFUSE_PUBLIC_KEY / SECRET_KEY / BASE_URL) are
+        # supplied via envFrom below.
+        plugins:
+          enabled:
+            - observability/langfuse
+    workspace:
+      dotEnv:
+        secretRef:
+          name: langfuse-observability

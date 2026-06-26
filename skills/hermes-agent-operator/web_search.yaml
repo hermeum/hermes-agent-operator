@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: web-search-secrets
+stringData:
+  OLLAMA_API_KEY: ""
+  XAI_API_KEY: ""
+---
+apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: web-search
+spec:
+  hermes:
+    config:
+      raw:
+        model:
+          base_url: https://ollama.com/v1
+          default: kimi-k2.6
+          provider: ollama-cloud
+        # Use searxng as the search backend
+        web:
+          search_backend: "searxng"
+    storage:
+      persistence:
+        enabled: true
+        size: 1Gi
+    workspace:
+      dotEnv:
+        secretRef:
+          name: web-search-secrets
+  # Enable web_search tool with searxng
+  searxng:
+    enabled: true
+  # Enable browser tool with camofox
+  camofox:
+    enabled: true
+
