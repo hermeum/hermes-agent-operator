@@ -202,7 +202,3 @@ After printing the YAML, ask:
 > Save to a file? Enter a filename (e.g. `my-agent.yaml`) or press Enter to skip.
 
 If the user provides a filename, write the YAML to that file using the Write tool.
-
-## References
-
-- `references/box-integration.md` — how to scaffold Box skill + CLI + credentials for agents that upload files to Box.
