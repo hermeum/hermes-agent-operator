@@ -14,11 +14,11 @@ When this skill is invoked, generate a ready-to-apply HermesAgent custom resourc
 
 Read the example manifests bundled alongside this skill for reference patterns before generating anything:
 
-- `minimal_spec.yaml` — bare-minimum HermesAgent
-- `github_reviewer.yaml` — PR review agent
-- `web_search.yaml` — agent with SearXNG sidecar
-- `devops_agent.yaml` — agent with persistence and RBAC
-- `langfuse_observability.yaml` — agent with observability config
+- `examples/minimal_spec.yaml` — bare-minimum HermesAgent
+- `examples/github_reviewer.yaml` — PR review agent
+- `examples/web_search.yaml` — agent with SearXNG sidecar
+- `examples/devops_agent.yaml` — agent with persistence and RBAC
+- `examples/langfuse_observability.yaml` — agent with observability config
 
 Use these as structural references when building the manifest in Step 3. Do **not** copy them verbatim — adapt to what the user actually asked for.
 
@@ -75,9 +75,10 @@ Do **not** show a blanket list of optional features every time. Instead, based o
 
 - **persistence** — ask only if the agent accumulates files, memory, or state across runs
 - **SearXNG** (web search) — ask only if the agent needs live web or news data
-- **Camofox** (browser) — ask only if the agent needs to interact with a web UI
+- **Camofox** (browser) — ask only if the agent needs to interact with a web UIs
 - **cron** — ask only if the agent is described as periodic, scheduled, or recurring
 - **skills** — ask only if the agent is a Claude Code agent or the user mentioned specific capabilities
+- **init scripts / packages** — ask only if the agent needs external CLIs, SDKs, or binaries installed before it starts (e.g. "upload to Box", "run AWS CLI", "needs Python requests")
 - **namespace** — only ask if the user mentioned a specific namespace or multi-tenant setup
 
 If none of these signals are present in the description, skip Step 2c entirely and proceed with the minimal spec.
@@ -86,6 +87,7 @@ When you do ask, ask about each relevant option individually (one question at a 
 - **persistence** → storage size (default `10Gi`)
 - **cron** → schedule (e.g. `0 9 * * *`) and prompt text
 - **skills** → comma-separated skill identifiers (e.g. `anthropic-skills/code-review`)
+- **init scripts** → what to install (e.g. Box CLI via npm, a specific SDK). Use `spec.hermes.initScripts` for simple shell scripts and `spec.hermes.packages` for pip/npm packages.
 - **namespace** → namespace name
 - **ServiceAccount** is created by default; only raise it if the user mentions RBAC or service accounts
 
@@ -105,6 +107,8 @@ When you do ask, ask about each relevant option individually (one question at a 
 | Enable Camofox sidecar (browser automation) | No | yes/no |
 | Skills to pre-install | No | comma-separated identifiers, e.g. `anthropic-skills/code-review` |
 | Cron schedule | No | name + schedule + prompt, e.g. `daily-summary, 0 9 * * *, summarize overnight alerts` |
+| Init scripts | No | shell scripts run before agent starts; use for installing CLIs/SDKs |
+| Packages (pip/npm) | No | pre-install language packages before the agent starts |
 | Create a ServiceAccount | No | yes/no — default yes |
 
 ## Step 3 — Emit the manifest
@@ -186,6 +190,23 @@ spec:
   camofox: {}   # enables the Camofox browser-automation sidecar with defaults
 ```
 
+**Init scripts (install CLIs/SDKs before the agent starts):**
+```yaml
+    initScripts:
+      - name: install-box-cli
+        script: |
+          npm install -g box
+```
+
+**Packages (pre-install via pip/npm):**
+```yaml
+    packages:
+      npm:
+        - box                  # Box Node SDK + CLI
+      pip:
+        - boxsdk>=10           # Box Python SDK
+```
+
 ## Step 4 — Offer to save
 
 After printing the YAML, ask:
@@ -193,3 +214,7 @@ After printing the YAML, ask:
 > Save to a file? Enter a filename (e.g. `my-agent.yaml`) or press Enter to skip.
 
 If the user provides a filename, write the YAML to that file using the Write tool.
+
+## References
+
+- `references/box-integration.md` — how to scaffold Box skill + CLI + credentials for agents that upload files to Box.
