@@ -56,13 +56,15 @@ kubectl get hermesagent my-agent
 kubectl get pods -l app.kubernetes.io/instance=my-agent
 ```
 
-## Examples
+## Create a HermesAgent with the Skill
 
-Ready-to-apply manifests live in [`config/samples/`](./config/samples/). Each file includes a Secret for credentials and a `HermesAgent` resource. Fill in the Secret values, then apply:
+The `hermes-agent-operator` skill lets a running Hermes agent scaffold and apply `HermesAgent` manifests on your behalf. Install it once into any agent:
 
 ```sh
-kubectl apply -f config/samples/web_search.yaml
+hermes skills install hermeum/hermes-agent-operator/skills/hermes-agent-operator
 ```
+
+Then run the `/hermes-agent-operator` skill to create a custom resource.
 
 ## Configuration
 
