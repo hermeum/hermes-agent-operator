@@ -48,6 +48,8 @@ After the user describes their intent, ask only for the model choice:
 
 1. **Model provider + model name** — suggest a sensible default based on their description (e.g. `anthropic` / `claude-sonnet-4-6`); confirm or let them pick another
 
+> **Tip:** For the `spec.hermes.config.raw` block, the `hermes-agent` skill knows the full Hermes configuration schema. Invoke it if you need help generating a detailed config beyond the minimal model settings.
+
 Everything else is handled automatically:
 
 - **Agent name** — derive a concise, lowercase DNS label from the description (e.g. `pr-review-agent`, `slack-digest`). No need to ask.
