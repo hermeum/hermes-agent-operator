@@ -81,6 +81,8 @@ When you do ask, ask about each relevant option individually (one question at a 
 
 ### Field reference (for generating the manifest — do not present this as a form to the user)
 
+Example manifests are available in the `examples/` directory alongside this skill file. Read a relevant one if you need a structural pattern for the feature the user is asking for — load only the specific file you need, not all of them.
+
 | Field | Required | Notes |
 |-------|----------|-------|
 | Agent name (`metadata.name`) | Yes | lowercase DNS label |
