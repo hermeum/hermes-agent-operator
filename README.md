@@ -64,6 +64,16 @@ Ready-to-apply manifests live in [`config/samples/`](./config/samples/). Each fi
 kubectl apply -f config/samples/web_search.yaml
 ```
 
+## Create a HermesAgent with the Skill
+
+The `hermes-agent-operator` skill lets a running Hermes agent scaffold and apply `HermesAgent` manifests on your behalf. Install it once into any agent:
+
+```sh
+hermes skills install hermeum/hermes-agent-operator/skills/hermes-agent-operator
+```
+
+Then run the `/hermes-agent-operator` skill to create a custom resource.
+
 ## Configuration
 
 - [`hermes.config`](#hermesconfig)
