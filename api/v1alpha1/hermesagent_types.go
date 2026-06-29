@@ -517,6 +517,47 @@ type HermesInitScript struct {
 	Script string `json:"script"`
 }
 
+// HermesProfileConfig holds the raw config.yaml for a named profile.
+// apiServer and webhook are excluded — profiles share a single multiplexed gateway.
+type HermesProfileConfig struct {
+	// raw is the profile config as a JSON-serialized object.
+	// +optional
+	Raw *apiextensionsv1.JSON `json:"raw,omitempty"`
+}
+
+func (c *HermesProfileConfig) GetRaw() *apiextensionsv1.JSON {
+	if c == nil {
+		return nil
+	}
+	return c.Raw
+}
+
+// HermesProfile defines a named Hermes profile to create and configure.
+type HermesProfile struct {
+	// clone copies config.yaml, .env, SOUL.md, and skills from the default profile
+	// at creation time (--clone flag). Source is always the default profile.
+	// +optional
+	Clone bool `json:"clone,omitempty"`
+	// config holds the raw config.yaml for this profile.
+	// +optional
+	Config *HermesProfileConfig `json:"config,omitempty"`
+	// workspace defines files and dotEnv for this profile.
+	// +optional
+	Workspace *HermesWorkspace `json:"workspace,omitempty"`
+	// plugins to install in this profile.
+	// +optional
+	Plugins []HermesPlugin `json:"plugins,omitempty"`
+	// skills to install in this profile.
+	// +optional
+	Skills []HermesSkill `json:"skills,omitempty"`
+	// crons for this profile.
+	// +optional
+	Crons []HermesCron `json:"crons,omitempty"`
+	// bundles for this profile.
+	// +optional
+	Bundles []HermesBundle `json:"bundles,omitempty"`
+}
+
 // Hermes defines the hermes-specific section of the spec.
 type Hermes struct {
 	// image overrides the container image used for the hermes-agent container
@@ -579,6 +620,10 @@ type Hermes struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	InitScripts []HermesInitScript `json:"initScripts,omitempty"`
+	// profiles is a map of named Hermes profiles to create and configure.
+	// Each profile is set up via dedicated init containers after the default profile.
+	// +optional
+	Profiles map[string]HermesProfile `json:"profiles,omitempty"`
 }
 
 // Probes defines health probe configuration for the hermes-agent container.
@@ -697,6 +742,13 @@ func (h *Hermes) GetBundles() []HermesBundle {
 		return nil
 	}
 	return h.Bundles
+}
+
+func (h *Hermes) GetProfiles() map[string]HermesProfile {
+	if h == nil {
+		return nil
+	}
+	return h.Profiles
 }
 
 func (h *Hermes) GetEnv() []corev1.EnvVar {

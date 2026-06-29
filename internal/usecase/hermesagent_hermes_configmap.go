@@ -82,6 +82,30 @@ func applySearXNGConfigDefaults(raw []byte) ([]byte, error) {
 	return out, nil
 }
 
+// applyMultiplexProfilesDefault injects gateway.multiplex_profiles: true into the Hermes
+// config when named profiles are declared, unless already set.
+func applyMultiplexProfilesDefault(raw []byte) ([]byte, error) {
+	cfg := map[string]any{}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("unmarshaling config: %w", err)
+	}
+
+	gateway, _ := cfg["gateway"].(map[string]any)
+	if gateway == nil {
+		gateway = map[string]any{}
+		cfg["gateway"] = gateway
+	}
+	if _, ok := gateway["multiplex_profiles"]; !ok {
+		gateway["multiplex_profiles"] = true
+	}
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling config: %w", err)
+	}
+	return out, nil
+}
+
 // applyCamofoxConfigDefaults injects browser.camofox.managed_persistence: true into
 // the Hermes config when Camofox managed persistence is active, unless already set.
 func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
@@ -113,11 +137,16 @@ func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
 
 func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, error) {
 	data := map[string]string{}
+
+	// Collect default profile raw config; SearXNG and Camofox defaults only apply when
+	// the user has provided a config, but multiplex_profiles must also be set when
+	// profiles exist even if no explicit config was given.
+	var defaultRaw []byte
 	if hc := ha.GetHermes().GetConfig(); hc != nil {
-		raw := hc.Raw
+		defaultRaw = hc.Raw
 		if ha.GetSearXNG().IsEnabled() {
 			var err error
-			raw, err = applySearXNGConfigDefaults(raw)
+			defaultRaw, err = applySearXNGConfigDefaults(defaultRaw)
 			if err != nil {
 				return nil, err
 			}
@@ -125,23 +154,52 @@ func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, er
 		cx := ha.GetCamofox()
 		if cx.IsEnabled() && cx.GetPersistence().IsEnabled() && cx.GetPersistence().GetExistingClaim() == "" {
 			var err error
-			raw, err = applyCamofoxConfigDefaults(raw)
+			defaultRaw, err = applyCamofoxConfigDefaults(defaultRaw)
 			if err != nil {
 				return nil, err
 			}
 		}
+	}
 
-		yamlBytes, err := sigsyaml.JSONToYAML(raw)
+	if len(ha.GetHermes().GetProfiles()) > 0 {
+		if defaultRaw == nil {
+			defaultRaw = []byte("{}")
+		}
+		var err error
+		defaultRaw, err = applyMultiplexProfilesDefault(defaultRaw)
 		if err != nil {
 			return nil, err
 		}
-		data["config.yaml"] = string(yamlBytes)
+	}
+
+	if defaultRaw != nil {
+		yamlBytes, err := sigsyaml.JSONToYAML(defaultRaw)
+		if err != nil {
+			return nil, err
+		}
+		data["profile.default.config.yaml"] = string(yamlBytes)
 	}
 
 	if hw := ha.GetHermes().GetWorkspace(); hw != nil {
 		for path, content := range hw.Files {
-			key := "workspace." + strings.ReplaceAll(path, "/", hermesWorkspacePathSeparator)
+			key := "profile.default.workspace." + strings.ReplaceAll(path, "/", hermesWorkspacePathSeparator)
 			data[key] = content
+		}
+	}
+
+	for name, profile := range ha.GetHermes().GetProfiles() {
+		if raw := profile.Config.GetRaw(); raw != nil {
+			yamlBytes, err := sigsyaml.JSONToYAML(raw.Raw)
+			if err != nil {
+				return nil, err
+			}
+			data["profile."+name+".config.yaml"] = string(yamlBytes)
+		}
+		if profile.Workspace != nil {
+			for path, content := range profile.Workspace.Files {
+				key := "profile." + name + ".workspace." + strings.ReplaceAll(path, "/", hermesWorkspacePathSeparator)
+				data[key] = content
+			}
 		}
 	}
 

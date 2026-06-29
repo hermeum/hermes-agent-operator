@@ -75,11 +75,11 @@ func ptrInt(i int) *int    { return &i }
 func TestBuildPluginsScript(t *testing.T) {
 
 	t.Run("default enable", func(t *testing.T) {
-		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+		got := buildPluginsScript(hermesDefaultProfile, []agentsv1alpha1.HermesPlugin{
 			{Identifier: "anpicasso/hermes-plugin-chrome-profiles"},
 		})
 
-		wantCmd := `hermes plugins install --force --enable "anpicasso/hermes-plugin-chrome-profiles"`
+		wantCmd := `hermes plugins install -p "default" --force --enable "anpicasso/hermes-plugin-chrome-profiles"`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected install command %q in script, got:\n%s", wantCmd, got)
 		}
@@ -88,44 +88,49 @@ func TestBuildPluginsScript(t *testing.T) {
 		if !strings.Contains(got, wantCase+")") {
 			t.Errorf("expected case pattern %q in script, got:\n%s", wantCase, got)
 		}
+
+		wantManifest := "profiles/default/plugins"
+		if !strings.Contains(got, wantManifest) {
+			t.Errorf("expected manifest path %q in script, got:\n%s", wantManifest, got)
+		}
 	})
 
 	t.Run("explicit no-enable", func(t *testing.T) {
-		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+		got := buildPluginsScript(hermesDefaultProfile, []agentsv1alpha1.HermesPlugin{
 			{Identifier: "https://github.com/owner/hermes-plugin-foo.git", Enable: ptrBool(false)},
 		})
 
-		wantCmd := `hermes plugins install --force --no-enable "https://github.com/owner/hermes-plugin-foo.git"`
+		wantCmd := `hermes plugins install -p "default" --force --no-enable "https://github.com/owner/hermes-plugin-foo.git"`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected install command %q in script, got:\n%s", wantCmd, got)
 		}
 	})
 
 	t.Run("explicit enable true", func(t *testing.T) {
-		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+		got := buildPluginsScript(hermesDefaultProfile, []agentsv1alpha1.HermesPlugin{
 			{Identifier: "owner/repo", Enable: ptrBool(true)},
 		})
 
-		wantCmd := `hermes plugins install --force --enable "owner/repo"`
+		wantCmd := `hermes plugins install -p "default" --force --enable "owner/repo"`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected install command %q in script, got:\n%s", wantCmd, got)
 		}
 	})
 
 	t.Run("remove command uses bare hermes not absolute path", func(t *testing.T) {
-		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+		got := buildPluginsScript(hermesDefaultProfile, []agentsv1alpha1.HermesPlugin{
 			{Identifier: "owner/hermes-plugin-a"},
 		})
 		if strings.Contains(got, "/hermes ") {
 			t.Errorf("expected bare 'hermes' command, not absolute '/hermes' path, got:\n%s", got)
 		}
-		if !strings.Contains(got, `hermes plugins remove "$name"`) {
+		if !strings.Contains(got, `hermes plugins remove -p "default" "$name"`) {
 			t.Errorf("expected plugin remove command in script, got:\n%s", got)
 		}
 	})
 
 	t.Run("multiple plugins build case pattern and manifest", func(t *testing.T) {
-		got := buildPluginsScript([]agentsv1alpha1.HermesPlugin{
+		got := buildPluginsScript(hermesDefaultProfile, []agentsv1alpha1.HermesPlugin{
 			{Identifier: "owner/hermes-plugin-a"},
 			{Identifier: "owner/hermes-plugin-b", Enable: ptrBool(false)},
 		})
@@ -140,11 +145,27 @@ func TestBuildPluginsScript(t *testing.T) {
 			t.Errorf("expected manifest %q, got:\n%s", wantManifest, got)
 		}
 
-		if !strings.Contains(got, `hermes plugins install --force --enable "owner/hermes-plugin-a"`) {
+		if !strings.Contains(got, `hermes plugins install -p "default" --force --enable "owner/hermes-plugin-a"`) {
 			t.Errorf("missing install command for plugin a in:\n%s", got)
 		}
-		if !strings.Contains(got, `hermes plugins install --force --no-enable "owner/hermes-plugin-b"`) {
+		if !strings.Contains(got, `hermes plugins install -p "default" --force --no-enable "owner/hermes-plugin-b"`) {
 			t.Errorf("missing install command for plugin b in:\n%s", got)
+		}
+	})
+
+	t.Run("named profile uses profile in commands and manifest", func(t *testing.T) {
+		got := buildPluginsScript("coder", []agentsv1alpha1.HermesPlugin{
+			{Identifier: "owner/hermes-plugin-foo"},
+		})
+
+		if !strings.Contains(got, `hermes plugins install -p "coder"`) {
+			t.Errorf("expected -p \"coder\" in install command, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes plugins remove -p "coder"`) {
+			t.Errorf("expected -p \"coder\" in remove command, got:\n%s", got)
+		}
+		if !strings.Contains(got, "profiles/coder/plugins") {
+			t.Errorf("expected manifest path profiles/coder/plugins, got:\n%s", got)
 		}
 	})
 }
@@ -152,11 +173,11 @@ func TestBuildPluginsScript(t *testing.T) {
 func TestBuildSkillsScript(t *testing.T) {
 
 	t.Run("identifier only", func(t *testing.T) {
-		got := buildSkillsScript([]agentsv1alpha1.HermesSkill{
+		got := buildSkillsScript(hermesDefaultProfile, []agentsv1alpha1.HermesSkill{
 			{Identifier: "openai/skills/skill-creator"},
 		})
 
-		wantCmd := "hermes skills install --yes openai/skills/skill-creator"
+		wantCmd := `hermes skills install -p "default" --yes openai/skills/skill-creator`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
 		}
@@ -168,7 +189,7 @@ func TestBuildSkillsScript(t *testing.T) {
 	})
 
 	t.Run("with all options", func(t *testing.T) {
-		got := buildSkillsScript([]agentsv1alpha1.HermesSkill{
+		got := buildSkillsScript(hermesDefaultProfile, []agentsv1alpha1.HermesSkill{
 			{
 				Identifier: "https://example.com/SKILL.md",
 				Category:   "writing",
@@ -177,7 +198,7 @@ func TestBuildSkillsScript(t *testing.T) {
 			},
 		})
 
-		wantCmd := "hermes skills install --yes --category writing --name my-skill --force https://example.com/SKILL.md"
+		wantCmd := `hermes skills install -p "default" --yes --category writing --name my-skill --force https://example.com/SKILL.md`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
 		}
@@ -188,17 +209,17 @@ func TestBuildSkillsScript(t *testing.T) {
 	})
 
 	t.Run("uninstall command present", func(t *testing.T) {
-		got := buildSkillsScript([]agentsv1alpha1.HermesSkill{
+		got := buildSkillsScript(hermesDefaultProfile, []agentsv1alpha1.HermesSkill{
 			{Identifier: "openai/skills/s1"},
 		})
 
-		if !strings.Contains(got, `hermes skills uninstall "$name" || true`) {
+		if !strings.Contains(got, `hermes skills uninstall -p "default" "$name" || true`) {
 			t.Errorf("expected uninstall command in script, got:\n%s", got)
 		}
 	})
 
 	t.Run("multiple skills manifest order", func(t *testing.T) {
-		got := buildSkillsScript([]agentsv1alpha1.HermesSkill{
+		got := buildSkillsScript(hermesDefaultProfile, []agentsv1alpha1.HermesSkill{
 			{Identifier: "openai/skills/alpha"},
 			{Identifier: "openai/skills/beta.md"},
 		})
@@ -211,23 +232,39 @@ func TestBuildSkillsScript(t *testing.T) {
 			t.Errorf("expected manifest content, got:\n%s", got)
 		}
 	})
+
+	t.Run("named profile uses profile in commands and manifest", func(t *testing.T) {
+		got := buildSkillsScript("coder", []agentsv1alpha1.HermesSkill{
+			{Identifier: "openai/skills/foo"},
+		})
+
+		if !strings.Contains(got, `hermes skills install -p "coder"`) {
+			t.Errorf("expected -p \"coder\" in install command, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes skills uninstall -p "coder"`) {
+			t.Errorf("expected -p \"coder\" in uninstall command, got:\n%s", got)
+		}
+		if !strings.Contains(got, "profiles/coder/skills") {
+			t.Errorf("expected manifest path profiles/coder/skills, got:\n%s", got)
+		}
+	})
 }
 
 func TestBuildBundlesScript(t *testing.T) {
 
 	t.Run("minimal", func(t *testing.T) {
-		got := buildBundlesScript([]agentsv1alpha1.HermesBundle{
+		got := buildBundlesScript(hermesDefaultProfile, []agentsv1alpha1.HermesBundle{
 			{Name: "finance"},
 		})
 
-		wantCmd := `hermes bundles create "finance"`
+		wantCmd := `hermes bundles create -p "default" "finance"`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
 		}
 	})
 
 	t.Run("all options", func(t *testing.T) {
-		got := buildBundlesScript([]agentsv1alpha1.HermesBundle{
+		got := buildBundlesScript(hermesDefaultProfile, []agentsv1alpha1.HermesBundle{
 			{
 				Name:        "finance",
 				Skills:      []string{"a", "b"},
@@ -237,23 +274,23 @@ func TestBuildBundlesScript(t *testing.T) {
 			},
 		})
 
-		wantCmd := `hermes bundles create --skill "a" --skill "b" --description "d" --instruction "i" --force "finance"`
+		wantCmd := `hermes bundles create -p "default" --skill "a" --skill "b" --description "d" --instruction "i" --force "finance"`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected:\n%s\n\nin script:\n%s", wantCmd, got)
 		}
 	})
 
 	t.Run("delete command present", func(t *testing.T) {
-		got := buildBundlesScript([]agentsv1alpha1.HermesBundle{
+		got := buildBundlesScript(hermesDefaultProfile, []agentsv1alpha1.HermesBundle{
 			{Name: "finance"},
 		})
-		if !strings.Contains(got, `hermes bundles delete "$name" || true`) {
+		if !strings.Contains(got, `hermes bundles delete -p "default" "$name" || true`) {
 			t.Errorf("expected delete command in script, got:\n%s", got)
 		}
 	})
 
 	t.Run("multiple bundles manifest order", func(t *testing.T) {
-		got := buildBundlesScript([]agentsv1alpha1.HermesBundle{
+		got := buildBundlesScript(hermesDefaultProfile, []agentsv1alpha1.HermesBundle{
 			{Name: "a"},
 			{Name: "b"},
 		})
@@ -264,6 +301,22 @@ func TestBuildBundlesScript(t *testing.T) {
 		}
 		if !strings.Contains(got, "a\nb") {
 			t.Errorf("expected manifest content, got:\n%s", got)
+		}
+	})
+
+	t.Run("named profile uses profile in commands and manifest", func(t *testing.T) {
+		got := buildBundlesScript("coder", []agentsv1alpha1.HermesBundle{
+			{Name: "myBundle"},
+		})
+
+		if !strings.Contains(got, `hermes bundles create -p "coder"`) {
+			t.Errorf("expected -p \"coder\" in create command, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes bundles delete -p "coder"`) {
+			t.Errorf("expected -p \"coder\" in delete command, got:\n%s", got)
+		}
+		if !strings.Contains(got, "profiles/coder/bundles") {
+			t.Errorf("expected manifest path profiles/coder/bundles, got:\n%s", got)
 		}
 	})
 }
@@ -344,29 +397,29 @@ func TestBuildPythonPackagesScript(t *testing.T) {
 func TestBuildCronsScript(t *testing.T) {
 
 	t.Run("minimal", func(t *testing.T) {
-		got := buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript(hermesDefaultProfile, []agentsv1alpha1.HermesCron{
 			{Name: "daily", Schedule: "0 9 * * *"},
 		})
 
-		wantCmd := `hermes cron create --name "daily" "0 9 * * *"`
+		wantCmd := `hermes cron create -p "default" --name "daily" "0 9 * * *"`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
 		}
 	})
 
 	t.Run("with prompt", func(t *testing.T) {
-		got := buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript(hermesDefaultProfile, []agentsv1alpha1.HermesCron{
 			{Name: "p", Schedule: "30m", Prompt: "say hi"},
 		})
 
-		wantCmd := `hermes cron create --name "p" "30m" "say hi"`
+		wantCmd := `hermes cron create -p "default" --name "p" "30m" "say hi"`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected %q in script, got:\n%s", wantCmd, got)
 		}
 	})
 
 	t.Run("all options", func(t *testing.T) {
-		got := buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript(hermesDefaultProfile, []agentsv1alpha1.HermesCron{
 			{
 				Name:     "full",
 				Schedule: "every 2h",
@@ -381,28 +434,52 @@ func TestBuildCronsScript(t *testing.T) {
 			},
 		})
 
-		wantCmd := `hermes cron create --name "full" --deliver "telegram" --repeat 3 --skill "alpha" --skill "beta" --script "myscript.sh" --no-agent --workdir "/opt/data" --profile "default" "every 2h" "do thing"`
+		wantCmd := `hermes cron create -p "default" --name "full" --deliver "telegram" --repeat 3 --skill "alpha" --skill "beta" --script "myscript.sh" --no-agent --workdir "/opt/data" --profile "default" "every 2h" "do thing"`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected:\n%s\n\nin script:\n%s", wantCmd, got)
 		}
 	})
 
 	t.Run("remove uses hermes cron remove", func(t *testing.T) {
-		got := buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript(hermesDefaultProfile, []agentsv1alpha1.HermesCron{
 			{Name: "j", Schedule: "1h"},
 		})
-		if !strings.Contains(got, `hermes cron remove "$id" || true`) {
+		if !strings.Contains(got, `hermes cron remove -p "default" "$id" || true`) {
 			t.Errorf("expected remove command in script, got:\n%s", got)
 		}
 	})
 
 	t.Run("manifest contains names", func(t *testing.T) {
-		got := buildCronsScript([]agentsv1alpha1.HermesCron{
+		got := buildCronsScript(hermesDefaultProfile, []agentsv1alpha1.HermesCron{
 			{Name: "a", Schedule: "1h"},
 			{Name: "b", Schedule: "2h"},
 		})
 		if !strings.Contains(got, "a\nb") {
 			t.Errorf("expected manifest with names a\\nb, got:\n%s", got)
+		}
+	})
+
+	t.Run("default profile uses top-level cron jobs.json path", func(t *testing.T) {
+		got := buildCronsScript(hermesDefaultProfile, []agentsv1alpha1.HermesCron{
+			{Name: "j", Schedule: "1h"},
+		})
+		if !strings.Contains(got, "/cron/jobs.json") {
+			t.Errorf("expected /cron/jobs.json for default profile, got:\n%s", got)
+		}
+		if strings.Contains(got, "/profiles/default/cron/jobs.json") {
+			t.Errorf("expected top-level /cron/jobs.json, not profiles path, got:\n%s", got)
+		}
+	})
+
+	t.Run("named profile uses profiles cron jobs.json path", func(t *testing.T) {
+		got := buildCronsScript("coder", []agentsv1alpha1.HermesCron{
+			{Name: "j", Schedule: "1h"},
+		})
+		if !strings.Contains(got, "/profiles/coder/cron/jobs.json") {
+			t.Errorf("expected /profiles/coder/cron/jobs.json, got:\n%s", got)
+		}
+		if !strings.Contains(got, "profiles/coder/crons") {
+			t.Errorf("expected manifest path profiles/coder/crons, got:\n%s", got)
 		}
 	})
 }
