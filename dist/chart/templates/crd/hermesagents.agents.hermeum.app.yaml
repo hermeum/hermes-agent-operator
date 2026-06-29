@@ -2940,6 +2940,195 @@ spec:
                             type: integer
                         type: object
                     type: object
+                  profiles:
+                    additionalProperties:
+                      description: HermesProfile defines a named Hermes profile to
+                        create and configure.
+                      properties:
+                        bundles:
+                          description: bundles for this profile.
+                          items:
+                            description: HermesBundle defines a bundle (slash command)
+                              managed via hermes bundles.
+                            properties:
+                              description:
+                                description: description is the human-readable description
+                                  shown in /help and bundles list.
+                                type: string
+                              force:
+                                description: force overwrites an existing bundle with
+                                  the same name.
+                                type: boolean
+                              instruction:
+                                description: instruction is extra guidance prepended
+                                  to the loaded skill content.
+                                type: string
+                              name:
+                                description: name is the bundle name and becomes the
+                                  /slash command; the reconciliation key.
+                                type: string
+                              skills:
+                                description: skills are the skill names to include
+                                  in the bundle (--skill, repeatable).
+                                items:
+                                  type: string
+                                type: array
+                            required:
+                            - name
+                            type: object
+                          type: array
+                        clone:
+                          description: |-
+                            clone copies config.yaml, .env, SOUL.md, and skills from the default profile
+                            at creation time (--clone flag). Source is always the default profile.
+                          type: boolean
+                        config:
+                          description: config holds the raw config.yaml for this profile.
+                          properties:
+                            raw:
+                              description: raw is the profile config as a JSON-serialized
+                                object.
+                              x-kubernetes-preserve-unknown-fields: true
+                          type: object
+                        crons:
+                          description: crons for this profile.
+                          items:
+                            description: HermesCron defines a scheduled job managed
+                              via hermes cron.
+                            properties:
+                              deliver:
+                                description: 'deliver is the delivery target: origin,
+                                  local, telegram, discord, signal, or platform:chat_id.'
+                                type: string
+                              name:
+                                description: name is the human-friendly job name and
+                                  the reconciliation key.
+                                type: string
+                              noAgent:
+                                description: noAgent skips the LLM entirely — runs
+                                  --script on schedule and delivers stdout directly.
+                                type: boolean
+                              profile:
+                                description: profile is the hermes profile name to
+                                  run the job under.
+                                type: string
+                              prompt:
+                                description: prompt is an optional self-contained
+                                  prompt or task instruction.
+                                type: string
+                              repeat:
+                                description: repeat is the optional repeat count.
+                                type: integer
+                              schedule:
+                                description: schedule is the cron schedule (e.g. "30m",
+                                  "every 2h", "0 9 * * *").
+                                type: string
+                              script:
+                                description: script is a path to a script under ~/.hermes/scripts/.
+                                type: string
+                              skills:
+                                description: skills attaches skills to the job (--skill,
+                                  repeatable).
+                                items:
+                                  type: string
+                                type: array
+                              workdir:
+                                description: workdir is the absolute path for the
+                                  job to run from.
+                                type: string
+                            required:
+                            - name
+                            - schedule
+                            type: object
+                          type: array
+                        plugins:
+                          description: plugins to install in this profile.
+                          items:
+                            description: HermesPlugin defines a plugin to install
+                              in the Hermes agent.
+                            properties:
+                              enable:
+                                description: |-
+                                  enable controls whether the plugin is auto-enabled after install.
+                                  Defaults to true (--enable). Set to false to install disabled (--no-enable).
+                                type: boolean
+                              identifier:
+                                description: |-
+                                  identifier is the Git URL or owner/repo shorthand
+                                  (e.g. "anpicasso/hermes-plugin-chrome-profiles").
+                                type: string
+                            required:
+                            - identifier
+                            type: object
+                          type: array
+                        skills:
+                          description: skills to install in this profile.
+                          items:
+                            description: HermesSkill defines a skill to install via
+                              hermes skills install.
+                            properties:
+                              category:
+                                description: category is the category folder to install
+                                  into.
+                                type: string
+                              force:
+                                description: force installs despite a blocked scan
+                                  verdict.
+                                type: boolean
+                              identifier:
+                                description: identifier is the skill identifier (e.g.
+                                  openai/skills/skill-creator) or HTTP(S) URL to a
+                                  SKILL.md file.
+                                type: string
+                              name:
+                                description: name overrides the skill name (useful
+                                  when the SKILL.md has no name frontmatter).
+                                type: string
+                            required:
+                            - identifier
+                            type: object
+                          type: array
+                        workspace:
+                          description: workspace defines files and dotEnv for this
+                            profile.
+                          properties:
+                            dotEnv:
+                              description: |-
+                                dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret.
+                                Each key in the referenced Secret becomes a KEY=VALUE line in the file.
+                              properties:
+                                secretRef:
+                                  description: |-
+                                    secretRef references the Kubernetes Secret whose keys and values are
+                                    written as KEY=VALUE lines to $HERMES_HOME/.env.
+                                  properties:
+                                    name:
+                                      default: ""
+                                      description: |-
+                                        Name of the referent.
+                                        This field is effectively required, but due to backwards compatibility is
+                                        allowed to be empty. Instances of this type with an empty value here are
+                                        almost certainly wrong.
+                                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                      type: string
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                              required:
+                              - secretRef
+                              type: object
+                            files:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                files is a map of file path to content.
+                                Paths may contain "/" for subdirectories (e.g. "skills/test/SKILL.md").
+                              type: object
+                          type: object
+                      type: object
+                    description: |-
+                      profiles is a map of named Hermes profiles to create and configure.
+                      Each profile is set up via dedicated init containers after the default profile.
+                    type: object
                   resources:
                     description: resources overrides the resource requests and limits
                       for the hermes-agent container.
