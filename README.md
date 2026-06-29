@@ -80,6 +80,7 @@ Then run the `/hermes-agent-operator` skill to create a custom resource.
 - [`hermes.resources`](#hermesresources)
 - [`hermes.initChownData`](#hermesinit​chowndata)
 - [`hermes.initScripts`](#hermesinitscripts)
+- [`hermes.profiles`](#hermesprofiles)
 - [`searxng`](#searxng)
 - [`camofox`](#camofox)
 - [`security.rbac`](#securityrbac)
@@ -384,6 +385,54 @@ hermes:
 ```
 
 Use `spec.initContainers` instead when you need a different image, custom volume mounts, or fine-grained resource limits on the init step.
+
+
+### `hermes.profiles`
+
+Declare named Hermes profiles that are created and configured alongside the default profile. Each profile supports its own config, workspace files, .env, plugins, skills, bundles, and crons. All profiles share a single multiplexed gateway.
+
+```yaml
+hermes:
+  profiles:
+    coder:                             # profile name; key becomes the profile identifier
+      clone: true                      # optional; clone config/.env/SOUL.md/skills from default at creation
+      config:
+        raw:                           # optional; raw config.yaml content (JSON-serialized)
+          model: claude-sonnet-4-5
+          # NOTE: apiServer and webhook are not supported here
+      workspace:
+        dotEnv:                        # optional; write .env from a Secret
+          secretRef:
+            name: coder-env-secret
+        files:                         # optional; workspace files copied to the profile home dir
+          SOUL.md: |
+            You are a senior software engineer...
+      plugins:                         # optional; same schema as hermes.plugins
+        - identifier: owner/hermes-plugin-github
+      skills:                          # optional; same schema as hermes.skills
+        - identifier: https://example.com/skills/code-review.md
+          name: code-review
+      bundles:                         # optional; same schema as hermes.bundles
+        - name: engineering
+          skills: [code-review]
+      crons:                           # optional; same schema as hermes.crons
+        - name: daily-standup
+          schedule: "0 9 * * 1-5"
+          prompt: "Summarise yesterday's commits"
+```
+
+The operator appends these init containers **after** `init-crons` and before any user `initScripts`:
+
+| Container | When added |
+|-----------|-----------|
+| `init-profiles` | Always when profiles > 0 |
+| `init-profiles-config` | Only if at least one profile has `config.raw` |
+| `init-profiles-workspace` | Always when profiles > 0 |
+| `init-profiles-dotenv` | Only if at least one profile has `workspace.dotEnv` |
+| `init-profiles-plugins` | Always when profiles > 0 |
+| `init-profiles-skills` | Always when profiles > 0 |
+| `init-profiles-bundles` | Always when profiles > 0 |
+| `init-profiles-crons` | Always when profiles > 0 |
 
 
 ### `searxng`

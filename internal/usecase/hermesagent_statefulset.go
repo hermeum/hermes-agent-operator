@@ -23,6 +23,7 @@ import (
 const (
 	hermesContainerName          = "hermes-agent"
 	hermesWorkspacePathSeparator = "--"
+	hermesDefaultProfile         = "default"
 	annotationDesiredSpecHash    = domain + "/desired-spec-hash"
 )
 
@@ -492,14 +493,14 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	// config: init container copies config.yaml from the bootstrap ConfigMap to the data volume.
 	if hc := ha.GetHermes().GetConfig(); hc != nil {
-		initContainers = append(initContainers, initContainer("init-config", buildConfigScript()))
+		initContainers = append(initContainers, initContainer("init-config", buildConfigScript(hermesDefaultProfile)))
 	}
 
 	// workspace: init container copies workspace files from the bootstrap ConfigMap.
-	// ConfigMap keys use the format "workspace.<path>" with "/" replaced by "--".
-	initContainers = append(initContainers, initContainer("init-workspace", buildWorkspaceScript()))
+	// ConfigMap keys use the format "profile.default.workspace.<path>" with "/" replaced by "--".
+	initContainers = append(initContainers, initContainer("init-workspace", buildWorkspaceScript(hermesDefaultProfile)))
 
-	// dotenv: init container writes $HERMES_HOME/.env from a Kubernetes Secret.
+	// dotenv: init container writes the default profile .env from a Kubernetes Secret.
 	if de := ha.GetHermes().GetWorkspace().GetDotEnv(); de != nil {
 		const dotenvVolume = "hermes-dotenv"
 		const dotenvMount = "/hermes-dotenv"
@@ -511,7 +512,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				},
 			},
 		})
-		ic := initContainer("init-dotenv", buildDotEnvScript(dotenvMount))
+		ic := initContainer("init-dotenv", buildDotEnvScript(hermesDefaultProfile, dotenvMount))
 		ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
 			Name:      dotenvVolume,
 			MountPath: dotenvMount,
@@ -530,19 +531,106 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 	// plugins: init container installs desired plugins and removes stale ones.
 	plugins := ha.GetHermes().GetPlugins()
-	initContainers = append(initContainers, initContainer("init-plugins", buildPluginsScript(plugins)))
+	initContainers = append(initContainers, initContainer("init-plugins", buildPluginsScript(hermesDefaultProfile, plugins)))
 
 	// skills: init container installs/uninstalls skills via the hermes CLI.
 	skills := ha.GetHermes().GetSkills()
-	initContainers = append(initContainers, initContainer("init-skills", buildSkillsScript(skills)))
+	initContainers = append(initContainers, initContainer("init-skills", buildSkillsScript(hermesDefaultProfile, skills)))
 
 	// bundles: init container reconciles bundles via the hermes CLI.
 	bundles := ha.GetHermes().GetBundles()
-	initContainers = append(initContainers, initContainer("init-bundles", buildBundlesScript(bundles)))
+	initContainers = append(initContainers, initContainer("init-bundles", buildBundlesScript(hermesDefaultProfile, bundles)))
 
 	// crons: init container reconciles scheduled jobs via the hermes CLI.
 	crons := ha.GetHermes().GetCrons()
-	initContainers = append(initContainers, initContainer("init-crons", buildCronsScript(crons)))
+	initContainers = append(initContainers, initContainer("init-crons", buildCronsScript(hermesDefaultProfile, crons)))
+
+	// profiles: create named profiles and configure each with its own init containers.
+	if profiles := ha.GetHermes().GetProfiles(); len(profiles) > 0 {
+		names := sortedProfileNames(profiles)
+
+		initContainers = append(initContainers,
+			initContainer("init-profiles", buildProfilesCreationScript(profiles)))
+
+		{
+			var s strings.Builder
+			for _, name := range names {
+				if profiles[name].Config.GetRaw() != nil {
+					s.WriteString(buildConfigScript(name))
+				}
+			}
+			if s.Len() > 0 {
+				initContainers = append(initContainers,
+					initContainer("init-profiles-config", s.String()))
+			}
+		}
+
+		{
+			var s strings.Builder
+			for _, name := range names {
+				s.WriteString(buildWorkspaceScript(name))
+			}
+			initContainers = append(initContainers,
+				initContainer("init-profiles-workspace", s.String()))
+		}
+
+		{
+			var s strings.Builder
+			ic := initContainer("init-profiles-dotenv", "")
+			for _, name := range names {
+				if de := profiles[name].Workspace.GetDotEnv(); de != nil {
+					volName := "hermes-dotenv-profile-" + name
+					mountPath := "/hermes-dotenv-profile-" + name
+					volumes = append(volumes, corev1.Volume{
+						Name: volName,
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{SecretName: de.SecretRef.Name},
+						},
+					})
+					ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
+						Name: volName, MountPath: mountPath, ReadOnly: true,
+					})
+					s.WriteString(buildDotEnvScript(name, mountPath))
+				}
+			}
+			if s.Len() > 0 {
+				ic.Args = []string{s.String()}
+				initContainers = append(initContainers, ic)
+			}
+		}
+
+		{
+			var s strings.Builder
+			for _, name := range names {
+				s.WriteString(buildPluginsScript(name, profiles[name].Plugins))
+			}
+			initContainers = append(initContainers, initContainer("init-profiles-plugins", s.String()))
+		}
+
+		{
+			var s strings.Builder
+			for _, name := range names {
+				s.WriteString(buildSkillsScript(name, profiles[name].Skills))
+			}
+			initContainers = append(initContainers, initContainer("init-profiles-skills", s.String()))
+		}
+
+		{
+			var s strings.Builder
+			for _, name := range names {
+				s.WriteString(buildBundlesScript(name, profiles[name].Bundles))
+			}
+			initContainers = append(initContainers, initContainer("init-profiles-bundles", s.String()))
+		}
+
+		{
+			var s strings.Builder
+			for _, name := range names {
+				s.WriteString(buildCronsScript(name, profiles[name].Crons))
+			}
+			initContainers = append(initContainers, initContainer("init-profiles-crons", s.String()))
+		}
+	}
 
 	// initScripts: user-provided scripts run as init containers after all managed ones.
 	for _, is := range ha.GetHermes().GetInitScripts() {
@@ -789,45 +877,55 @@ func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 	return sts
 }
 
-func buildConfigScript() string {
-	return `set -eu
+func buildConfigScript(profile string) string {
+	bootstrapKey := "profile." + profile + ".config.yaml"
+	return fmt.Sprintf(`set -eu
 mkdir -p "$HERMES_HOME/home"
-cp "/bootstrap/config.yaml" "$HERMES_HOME/config.yaml"
-echo "Config file copied"
-`
+if [ -f "/bootstrap/%s" ]; then
+  config_path=$(hermes config path -p %q)
+  mkdir -p "$(dirname "$config_path")"
+  cp "/bootstrap/%s" "$config_path"
+  echo "Config written for profile %s"
+fi
+`, bootstrapKey, profile, bootstrapKey, profile)
 }
 
-func buildWorkspaceScript() string {
+func buildWorkspaceScript(profile string) string {
+	bootstrapPrefix := "profile." + profile + ".workspace."
+	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + profile
 	return fmt.Sprintf(`set -eu
-MANIFEST_FILE="$HERMES_HOME/.hermes-agent-operator/workspace-files"
+MANIFEST_FILE="%s/workspace-files"
 UPDATED_MANIFEST=""
-mkdir -p "$HERMES_HOME/.hermes-agent-operator"
+mkdir -p "%s"
+profile_home=$(dirname "$(hermes config path -p %q)")
 
 # delete files that were previously managed but are no longer in workspace.files
 if [ -f "$MANIFEST_FILE" ]; then
   while IFS= read -r managed; do
     [ -z "$managed" ] && continue
-    key="workspace.$(echo "$managed" | sed 's|/|%s|g')"
+    key="%s$(echo "$managed" | sed 's|/|%s|g')"
     if [ ! -f "/bootstrap/$key" ]; then
-      rm -f "$HERMES_HOME/$managed"
-			echo "Removed outdated workspace file: $managed"
+      rm -f "$profile_home/$managed"
+      echo "Removed outdated workspace file: $managed"
     fi
   done < "$MANIFEST_FILE"
 fi
 
-for f in /bootstrap/workspace.*; do
+for f in /bootstrap/%s*; do
   [ -f "$f" ] || continue
-  relpath=$(basename "$f" | sed 's/^workspace\.//' | sed 's/%s/\//g')
-  target="$HERMES_HOME/$relpath"
+  relpath=$(basename "$f" | sed 's/^%s//' | sed 's/%s/\//g')
+  target="$profile_home/$relpath"
   mkdir -p "$(dirname "$target")"
   cp "$f" "$target"
-	echo "Copied workspace file: $relpath"
+  echo "Copied workspace file: $relpath"
   UPDATED_MANIFEST="$UPDATED_MANIFEST$relpath
 "
 done
 
 printf '%%s' "$UPDATED_MANIFEST" > "$MANIFEST_FILE"
-`, hermesWorkspacePathSeparator, hermesWorkspacePathSeparator)
+`, manifestDir, manifestDir, profile,
+		bootstrapPrefix, hermesWorkspacePathSeparator,
+		bootstrapPrefix, bootstrapPrefix, hermesWorkspacePathSeparator)
 }
 
 // pluginDirName derives the plugin directory name from a Git URL or owner/repo shorthand.
@@ -842,7 +940,8 @@ func pluginDirName(identifier string) string {
 	return s
 }
 
-func buildPluginsScript(plugins []agentsv1alpha1.HermesPlugin) string {
+func buildPluginsScript(profile string, plugins []agentsv1alpha1.HermesPlugin) string {
+	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + profile
 	desiredNames := make([]string, 0, len(plugins))
 	installLines := make([]string, 0, len(plugins))
 
@@ -855,7 +954,7 @@ func buildPluginsScript(plugins []agentsv1alpha1.HermesPlugin) string {
 			enableFlag = "--no-enable"
 		}
 		installLines = append(installLines,
-			fmt.Sprintf("hermes plugins install --force %s %q", enableFlag, p.Identifier))
+			fmt.Sprintf("hermes plugins install -p %q --force %s %q", profile, enableFlag, p.Identifier))
 	}
 
 	// case pattern: "name1"|"name2" — safe because plugin names are GitHub repo names
@@ -863,9 +962,9 @@ func buildPluginsScript(plugins []agentsv1alpha1.HermesPlugin) string {
 	installScript := strings.Join(installLines, "\n")
 	manifestContent := strings.Join(desiredNames, "\n")
 
-	script := fmt.Sprintf(`set -eu
-MANIFEST="$HERMES_HOME/.hermes-agent-operator/plugins"
-mkdir -p "$HERMES_HOME/.hermes-agent-operator"
+	return fmt.Sprintf(`set -eu
+MANIFEST="%s/plugins"
+mkdir -p "%s"
 
 # Remove plugins present in manifest but no longer desired
 if [ -f "$MANIFEST" ]; then
@@ -873,7 +972,7 @@ if [ -f "$MANIFEST" ]; then
     [ -z "$name" ] && continue
     case "$name" in
       %s) ;;
-      *) hermes plugins remove "$name" || true ;;
+      *) hermes plugins remove -p %q "$name" || true ;;
     esac
   done < "$MANIFEST"
 fi
@@ -885,9 +984,7 @@ fi
 cat > "$MANIFEST" << 'PLUGINS_EOF'
 %s
 PLUGINS_EOF
-`, casePattern, installScript, manifestContent)
-
-	return script
+`, manifestDir, manifestDir, casePattern, profile, installScript, manifestContent)
 }
 
 func skillName(s agentsv1alpha1.HermesSkill) string {
@@ -898,7 +995,8 @@ func skillName(s agentsv1alpha1.HermesSkill) string {
 	return strings.TrimSuffix(parts[len(parts)-1], ".md")
 }
 
-func buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
+func buildSkillsScript(profile string, skills []agentsv1alpha1.HermesSkill) string {
+	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + profile
 	desiredNames := make([]string, 0, len(skills))
 	installLines := make([]string, 0, len(skills))
 
@@ -907,7 +1005,7 @@ func buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
 		desiredNames = append(desiredNames, name)
 
 		var cmd strings.Builder
-		cmd.WriteString("hermes skills install --yes")
+		fmt.Fprintf(&cmd, "hermes skills install -p %q --yes", profile)
 		if s.Category != "" {
 			cmd.WriteString(" --category ")
 			cmd.WriteString(s.Category)
@@ -929,8 +1027,8 @@ func buildSkillsScript(skills []agentsv1alpha1.HermesSkill) string {
 	manifestContent := strings.Join(desiredNames, "\n")
 
 	return fmt.Sprintf(`set -eu
-MANIFEST="$HERMES_HOME/.hermes-agent-operator/skills"
-mkdir -p "$HERMES_HOME/.hermes-agent-operator"
+MANIFEST="%s/skills"
+mkdir -p "%s"
 
 # Remove skills present in manifest but no longer desired
 if [ -f "$MANIFEST" ]; then
@@ -938,7 +1036,7 @@ if [ -f "$MANIFEST" ]; then
     [ -z "$name" ] && continue
     case "$name" in
       %s) ;;
-      *) hermes skills uninstall "$name" || true ;;
+      *) hermes skills uninstall -p %q "$name" || true ;;
     esac
   done < "$MANIFEST"
 fi
@@ -950,10 +1048,11 @@ fi
 cat > "$MANIFEST" << 'SKILLS_EOF'
 %s
 SKILLS_EOF
-`, casePattern, installScript, manifestContent)
+`, manifestDir, manifestDir, casePattern, profile, installScript, manifestContent)
 }
 
-func buildBundlesScript(bundles []agentsv1alpha1.HermesBundle) string {
+func buildBundlesScript(profile string, bundles []agentsv1alpha1.HermesBundle) string {
+	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + profile
 	desiredNames := make([]string, 0, len(bundles))
 	createLines := make([]string, 0, len(bundles))
 
@@ -961,7 +1060,7 @@ func buildBundlesScript(bundles []agentsv1alpha1.HermesBundle) string {
 		desiredNames = append(desiredNames, b.Name)
 
 		var cmd strings.Builder
-		cmd.WriteString("hermes bundles create")
+		fmt.Fprintf(&cmd, "hermes bundles create -p %q", profile)
 		for _, s := range b.Skills {
 			fmt.Fprintf(&cmd, " --skill %q", s)
 		}
@@ -984,8 +1083,8 @@ func buildBundlesScript(bundles []agentsv1alpha1.HermesBundle) string {
 	manifestContent := strings.Join(desiredNames, "\n")
 
 	return fmt.Sprintf(`set -eu
-MANIFEST="$HERMES_HOME/.hermes-agent-operator/bundles"
-mkdir -p "$HERMES_HOME/.hermes-agent-operator"
+MANIFEST="%s/bundles"
+mkdir -p "%s"
 
 # Remove bundles present in manifest but no longer desired
 if [ -f "$MANIFEST" ]; then
@@ -993,7 +1092,7 @@ if [ -f "$MANIFEST" ]; then
     [ -z "$name" ] && continue
     case "$name" in
       %s) ;;
-      *) hermes bundles delete "$name" || true ;;
+      *) hermes bundles delete -p %q "$name" || true ;;
     esac
   done < "$MANIFEST"
 fi
@@ -1005,7 +1104,7 @@ fi
 cat > "$MANIFEST" << 'BUNDLES_EOF'
 %s
 BUNDLES_EOF
-`, casePattern, createScript, manifestContent)
+`, manifestDir, manifestDir, casePattern, profile, createScript, manifestContent)
 }
 
 func buildPythonPackagesScript(cfg *agentsv1alpha1.HermesPipPackages) string {
@@ -1090,9 +1189,8 @@ printf '%%s' "$DESIRED" > "$MANIFEST"
 `, manifestContent, installCmd)
 }
 
-func buildDotEnvScript(secretMountPath string) string {
+func buildDotEnvScript(profile, secretMountPath string) string {
 	return fmt.Sprintf(`set -eu
-TARGET="$HERMES_HOME/.env"
 {
   for f in "%s"/*; do
     [ -f "$f" ] || continue
@@ -1100,20 +1198,73 @@ TARGET="$HERMES_HOME/.env"
     value="$(cat "$f")"
     printf '%%s=%%s\n' "$key" "$value"
   done
-} > "$TARGET"
-echo "Generated .env"
-`, secretMountPath)
+} > "$(hermes config env-path -p %q)"
+echo "Generated .env for profile %s"
+`, secretMountPath, profile, profile)
 }
 
-func buildCronsScript(crons []agentsv1alpha1.HermesCron) string {
+func sortedProfileNames(profiles map[string]agentsv1alpha1.HermesProfile) []string {
+	names := make([]string, 0, len(profiles))
+	for name := range profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func buildProfilesCreationScript(profiles map[string]agentsv1alpha1.HermesProfile) string {
+	names := sortedProfileNames(profiles)
+	casePattern := `"` + strings.Join(names, `"|"`) + `"`
+	manifestContent := strings.Join(names, "\n")
+
+	createLines := make([]string, 0, len(names))
+	for _, name := range names {
+		cmd := fmt.Sprintf("hermes profile create %q --no-alias", name)
+		if profiles[name].Clone {
+			cmd += " --clone"
+		}
+		createLines = append(createLines, cmd+" || true")
+	}
+
+	return fmt.Sprintf(`set -eu
+PROFILES_MANIFEST="$HERMES_HOME/.hermes-agent-operator/profiles-manifest"
+mkdir -p "$HERMES_HOME/.hermes-agent-operator"
+
+if [ -f "$PROFILES_MANIFEST" ]; then
+  while IFS= read -r pname; do
+    [ -z "$pname" ] && continue
+    case "$pname" in
+      %s) ;;
+      *) hermes profile delete "$pname" || true ;;
+    esac
+  done < "$PROFILES_MANIFEST"
+fi
+
+%s
+
+cat > "$PROFILES_MANIFEST" << 'PROFILES_EOF'
+%s
+PROFILES_EOF
+`, casePattern, strings.Join(createLines, "\n"), manifestContent)
+}
+
+func buildCronsScript(profile string, crons []agentsv1alpha1.HermesCron) string {
+	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + profile
 	desiredNames := make([]string, 0, len(crons))
 	createLines := make([]string, 0, len(crons))
+
+	var jobsPathSuffix string
+	if profile == hermesDefaultProfile {
+		jobsPathSuffix = "/cron/jobs.json"
+	} else {
+		jobsPathSuffix = "/profiles/" + profile + "/cron/jobs.json"
+	}
 
 	for _, c := range crons {
 		desiredNames = append(desiredNames, c.Name)
 
 		var cmd strings.Builder
-		cmd.WriteString("hermes cron create")
+		fmt.Fprintf(&cmd, "hermes cron create -p %q", profile)
 		fmt.Fprintf(&cmd, " --name %q", c.Name)
 		if c.Deliver != "" {
 			fmt.Fprintf(&cmd, " --deliver %q", c.Deliver)
@@ -1147,13 +1298,13 @@ func buildCronsScript(crons []agentsv1alpha1.HermesCron) string {
 	manifestContent := strings.Join(desiredNames, "\n")
 
 	return fmt.Sprintf(`set -eu
-MANIFEST="$HERMES_HOME/.hermes-agent-operator/crons"
-mkdir -p "$HERMES_HOME/.hermes-agent-operator"
+MANIFEST="%s/crons"
+mkdir -p "%s"
 
 get_job_id() {
   python3 - "$1" <<'PY'
 import json, os, sys
-p = os.environ.get("HERMES_HOME", "/opt/data") + "/cron/jobs.json"
+p = os.environ.get("HERMES_HOME", "/opt/data") + "%s"
 if not os.path.exists(p):
     sys.exit(0)
 with open(p) as f:
@@ -1171,7 +1322,7 @@ if [ -f "$MANIFEST" ]; then
     [ -z "$name" ] && continue
     id=$(get_job_id "$name")
     [ -z "$id" ] && continue
-    hermes cron remove "$id" || true
+    hermes cron remove -p %q "$id" || true
   done < "$MANIFEST"
 fi
 
@@ -1182,5 +1333,5 @@ fi
 cat > "$MANIFEST" << 'CRONS_EOF'
 %s
 CRONS_EOF
-`, createScript, manifestContent)
+`, manifestDir, manifestDir, jobsPathSuffix, profile, createScript, manifestContent)
 }

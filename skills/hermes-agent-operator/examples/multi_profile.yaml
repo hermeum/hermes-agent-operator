@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: multi-profile-secrets
+stringData:
+  OLLAMA_API_KEY: ""
+---
+# Secret for the coder profile — can carry profile-specific keys (e.g. a
+# scoped GitHub token) without exposing them to the default profile.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: coder-secrets
+stringData:
+  OLLAMA_API_KEY: ""
+  _HERMES_FORCE_GITHUB_TOKEN: ""
+---
+apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: multi-profile
+spec:
+  hermes:
+    # Default profile — the operator automatically sets
+    # gateway.multiplex_profiles: true in the generated config when any
+    # named profile is declared, so you do not need to set it here.
+    config:
+      apiServer:
+        enabled: true
+      raw:
+        model:
+          base_url: https://ollama.com/v1
+          default: kimi-k2.6
+          provider: ollama-cloud
+    storage:
+      persistence:
+        enabled: true
+        size: 5Gi
+    initChownData: true
+    workspace:
+      dotEnv:
+        secretRef:
+          name: multi-profile-secrets
+      files:
+        SOUL.md: |
+          You are a helpful general-purpose assistant.
+        # shared across profiles
+        .profile: |
+          export PATH="/opt/data/.local/bin:$PATH"
+    profiles:
+      coder:
+        # Clone copies config.yaml, .env, SOUL.md, and skills from the
+        # default profile at creation time so the profile starts ready.
+        clone: true
+        # Override only the fields that differ from the default profile.
+        # They are served by the default profile's gateway under /p/coder/... paths.
+        config:
+          raw:
+            model:
+              base_url: https://ollama.com/v1
+              default: kimi-k2.6
+              provider: ollama-cloud
+            terminal:
+              home_mode: profile
+        workspace:
+          dotEnv:
+            secretRef:
+              name: coder-secrets
+          files:
+            SOUL.md: |
+              You are an expert software engineer. Your priorities:
+              - Write clean, idiomatic, well-tested code
+              - Explain your reasoning before writing code
+              - Prefer small, focused changes over large rewrites
+              - Always check for edge cases and error handling
+    initScripts:
+      - name: install-gh
+        script: |
+          if command -v gh >/dev/null 2>&1; then
+            echo "gh already installed, skipping"
+            exit 0
+          fi
+          mkdir -p $HERMES_HOME/.local/bin
+          GH_VERSION=2.94.0
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C /tmp
+          mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" $HERMES_HOME/.local/bin/gh
+          chmod +x $HERMES_HOME/.local/bin/gh
+          echo "gh installed: $($HERMES_HOME/.local/bin/gh --version)"
+  networking:
+    service:
+      type: ClusterIP

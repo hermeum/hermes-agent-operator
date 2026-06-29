@@ -49,8 +49,7 @@ spec:
         secretRef:
           name: github-reviewer-secrets
       files:
-        # Mount a .bashrc to set PATH for gh CLI installed by initScripts.
-        home/.bashrc: |
+        .profile: |
           export PATH="$HERMES_HOME/.local/bin:$PATH"
     storage:
       persistence:
