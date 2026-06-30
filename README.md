@@ -421,18 +421,7 @@ hermes:
           prompt: "Summarise yesterday's commits"
 ```
 
-The operator appends these init containers **after** `init-crons` and before any user `initScripts`:
-
-| Container | When added |
-|-----------|-----------|
-| `init-profiles` | Always when profiles > 0 |
-| `init-profiles-config` | Only if at least one profile has `config.raw` |
-| `init-profiles-workspace` | Always when profiles > 0 |
-| `init-profiles-dotenv` | Only if at least one profile has `workspace.dotEnv` |
-| `init-profiles-plugins` | Always when profiles > 0 |
-| `init-profiles-skills` | Always when profiles > 0 |
-| `init-profiles-bundles` | Always when profiles > 0 |
-| `init-profiles-crons` | Always when profiles > 0 |
+> **Tip:** Use `workspace.dotEnv` on each profile to load environment variables from a Secret. This is the recommended way to isolate credentials and configuration (e.g. API keys, tokens) per profile without leaking them across profiles.
 
 
 ### `searxng`
