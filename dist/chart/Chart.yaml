@@ -3,8 +3,8 @@ name: hermes-agent-operator
 description: A Helm chart to distribute hermes-agent-operator
 type: application
 
-version: 0.5.0
-appVersion: "0.6.0"
+version: 0.5.1
+appVersion: "0.7.0"
 
 keywords:
   - kubernetes
