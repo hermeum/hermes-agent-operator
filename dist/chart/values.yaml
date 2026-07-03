@@ -4,7 +4,7 @@
 
 ## String to fully override chart.fullname template
 ##
-# fullnameOverride: ""
+fullnameOverride: "hermes-agent"
 
 ## Configure the controller manager deployment
 ##
