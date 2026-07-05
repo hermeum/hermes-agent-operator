@@ -349,6 +349,13 @@ func (in *HermesAgentSpec) DeepCopyInto(out *HermesAgentSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.PodAnnotations != nil {
+		in, out := &in.PodAnnotations, &out.PodAnnotations
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.SearXNG != nil {
 		in, out := &in.SearXNG, &out.SearXNG
 		*out = new(SearXNG)

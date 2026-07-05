@@ -88,6 +88,7 @@ Then run the `/hermes-agent-operator` skill to create a custom resource.
 - [`networking.service`](#networkingservice)
 - [`networking.ingress`](#networkingingress)
 - [`suspend`](#suspend)
+- [`podAnnotations`](#podannotations)
 
 ### `hermes.config`
 
@@ -584,6 +585,17 @@ Pause the agent by scaling its StatefulSet to 0 without deleting the resource or
 
 ```yaml
 suspend: true                      # optional; defaults to false
+```
+
+
+### `podAnnotations`
+
+Add custom annotations to the agent's pod template. Changing any key/value triggers a rolling restart of the StatefulSet's pods — set a key like `rotatedAt` to an RFC3339 timestamp and update it whenever a restart is needed, equivalent to `kubectl rollout restart statefulset`.
+
+```yaml
+podAnnotations:                      # optional
+  rotatedAt: "2026-07-06T12:00:00Z"  # any change here triggers a rolling restart
+  prometheus.io/scrape: "true"       # also usable for ordinary pod annotations
 ```
 
 

@@ -1338,6 +1338,12 @@ type HermesAgentSpec struct {
 	// +optional
 	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty"`
 
+	// PodAnnotations adds custom annotations to the Hermes agent pod template.
+	// Changing any key (e.g. a timestamp) triggers a rolling restart of the
+	// StatefulSet's pods, mirroring `kubectl rollout restart statefulset`.
+	// +optional
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+
 	// SearXNG configures an optional SearXNG sidecar used by the web_search tool.
 	// +optional
 	SearXNG *SearXNG `json:"searxng,omitempty"`
@@ -1485,6 +1491,11 @@ func (h *HermesAgent) GetExtraVolumes() []corev1.Volume {
 
 func (h *HermesAgent) GetExtraVolumeMounts() []corev1.VolumeMount {
 	return h.Spec.ExtraVolumeMounts
+}
+
+// GetPodAnnotations returns the custom pod template annotations, if any.
+func (h *HermesAgent) GetPodAnnotations() map[string]string {
+	return h.Spec.PodAnnotations
 }
 
 func (h *HermesAgent) GetSearXNG() *SearXNG {
