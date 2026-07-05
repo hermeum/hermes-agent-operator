@@ -3094,12 +3094,14 @@ spec:
                           properties:
                             dotEnv:
                               description: |-
-                                dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret.
-                                Each key in the referenced Secret becomes a KEY=VALUE line in the file.
+                                dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret
+                                and/or ConfigMap. Each key in the referenced Secret/ConfigMap becomes a
+                                KEY=VALUE line in the file. If both are set, Secret keys override
+                                ConfigMap keys of the same name.
                               properties:
-                                secretRef:
+                                configMapRef:
                                   description: |-
-                                    secretRef references the Kubernetes Secret whose keys and values are
+                                    configMapRef references a Kubernetes ConfigMap whose keys and values are
                                     written as KEY=VALUE lines to $HERMES_HOME/.env.
                                   properties:
                                     name:
@@ -3113,9 +3115,28 @@ spec:
                                       type: string
                                   type: object
                                   x-kubernetes-map-type: atomic
-                              required:
-                              - secretRef
+                                secretRef:
+                                  description: |-
+                                    secretRef references a Kubernetes Secret whose keys and values are
+                                    written as KEY=VALUE lines to $HERMES_HOME/.env. If configMapRef is
+                                    also set, these values take precedence on key collisions.
+                                  properties:
+                                    name:
+                                      default: ""
+                                      description: |-
+                                        Name of the referent.
+                                        This field is effectively required, but due to backwards compatibility is
+                                        allowed to be empty. Instances of this type with an empty value here are
+                                        almost certainly wrong.
+                                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                      type: string
+                                  type: object
+                                  x-kubernetes-map-type: atomic
                               type: object
+                              x-kubernetes-validations:
+                              - message: at least one of secretRef or configMapRef
+                                  must be set
+                                rule: has(self.secretRef) || has(self.configMapRef)
                             files:
                               additionalProperties:
                                 type: string
@@ -3251,12 +3272,14 @@ spec:
                     properties:
                       dotEnv:
                         description: |-
-                          dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret.
-                          Each key in the referenced Secret becomes a KEY=VALUE line in the file.
+                          dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret
+                          and/or ConfigMap. Each key in the referenced Secret/ConfigMap becomes a
+                          KEY=VALUE line in the file. If both are set, Secret keys override
+                          ConfigMap keys of the same name.
                         properties:
-                          secretRef:
+                          configMapRef:
                             description: |-
-                              secretRef references the Kubernetes Secret whose keys and values are
+                              configMapRef references a Kubernetes ConfigMap whose keys and values are
                               written as KEY=VALUE lines to $HERMES_HOME/.env.
                             properties:
                               name:
@@ -3270,9 +3293,28 @@ spec:
                                 type: string
                             type: object
                             x-kubernetes-map-type: atomic
-                        required:
-                        - secretRef
+                          secretRef:
+                            description: |-
+                              secretRef references a Kubernetes Secret whose keys and values are
+                              written as KEY=VALUE lines to $HERMES_HOME/.env. If configMapRef is
+                              also set, these values take precedence on key collisions.
+                            properties:
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                            type: object
+                            x-kubernetes-map-type: atomic
                         type: object
+                        x-kubernetes-validations:
+                        - message: at least one of secretRef or configMapRef must
+                            be set
+                          rule: has(self.secretRef) || has(self.configMapRef)
                       files:
                         additionalProperties:
                           type: string

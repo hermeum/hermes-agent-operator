@@ -174,14 +174,18 @@ hermes:
 
 #### `dotEnv`
 
-Generate a `$HERMES_HOME/.env` file from a Kubernetes Secret. Each key in the Secret becomes a `KEY=VALUE` line in the file. Useful for tools that read `.env` files at startup.
+Generate a `$HERMES_HOME/.env` file from a Kubernetes ConfigMap and/or Secret. Each key in the referenced object(s) becomes a `KEY=VALUE` line in the file. Useful for tools that read `.env` files at startup.
+
+At least one of `configMapRef`/`secretRef` must be set; both may be set at once. If a key exists in both, the Secret's value wins.
 
 ```yaml
 hermes:
   workspace:
     dotEnv:                        # optional; omit if no .env file is needed
+      configMapRef:
+        name: my-env-configmap     # non-secret values
       secretRef:
-        name: my-env-secret        # name of the Secret in the same namespace
+        name: my-env-secret        # secret values; overrides configMap on key collision
 ```
 
 
@@ -401,7 +405,7 @@ hermes:
           model: claude-sonnet-4-5
           # NOTE: apiServer and webhook are not supported here
       workspace:
-        dotEnv:                        # optional; write .env from a Secret
+        dotEnv:                        # optional; write .env from a ConfigMap and/or Secret
           secretRef:
             name: coder-env-secret
         files:                         # optional; workspace files copied to the profile home dir
@@ -421,7 +425,7 @@ hermes:
           prompt: "Summarise yesterday's commits"
 ```
 
-> **Tip:** Use `workspace.dotEnv` on each profile to load environment variables from a Secret. This is the recommended way to isolate credentials and configuration (e.g. API keys, tokens) per profile without leaking them across profiles.
+> **Tip:** Use `workspace.dotEnv` on each profile to load environment variables from a ConfigMap and/or Secret. This is the recommended way to isolate credentials and configuration (e.g. API keys, tokens) per profile without leaking them across profiles.
 
 
 ### `searxng`

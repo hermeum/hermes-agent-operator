@@ -500,24 +500,43 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	// ConfigMap keys use the format "profile.default.workspace.<path>" with "/" replaced by "--".
 	initContainers = append(initContainers, initContainer("init-workspace", buildWorkspaceScript(hermesDefaultProfile)))
 
-	// dotenv: init container writes the default profile .env from a Kubernetes Secret.
+	// dotenv: init container writes the default profile .env from a Kubernetes ConfigMap and/or Secret.
 	if de := ha.GetHermes().GetWorkspace().GetDotEnv(); de != nil {
-		const dotenvVolume = "hermes-dotenv"
-		const dotenvMount = "/hermes-dotenv"
-		volumes = append(volumes, corev1.Volume{
-			Name: dotenvVolume,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: de.SecretRef.Name,
+		var mountPaths []string
+		var mounts []corev1.VolumeMount
+
+		if de.ConfigMapRef != nil {
+			const dotenvConfigMapVolume = "hermes-dotenv-configmap"
+			const dotenvConfigMapMount = "/hermes-dotenv-configmap"
+			volumes = append(volumes, corev1.Volume{
+				Name: dotenvConfigMapVolume,
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{Name: de.ConfigMapRef.Name},
+					},
 				},
-			},
-		})
-		ic := initContainer("init-dotenv", buildDotEnvScript(hermesDefaultProfile, dotenvMount))
-		ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
-			Name:      dotenvVolume,
-			MountPath: dotenvMount,
-			ReadOnly:  true,
-		})
+			})
+			mounts = append(mounts, corev1.VolumeMount{Name: dotenvConfigMapVolume, MountPath: dotenvConfigMapMount, ReadOnly: true})
+			mountPaths = append(mountPaths, dotenvConfigMapMount)
+		}
+
+		if de.SecretRef != nil {
+			const dotenvVolume = "hermes-dotenv-secret"
+			const dotenvMount = "/hermes-dotenv-secret"
+			volumes = append(volumes, corev1.Volume{
+				Name: dotenvVolume,
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: de.SecretRef.Name,
+					},
+				},
+			})
+			mounts = append(mounts, corev1.VolumeMount{Name: dotenvVolume, MountPath: dotenvMount, ReadOnly: true})
+			mountPaths = append(mountPaths, dotenvMount)
+		}
+
+		ic := initContainer("init-dotenv", buildDotEnvScript(hermesDefaultProfile, mountPaths...))
+		ic.VolumeMounts = append(ic.VolumeMounts, mounts...)
 		initContainers = append(initContainers, ic)
 	}
 
@@ -579,18 +598,41 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ic := initContainer("init-profiles-dotenv", "")
 			for _, name := range names {
 				if de := profiles[name].Workspace.GetDotEnv(); de != nil {
-					volName := "hermes-dotenv-profile-" + name
-					mountPath := "/hermes-dotenv-profile-" + name
-					volumes = append(volumes, corev1.Volume{
-						Name: volName,
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{SecretName: de.SecretRef.Name},
-						},
-					})
-					ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
-						Name: volName, MountPath: mountPath, ReadOnly: true,
-					})
-					s.WriteString(buildDotEnvScript(name, mountPath))
+					var mountPaths []string
+
+					if de.ConfigMapRef != nil {
+						volName := "hermes-dotenv-configmap-profile-" + name
+						mountPath := "/hermes-dotenv-configmap-profile-" + name
+						volumes = append(volumes, corev1.Volume{
+							Name: volName,
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{Name: de.ConfigMapRef.Name},
+								},
+							},
+						})
+						ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
+							Name: volName, MountPath: mountPath, ReadOnly: true,
+						})
+						mountPaths = append(mountPaths, mountPath)
+					}
+
+					if de.SecretRef != nil {
+						volName := "hermes-dotenv-secret-profile-" + name
+						mountPath := "/hermes-dotenv-secret-profile-" + name
+						volumes = append(volumes, corev1.Volume{
+							Name: volName,
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{SecretName: de.SecretRef.Name},
+							},
+						})
+						ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
+							Name: volName, MountPath: mountPath, ReadOnly: true,
+						})
+						mountPaths = append(mountPaths, mountPath)
+					}
+
+					s.WriteString(buildDotEnvScript(name, mountPaths...))
 				}
 			}
 			if s.Len() > 0 {
@@ -1189,18 +1231,22 @@ printf '%%s' "$DESIRED" > "$MANIFEST"
 `, manifestContent, installCmd)
 }
 
-func buildDotEnvScript(profile, secretMountPath string) string {
-	return fmt.Sprintf(`set -eu
-{
-  for f in "%s"/*; do
+func buildDotEnvScript(profile string, mountPaths ...string) string {
+	var body strings.Builder
+	for _, mp := range mountPaths {
+		fmt.Fprintf(&body, `  for f in "%s"/*; do
     [ -f "$f" ] || continue
     key="$(basename "$f")"
     value="$(cat "$f")"
     printf '%%s=%%s\n' "$key" "$value"
   done
-} > "$(hermes config env-path -p %q)"
+`, mp)
+	}
+	return fmt.Sprintf(`set -eu
+{
+%s} > "$(hermes config env-path -p %q)"
 echo "Generated .env for profile %s"
-`, secretMountPath, profile, profile)
+`, body.String(), profile, profile)
 }
 
 func sortedProfileNames(profiles map[string]agentsv1alpha1.HermesProfile) []string {
