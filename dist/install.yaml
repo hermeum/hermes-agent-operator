@@ -4994,6 +4994,14 @@ spec:
                         type: string
                     type: object
                 type: object
+              podAnnotations:
+                additionalProperties:
+                  type: string
+                description: |-
+                  PodAnnotations adds custom annotations to the Hermes agent pod template.
+                  Changing any key (e.g. a timestamp) triggers a rolling restart of the
+                  StatefulSet's pods, mirroring `kubectl rollout restart statefulset`.
+                type: object
               searxng:
                 description: SearXNG configures an optional SearXNG sidecar used by
                   the web_search tool.

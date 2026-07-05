@@ -67,6 +67,40 @@ func TestDesiredSpecHash(t *testing.T) {
 			t.Error("hash must not change when only ObjectMeta differs")
 		}
 	})
+
+	t.Run("changes when podAnnotations change", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+		ha.Spec.PodAnnotations = map[string]string{"rotatedAt": "2026-07-06T12:00:00Z"}
+		if desiredSpecHash(buildStatefulSet(ha)) == h1 {
+			t.Error("expected different hash when podAnnotations change")
+		}
+	})
+}
+
+func TestBuildStatefulSetPodAnnotations(t *testing.T) {
+	t.Run("no extra annotations when unset", func(t *testing.T) {
+		ha := minimalHA()
+		sts := buildStatefulSet(ha)
+		if len(sts.Spec.Template.Annotations) != 1 {
+			t.Errorf("expected only config-hash annotation, got %v", sts.Spec.Template.Annotations)
+		}
+	})
+
+	t.Run("user annotations are merged in", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.PodAnnotations = map[string]string{"rotatedAt": "2026-07-06T12:00:00Z", "prometheus.io/scrape": "true"}
+		sts := buildStatefulSet(ha)
+		if sts.Spec.Template.Annotations["rotatedAt"] != "2026-07-06T12:00:00Z" {
+			t.Error("expected rotatedAt annotation to be present")
+		}
+		if sts.Spec.Template.Annotations["prometheus.io/scrape"] != "true" {
+			t.Error("expected prometheus.io/scrape annotation to be present")
+		}
+		if _, ok := sts.Spec.Template.Annotations[domain+"/config-hash"]; !ok {
+			t.Error("expected config-hash annotation to still be present")
+		}
+	})
 }
 
 func ptrBool(b bool) *bool { return &b }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -243,6 +244,8 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 			},
 		},
 	}
+
+	maps.Copy(sts.Spec.Template.Annotations, ha.GetPodAnnotations())
 
 	sts = buildHermesContainer(ha, sts)
 	sts = buildSearXNGContainer(ha, sts)
