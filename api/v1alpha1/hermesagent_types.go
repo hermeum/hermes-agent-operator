@@ -87,12 +87,19 @@ type HermesStorage struct {
 	Persistence *HermesPersistence `json:"persistence,omitempty"`
 }
 
-// HermesDotEnv configures generation of a $HERMES_HOME/.env file from a Kubernetes Secret.
+// HermesDotEnv configures generation of a $HERMES_HOME/.env file from a
+// Kubernetes Secret and/or ConfigMap.
+// +kubebuilder:validation:XValidation:rule="has(self.secretRef) || has(self.configMapRef)",message="at least one of secretRef or configMapRef must be set"
 type HermesDotEnv struct {
-	// secretRef references the Kubernetes Secret whose keys and values are
+	// secretRef references a Kubernetes Secret whose keys and values are
+	// written as KEY=VALUE lines to $HERMES_HOME/.env. If configMapRef is
+	// also set, these values take precedence on key collisions.
+	// +optional
+	SecretRef *corev1.LocalObjectReference `json:"secretRef,omitempty"`
+	// configMapRef references a Kubernetes ConfigMap whose keys and values are
 	// written as KEY=VALUE lines to $HERMES_HOME/.env.
-	// +kubebuilder:validation:Required
-	SecretRef corev1.LocalObjectReference `json:"secretRef"`
+	// +optional
+	ConfigMapRef *corev1.LocalObjectReference `json:"configMapRef,omitempty"`
 }
 
 // HermesWorkspace defines files to seed in the agent workspace.
@@ -101,8 +108,10 @@ type HermesWorkspace struct {
 	// Paths may contain "/" for subdirectories (e.g. "skills/test/SKILL.md").
 	// +optional
 	Files map[string]string `json:"files,omitempty"`
-	// dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret.
-	// Each key in the referenced Secret becomes a KEY=VALUE line in the file.
+	// dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret
+	// and/or ConfigMap. Each key in the referenced Secret/ConfigMap becomes a
+	// KEY=VALUE line in the file. If both are set, Secret keys override
+	// ConfigMap keys of the same name.
 	// +optional
 	DotEnv *HermesDotEnv `json:"dotEnv,omitempty"`
 }
