@@ -103,6 +103,19 @@ func buildNetworkPolicyIngress(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha
 		p := intstr.FromInt32(ha.GetHermes().GetWebhook().GetPort())
 		ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: &tcp, Port: &p})
 	}
+	// Additional container ports declared in hermes.ports are exposed by the
+	// StatefulSet and must also be allowed through the NetworkPolicy ingress,
+	// otherwise the default-deny policy blocks traffic the user intended to
+	// expose. The API server port (and the webhook port, per the documented
+	// contract) should not be repeated in hermes.ports.
+	for _, cp := range ha.GetHermes().GetPorts() {
+		proto := cp.Protocol
+		if proto == "" {
+			proto = corev1.ProtocolTCP
+		}
+		p := intstr.FromInt32(cp.ContainerPort)
+		ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: &proto, Port: &p})
+	}
 	if len(ports) == 0 {
 		return nil
 	}
