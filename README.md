@@ -519,6 +519,8 @@ security:
 
 NetworkPolicy configuration. Created only when this block is present.
 
+Ingress is allowed on the API server port (`hermes.config.apiServer.port`), the webhook port (`hermes.config.webhook.port`), and any additional container ports declared in `hermes.ports`. When a NetworkPolicy is enabled, declare every container port you want reachable in `hermes.ports` — otherwise the default-deny policy will block traffic to it, even if a Service routes to it.
+
 ```yaml
 security:
   networkPolicy:                   # optional; omit the entire block to skip NetworkPolicy creation
