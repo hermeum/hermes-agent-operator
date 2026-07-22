@@ -1044,6 +1044,7 @@ func buildSkillsScript(profile string, skills []agentsv1alpha1.HermesSkill) stri
 	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + profile
 	desiredNames := make([]string, 0, len(skills))
 	installLines := make([]string, 0, len(skills))
+	updateLines := make([]string, 0, len(skills))
 
 	for _, s := range skills {
 		name := skillName(s)
@@ -1065,10 +1066,14 @@ func buildSkillsScript(profile string, skills []agentsv1alpha1.HermesSkill) stri
 		cmd.WriteString(" ")
 		cmd.WriteString(s.Identifier)
 		installLines = append(installLines, cmd.String())
+
+		// Pull any newer version of the skill. Idempotent: a no-op when up to date.
+		updateLines = append(updateLines, fmt.Sprintf("hermes skills update -p %q %s || true", profile, name))
 	}
 
 	casePattern := `"` + strings.Join(desiredNames, `"|"`) + `"`
 	installScript := strings.Join(installLines, "\n")
+	updateScript := strings.Join(updateLines, "\n")
 	manifestContent := strings.Join(desiredNames, "\n")
 
 	return fmt.Sprintf(`set -eu
@@ -1089,11 +1094,14 @@ fi
 # Install desired skills
 %s
 
+# Update installed skills to the latest version available
+%s
+
 # Update manifest
 cat > "$MANIFEST" << 'SKILLS_EOF'
 %s
 SKILLS_EOF
-`, manifestDir, manifestDir, casePattern, profile, installScript, manifestContent)
+`, manifestDir, manifestDir, casePattern, profile, installScript, updateScript, manifestContent)
 }
 
 func buildBundlesScript(profile string, bundles []agentsv1alpha1.HermesBundle) string {
