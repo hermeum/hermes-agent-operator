@@ -6,6 +6,7 @@ import (
 	"fmt"
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"maps"
+	"strconv"
 	"strings"
 	"time"
 
@@ -201,6 +202,31 @@ func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, er
 				data[key] = content
 			}
 		}
+	}
+
+	// Operator-managed env vars for the dotenv init container. These keys are
+	// mounted (with an Items filter) into init-dotenv so they land in .env.
+	// Non-secret values go in the ConfigMap; secret values (API_SERVER_KEY,
+	// WEBHOOK_SECRET) are in the operator Secret and mounted separately.
+	if apiServer := ha.GetHermes().GetAPIServer(); apiServer.IsEnabled() {
+		data["API_SERVER_ENABLED"] = "true"
+		// The default bind is 127.0.0.1, which is unreachable from outside
+		// the pod; bind all interfaces so the Service can route to it.
+		data["API_SERVER_HOST"] = "0.0.0.0"
+		data["API_SERVER_PORT"] = strconv.Itoa(int(apiServer.GetPort()))
+		if origins := apiServer.GetCORSOrigins(); len(origins) > 0 {
+			data["API_SERVER_CORS_ORIGINS"] = strings.Join(origins, ",")
+		}
+	}
+	if webhook := ha.GetHermes().GetWebhook(); webhook.IsEnabled() {
+		data["WEBHOOK_ENABLED"] = "true"
+		data["WEBHOOK_PORT"] = strconv.Itoa(int(webhook.GetPort()))
+	}
+	if ha.GetSearXNG().IsEnabled() {
+		data["SEARXNG_URL"] = searxngURL
+	}
+	if ha.GetCamofox().IsEnabled() {
+		data["CAMOFOX_URL"] = camofoxURL
 	}
 
 	return &corev1.ConfigMap{

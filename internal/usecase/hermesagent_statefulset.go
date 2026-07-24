@@ -8,7 +8,6 @@ import (
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"maps"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +25,10 @@ const (
 	hermesWorkspacePathSeparator = "--"
 	hermesDefaultProfile         = "default"
 	annotationDesiredSpecHash    = domain + "/desired-spec-hash"
+	// searxngURL is the in-pod URL the hermes-agent uses to reach the SearXNG sidecar.
+	searxngURL = "http://localhost:8080"
+	// camofoxURL is the in-pod URL the hermes-agent uses to reach the Camofox sidecar.
+	camofoxURL = "http://localhost:9377"
 )
 
 // hermesHealthCheckCommand reports the gateway state regardless of which
@@ -287,6 +290,8 @@ func buildInitContainerSecurityContext() *corev1.SecurityContext {
 // buildHermesContainer populates the StatefulSet with all resources driven by the hermes spec:
 // the main hermes-agent container (env, envFrom), init containers for config and workspace,
 // and volumes/PVCs for persistence, bootstrap config, and shared memory.
+//
+//nolint:gocyclo // inherent to the breadth of init containers and volume wiring
 func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
 	const (
 		hermesHomeVolume      = "hermes-data"
@@ -394,54 +399,16 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ContainerPort: apiServer.GetPort(),
 			Protocol:      corev1.ProtocolTCP,
 		})
-		apiKeyRef := &corev1.SecretKeySelector{
-			LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
-			Key:                  "API_SERVER_KEY",
-		}
-		if ref := apiServer.GetExistingSecret(); ref != nil {
-			apiKeyRef = ref
-		}
-		container.Env = append(container.Env, []corev1.EnvVar{
-			{
-				Name:      "API_SERVER_KEY",
-				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: apiKeyRef},
-			},
-			{Name: "API_SERVER_ENABLED", Value: "true"},
-			// The default bind is 127.0.0.1, which is unreachable from outside
-			// the pod; bind all interfaces so the Service can route to it.
-			{Name: "API_SERVER_HOST", Value: "0.0.0.0"},
-			{Name: "API_SERVER_PORT", Value: strconv.Itoa(int(apiServer.GetPort()))},
-		}...)
-		if origins := apiServer.GetCORSOrigins(); len(origins) > 0 {
-			container.Env = append(container.Env, corev1.EnvVar{
-				Name:  "API_SERVER_CORS_ORIGINS",
-				Value: strings.Join(origins, ","),
-			})
-		}
 	}
 
 	// Webhook configuration
-	if ha.GetHermes().GetWebhook().IsEnabled() {
+	webhook := ha.GetHermes().GetWebhook()
+	if webhook.IsEnabled() {
 		container.Ports = append(container.Ports, corev1.ContainerPort{
-			Name:          ha.GetHermes().GetWebhook().GetPortName(),
-			ContainerPort: ha.GetHermes().GetWebhook().GetPort(),
+			Name:          webhook.GetPortName(),
+			ContainerPort: webhook.GetPort(),
 			Protocol:      corev1.ProtocolTCP,
 		})
-		secretRef := ha.GetHermes().GetWebhook().GetSecretRef()
-		if secretRef == nil {
-			secretRef = &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
-				Key:                  "WEBHOOK_SECRET",
-			}
-		}
-		container.Env = append(container.Env, []corev1.EnvVar{
-			{
-				Name:      "WEBHOOK_SECRET",
-				ValueFrom: &corev1.EnvVarSource{SecretKeyRef: secretRef},
-			},
-			{Name: "WEBHOOK_ENABLED", Value: "true"},
-			{Name: "WEBHOOK_PORT", Value: strconv.Itoa(int(ha.GetHermes().GetWebhook().GetPort()))},
-		}...)
 	}
 
 	// persistence: existingClaim > enabled PVC > emptyDir fallback.
@@ -503,19 +470,31 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	// ConfigMap keys use the format "profile.default.workspace.<path>" with "/" replaced by "--".
 	initContainers = append(initContainers, initContainer("init-workspace", buildWorkspaceScript(hermesDefaultProfile)))
 
-	// dotenv: init container writes the default profile .env from a Kubernetes ConfigMap and/or Secret.
-	if de := ha.GetHermes().GetWorkspace().GetDotEnv(); de != nil {
+	// dotenv: init container writes the default profile .env.
+	//
+	// Operator-managed env vars (API_SERVER_*, WEBHOOK_*, SEARXNG_URL,
+	// CAMOFOX_URL) are stored as keys in the Hermes ConfigMap and Secret, then
+	// mounted into the init container with Items filters so the existing
+	// `for f in .../*` loop dumps them as KEY=VALUE lines — the same mechanism
+	// as user workspace.dotEnv. Operator mounts come first so user dotEnv keys
+	// override on collision (user wins).
+	de := ha.GetHermes().GetWorkspace().GetDotEnv()
+	operatorItems := buildOperatorDotEnvItems(ha)
+	operatorSecretItems := buildOperatorDotEnvSecretItems(ha)
+	if de != nil || len(operatorItems) > 0 || len(operatorSecretItems) > 0 {
 		var mountPaths []string
 		var mounts []corev1.VolumeMount
 
-		if de.ConfigMapRef != nil {
-			const dotenvConfigMapVolume = "hermes-dotenv-configmap"
-			const dotenvConfigMapMount = "/hermes-dotenv-configmap"
+		// Operator-managed volumes first (user keys override on collision).
+		if len(operatorItems) > 0 {
+			const dotenvConfigMapVolume = "hermes-operator-dotenv-configmap"
+			const dotenvConfigMapMount = "/hermes-operator-dotenv-configmap"
 			volumes = append(volumes, corev1.Volume{
 				Name: dotenvConfigMapVolume,
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{Name: de.ConfigMapRef.Name},
+						LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
+						Items:                operatorItems,
 					},
 				},
 			})
@@ -523,19 +502,52 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			mountPaths = append(mountPaths, dotenvConfigMapMount)
 		}
 
-		if de.SecretRef != nil {
-			const dotenvVolume = "hermes-dotenv-secret"
-			const dotenvMount = "/hermes-dotenv-secret"
+		if len(operatorSecretItems) > 0 {
+			const dotenvVolume = "hermes-operator-dotenv-secret"
+			const dotenvMount = "/hermes-operator-dotenv-secret"
 			volumes = append(volumes, corev1.Volume{
 				Name: dotenvVolume,
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
-						SecretName: de.SecretRef.Name,
+						SecretName: ha.GetHermesName(),
+						Items:      operatorSecretItems,
 					},
 				},
 			})
 			mounts = append(mounts, corev1.VolumeMount{Name: dotenvVolume, MountPath: dotenvMount, ReadOnly: true})
 			mountPaths = append(mountPaths, dotenvMount)
+		}
+
+		if de != nil {
+			if de.ConfigMapRef != nil {
+				const dotenvConfigMapVolume = "hermes-dotenv-configmap"
+				const dotenvConfigMapMount = "/hermes-dotenv-configmap"
+				volumes = append(volumes, corev1.Volume{
+					Name: dotenvConfigMapVolume,
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{Name: de.ConfigMapRef.Name},
+						},
+					},
+				})
+				mounts = append(mounts, corev1.VolumeMount{Name: dotenvConfigMapVolume, MountPath: dotenvConfigMapMount, ReadOnly: true})
+				mountPaths = append(mountPaths, dotenvConfigMapMount)
+			}
+
+			if de.SecretRef != nil {
+				const dotenvVolume = "hermes-dotenv-secret"
+				const dotenvMount = "/hermes-dotenv-secret"
+				volumes = append(volumes, corev1.Volume{
+					Name: dotenvVolume,
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: de.SecretRef.Name,
+						},
+					},
+				})
+				mounts = append(mounts, corev1.VolumeMount{Name: dotenvVolume, MountPath: dotenvMount, ReadOnly: true})
+				mountPaths = append(mountPaths, dotenvMount)
+			}
 		}
 
 		ic := initContainer("init-dotenv", buildDotEnvScript(hermesDefaultProfile, mountPaths...))
@@ -599,10 +611,38 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		{
 			var s strings.Builder
 			ic := initContainer("init-profiles-dotenv", "")
+			// SEARXNG_URL / CAMOFOX_URL point at shared sidecars and are written
+			// to every named profile's .env. API_SERVER_* / WEBHOOK_* are
+			// intentionally excluded — they belong to the default profile's
+			// gateway.
+			sidecarItems := buildProfileSidecarDotEnvItems(ha)
 			for _, name := range names {
-				if de := profiles[name].Workspace.GetDotEnv(); de != nil {
-					var mountPaths []string
+				de := profiles[name].Workspace.GetDotEnv()
+				if de == nil && len(sidecarItems) == 0 {
+					continue
+				}
+				var mountPaths []string
 
+				// Operator sidecar keys first (user keys override on collision).
+				if len(sidecarItems) > 0 {
+					volName := "hermes-operator-dotenv-profile-" + name
+					mountPath := "/hermes-operator-dotenv-profile-" + name
+					volumes = append(volumes, corev1.Volume{
+						Name: volName,
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
+								Items:                sidecarItems,
+							},
+						},
+					})
+					ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
+						Name: volName, MountPath: mountPath, ReadOnly: true,
+					})
+					mountPaths = append(mountPaths, mountPath)
+				}
+
+				if de != nil {
 					if de.ConfigMapRef != nil {
 						volName := "hermes-dotenv-configmap-profile-" + name
 						mountPath := "/hermes-dotenv-configmap-profile-" + name
@@ -634,9 +674,9 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 						})
 						mountPaths = append(mountPaths, mountPath)
 					}
-
-					s.WriteString(buildDotEnvScript(name, mountPaths...))
 				}
+
+				s.WriteString(buildDotEnvScript(name, mountPaths...))
 			}
 			if s.Len() > 0 {
 				ic.Args = []string{s.String()}
@@ -754,7 +794,6 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		searxngBootstrapMount  = "/bootstrap-searxng"
 		searxngCacheVolume     = "searxng-cache"
 		searxngCacheMount      = "/var/cache/searxng"
-		searxngURL             = "http://localhost:8080"
 	)
 
 	// Inject SEARXNG_URL into the hermes-agent container env so that the web_search tool can find it.
@@ -875,7 +914,6 @@ func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		camofoxContainerName = "camofox"
 		camofoxDataVolume    = "camofox-data"
 		camofoxDataMount     = "/root/.camofox"
-		camofoxURL           = "http://localhost:9377"
 	)
 
 	// Inject CAMOFOX_URL into the hermes-agent container env so that the browser tool can find it.
@@ -1258,6 +1296,65 @@ func buildDotEnvScript(profile string, mountPaths ...string) string {
 %s} > "$(hermes config env-path -p %q)"
 echo "Generated .env for profile %s"
 `, body.String(), profile, profile)
+}
+
+// buildOperatorDotEnvItems returns the ConfigMap Items filter for operator-managed
+// non-secret env vars written to the default profile's .env: API_SERVER_ENABLED,
+// API_SERVER_HOST, API_SERVER_PORT, optional API_SERVER_CORS_ORIGINS,
+// WEBHOOK_ENABLED, WEBHOOK_PORT, SEARXNG_URL, CAMOFOX_URL.
+func buildOperatorDotEnvItems(ha *agentsv1alpha1.HermesAgent) []corev1.KeyToPath {
+	var items []corev1.KeyToPath
+	if apiServer := ha.GetHermes().GetAPIServer(); apiServer.IsEnabled() {
+		items = append(items,
+			corev1.KeyToPath{Key: "API_SERVER_ENABLED", Path: "API_SERVER_ENABLED"},
+			corev1.KeyToPath{Key: "API_SERVER_HOST", Path: "API_SERVER_HOST"},
+			corev1.KeyToPath{Key: "API_SERVER_PORT", Path: "API_SERVER_PORT"},
+		)
+		if origins := apiServer.GetCORSOrigins(); len(origins) > 0 {
+			items = append(items, corev1.KeyToPath{Key: "API_SERVER_CORS_ORIGINS", Path: "API_SERVER_CORS_ORIGINS"})
+		}
+	}
+	if webhook := ha.GetHermes().GetWebhook(); webhook.IsEnabled() {
+		items = append(items,
+			corev1.KeyToPath{Key: "WEBHOOK_ENABLED", Path: "WEBHOOK_ENABLED"},
+			corev1.KeyToPath{Key: "WEBHOOK_PORT", Path: "WEBHOOK_PORT"},
+		)
+	}
+	if ha.GetSearXNG().IsEnabled() {
+		items = append(items, corev1.KeyToPath{Key: "SEARXNG_URL", Path: "SEARXNG_URL"})
+	}
+	if ha.GetCamofox().IsEnabled() {
+		items = append(items, corev1.KeyToPath{Key: "CAMOFOX_URL", Path: "CAMOFOX_URL"})
+	}
+	return items
+}
+
+// buildOperatorDotEnvSecretItems returns the Secret Items filter for
+// operator-managed secret env vars written to the default profile's .env:
+// API_SERVER_KEY and/or WEBHOOK_SECRET.
+func buildOperatorDotEnvSecretItems(ha *agentsv1alpha1.HermesAgent) []corev1.KeyToPath {
+	var items []corev1.KeyToPath
+	if ha.GetHermes().GetAPIServer().IsEnabled() {
+		items = append(items, corev1.KeyToPath{Key: "API_SERVER_KEY", Path: "API_SERVER_KEY"})
+	}
+	if ha.GetHermes().GetWebhook().IsEnabled() {
+		items = append(items, corev1.KeyToPath{Key: "WEBHOOK_SECRET", Path: "WEBHOOK_SECRET"})
+	}
+	return items
+}
+
+// buildProfileSidecarDotEnvItems returns the ConfigMap Items filter for the
+// shared sidecar URLs written to every named profile's .env. API_SERVER_* and
+// WEBHOOK_* are excluded — they belong to the default profile's gateway.
+func buildProfileSidecarDotEnvItems(ha *agentsv1alpha1.HermesAgent) []corev1.KeyToPath {
+	var items []corev1.KeyToPath
+	if ha.GetSearXNG().IsEnabled() {
+		items = append(items, corev1.KeyToPath{Key: "SEARXNG_URL", Path: "SEARXNG_URL"})
+	}
+	if ha.GetCamofox().IsEnabled() {
+		items = append(items, corev1.KeyToPath{Key: "CAMOFOX_URL", Path: "CAMOFOX_URL"})
+	}
+	return items
 }
 
 func sortedProfileNames(profiles map[string]agentsv1alpha1.HermesProfile) []string {
