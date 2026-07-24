@@ -6,9 +6,13 @@ import (
 
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const testTrue = "true"
 
 func minimalHA() *agentsv1alpha1.HermesAgent {
 	return &agentsv1alpha1.HermesAgent{
@@ -62,7 +66,7 @@ func TestDesiredSpecHash(t *testing.T) {
 		ha := minimalHA()
 		sts := buildStatefulSet(ha)
 		h1 := desiredSpecHash(sts)
-		sts.Labels["k8s-injected"] = "true"
+		sts.Labels["k8s-injected"] = testTrue
 		if desiredSpecHash(sts) != h1 {
 			t.Error("hash must not change when only ObjectMeta differs")
 		}
@@ -89,12 +93,12 @@ func TestBuildStatefulSetPodAnnotations(t *testing.T) {
 
 	t.Run("user annotations are merged in", func(t *testing.T) {
 		ha := minimalHA()
-		ha.Spec.PodAnnotations = map[string]string{"rotatedAt": "2026-07-06T12:00:00Z", "prometheus.io/scrape": "true"}
+		ha.Spec.PodAnnotations = map[string]string{"rotatedAt": "2026-07-06T12:00:00Z", "prometheus.io/scrape": testTrue}
 		sts := buildStatefulSet(ha)
 		if sts.Spec.Template.Annotations["rotatedAt"] != "2026-07-06T12:00:00Z" {
 			t.Error("expected rotatedAt annotation to be present")
 		}
-		if sts.Spec.Template.Annotations["prometheus.io/scrape"] != "true" {
+		if sts.Spec.Template.Annotations["prometheus.io/scrape"] != testTrue {
 			t.Error("expected prometheus.io/scrape annotation to be present")
 		}
 		if _, ok := sts.Spec.Template.Annotations[domain+"/config-hash"]; !ok {
@@ -565,4 +569,393 @@ func TestBuildCronsScript(t *testing.T) {
 			t.Errorf("expected manifest path profiles/coder/crons, got:\n%s", got)
 		}
 	})
+}
+
+// findInitContainer returns a pointer to the init container with the given
+// name, or nil if none exists in the StatefulSet.
+func findInitContainer(sts *appsv1.StatefulSet, name string) *corev1.Container {
+	for i := range sts.Spec.Template.Spec.InitContainers {
+		if sts.Spec.Template.Spec.InitContainers[i].Name == name {
+			return &sts.Spec.Template.Spec.InitContainers[i]
+		}
+	}
+	return nil
+}
+
+// findHermesContainer returns a pointer to the hermes-agent container in the
+// StatefulSet, or nil if none exists.
+func findHermesContainer(sts *appsv1.StatefulSet) *corev1.Container {
+	for i := range sts.Spec.Template.Spec.Containers {
+		if sts.Spec.Template.Spec.Containers[i].Name == hermesContainerName {
+			return &sts.Spec.Template.Spec.Containers[i]
+		}
+	}
+	return nil
+}
+
+// hasEnvVar reports whether the given env var name is present in the slice.
+func hasEnvVar(envs []corev1.EnvVar, name string) bool {
+	for _, e := range envs {
+		if e.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// hasVolumeMount reports whether a volume mount with the given name exists.
+func hasVolumeMount(mounts []corev1.VolumeMount, name string) bool {
+	for _, m := range mounts {
+		if m.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestOperatorDotEnvAPIServer(t *testing.T) {
+	t.Run("enabled: ConfigMap has operator keys, init-dotenv mounts them", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+			Config: &agentsv1alpha1.HermesConfig{
+				APIServer: &agentsv1alpha1.HermesAPIServer{Enabled: true},
+			},
+		}
+
+		// ConfigMap must contain the operator env-var keys.
+		cm, err := buildHermesConfigMap(ha)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"API_SERVER_ENABLED", "API_SERVER_HOST", "API_SERVER_PORT"} {
+			if _, ok := cm.Data[key]; !ok {
+				t.Errorf("expected %q in ConfigMap data", key)
+			}
+		}
+		if cm.Data["API_SERVER_ENABLED"] != testTrue {
+			t.Errorf("expected API_SERVER_ENABLED=true, got %q", cm.Data["API_SERVER_ENABLED"])
+		}
+		if cm.Data["API_SERVER_HOST"] != "0.0.0.0" {
+			t.Errorf("expected API_SERVER_HOST=0.0.0.0, got %q", cm.Data["API_SERVER_HOST"])
+		}
+
+		// init-dotenv must exist and mount the operator ConfigMap and Secret.
+		sts := buildStatefulSet(ha)
+		ic := findInitContainer(sts, "init-dotenv")
+		if ic == nil {
+			t.Fatal("expected init-dotenv init container")
+		}
+		if !hasVolumeMount(ic.VolumeMounts, "hermes-operator-dotenv-configmap") {
+			t.Error("expected hermes-operator-dotenv-configmap volume mount on init-dotenv")
+		}
+		if !hasVolumeMount(ic.VolumeMounts, "hermes-operator-dotenv-secret") {
+			t.Error("expected hermes-operator-dotenv-secret volume mount on init-dotenv")
+		}
+		// The script must iterate the operator mount paths.
+		if !strings.Contains(ic.Args[0], "/hermes-operator-dotenv-configmap") {
+			t.Errorf("expected operator configmap mount path in script, got:\n%s", ic.Args[0])
+		}
+		if !strings.Contains(ic.Args[0], "/hermes-operator-dotenv-secret") {
+			t.Errorf("expected operator secret mount path in script, got:\n%s", ic.Args[0])
+		}
+
+		// API_SERVER_* env vars are injected via .env, not container env.
+		c := findHermesContainer(sts)
+		if c == nil {
+			t.Fatal("expected hermes-agent container")
+		}
+		for _, name := range []string{"API_SERVER_ENABLED", "API_SERVER_HOST", "API_SERVER_PORT", "API_SERVER_KEY"} {
+			if hasEnvVar(c.Env, name) {
+				t.Errorf("expected %q absent from hermes-agent container Env (injected via .env)", name)
+			}
+		}
+	})
+
+	t.Run("corsOrigins in ConfigMap when set", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+			Config: &agentsv1alpha1.HermesConfig{
+				APIServer: &agentsv1alpha1.HermesAPIServer{
+					Enabled:     true,
+					CORSOrigins: []string{"https://a.example", "https://b.example"},
+				},
+			},
+		}
+		cm, err := buildHermesConfigMap(ha)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cm.Data["API_SERVER_CORS_ORIGINS"] != "https://a.example,https://b.example" {
+			t.Errorf("expected CORS origins in ConfigMap, got %q", cm.Data["API_SERVER_CORS_ORIGINS"])
+		}
+	})
+
+	t.Run("custom port in ConfigMap", func(t *testing.T) {
+		ha := minimalHA()
+		port := int32(9000)
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+			Config: &agentsv1alpha1.HermesConfig{
+				APIServer: &agentsv1alpha1.HermesAPIServer{Enabled: true, Port: &port},
+			},
+		}
+		cm, err := buildHermesConfigMap(ha)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cm.Data["API_SERVER_PORT"] != "9000" {
+			t.Errorf("expected API_SERVER_PORT=9000, got %q", cm.Data["API_SERVER_PORT"])
+		}
+	})
+
+	t.Run("disabled: no operator keys in ConfigMap, no init-dotenv", func(t *testing.T) {
+		ha := minimalHA()
+		cm, err := buildHermesConfigMap(ha)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"API_SERVER_ENABLED", "API_SERVER_HOST", "API_SERVER_PORT"} {
+			if _, ok := cm.Data[key]; ok {
+				t.Errorf("expected %q absent from ConfigMap when apiServer disabled", key)
+			}
+		}
+		sts := buildStatefulSet(ha)
+		if ic := findInitContainer(sts, "init-dotenv"); ic != nil {
+			t.Errorf("expected no init-dotenv when nothing enabled, got: %v", ic)
+		}
+	})
+}
+
+func TestOperatorDotEnvWebhook(t *testing.T) {
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Config: &agentsv1alpha1.HermesConfig{
+			Webhook: &agentsv1alpha1.HermesWebhook{Enabled: true},
+		},
+	}
+
+	cm, err := buildHermesConfigMap(ha)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cm.Data["WEBHOOK_ENABLED"] != testTrue {
+		t.Errorf("expected WEBHOOK_ENABLED=true, got %q", cm.Data["WEBHOOK_ENABLED"])
+	}
+	if cm.Data["WEBHOOK_PORT"] != "8644" {
+		t.Errorf("expected WEBHOOK_PORT=8644, got %q", cm.Data["WEBHOOK_PORT"])
+	}
+
+	sts := buildStatefulSet(ha)
+	ic := findInitContainer(sts, "init-dotenv")
+	if ic == nil {
+		t.Fatal("expected init-dotenv init container")
+	}
+	if !hasVolumeMount(ic.VolumeMounts, "hermes-operator-dotenv-secret") {
+		t.Error("expected hermes-operator-dotenv-secret volume mount on init-dotenv")
+	}
+
+	// WEBHOOK_* env vars are injected via .env, not container env.
+	c := findHermesContainer(sts)
+	if c == nil {
+		t.Fatal("expected hermes-agent container")
+	}
+	for _, name := range []string{"WEBHOOK_ENABLED", "WEBHOOK_PORT", "WEBHOOK_SECRET"} {
+		if hasEnvVar(c.Env, name) {
+			t.Errorf("expected %q absent from hermes-agent container Env (injected via .env)", name)
+		}
+	}
+}
+
+func TestOperatorDotEnvSidecars(t *testing.T) {
+	t.Run("searxng: SEARXNG_URL in ConfigMap and init-dotenv", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true}
+
+		cm, err := buildHermesConfigMap(ha)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cm.Data["SEARXNG_URL"] != "http://localhost:8080" {
+			t.Errorf("expected SEARXNG_URL in ConfigMap, got %q", cm.Data["SEARXNG_URL"])
+		}
+
+		sts := buildStatefulSet(ha)
+		ic := findInitContainer(sts, "init-dotenv")
+		if ic == nil {
+			t.Fatal("expected init-dotenv init container")
+		}
+		if !strings.Contains(ic.Args[0], "/hermes-operator-dotenv-configmap") {
+			t.Errorf("expected operator configmap mount path in script, got:\n%s", ic.Args[0])
+		}
+
+		c := findHermesContainer(sts)
+		if c == nil {
+			t.Fatal("expected hermes-agent container")
+		}
+		if !hasEnvVar(c.Env, "SEARXNG_URL") {
+			t.Error("expected SEARXNG_URL in hermes-agent container Env")
+		}
+	})
+
+	t.Run("camofox: CAMOFOX_URL in ConfigMap and init-dotenv", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.Camofox = &agentsv1alpha1.Camofox{Enabled: true}
+
+		cm, err := buildHermesConfigMap(ha)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cm.Data["CAMOFOX_URL"] != "http://localhost:9377" {
+			t.Errorf("expected CAMOFOX_URL in ConfigMap, got %q", cm.Data["CAMOFOX_URL"])
+		}
+
+		sts := buildStatefulSet(ha)
+		ic := findInitContainer(sts, "init-dotenv")
+		if ic == nil {
+			t.Fatal("expected init-dotenv init container")
+		}
+		if !strings.Contains(ic.Args[0], "/hermes-operator-dotenv-configmap") {
+			t.Errorf("expected operator configmap mount path in script, got:\n%s", ic.Args[0])
+		}
+
+		c := findHermesContainer(sts)
+		if c == nil {
+			t.Fatal("expected hermes-agent container")
+		}
+		if !hasEnvVar(c.Env, "CAMOFOX_URL") {
+			t.Error("expected CAMOFOX_URL in hermes-agent container Env")
+		}
+	})
+}
+
+func TestOperatorDotEnvMultiplex(t *testing.T) {
+	t.Run("named profiles get SEARXNG_URL/CAMOFOX_URL, not API_SERVER_*", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+			Config: &agentsv1alpha1.HermesConfig{
+				APIServer: &agentsv1alpha1.HermesAPIServer{Enabled: true},
+			},
+			Profiles: map[string]agentsv1alpha1.HermesProfile{
+				"coder":  {},
+				"writer": {},
+			},
+		}
+		ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true}
+		ha.Spec.Camofox = &agentsv1alpha1.Camofox{Enabled: true}
+
+		sts := buildStatefulSet(ha)
+
+		// Default profile: operator ConfigMap + Secret mounted.
+		defIC := findInitContainer(sts, "init-dotenv")
+		if defIC == nil {
+			t.Fatal("expected init-dotenv")
+		}
+		if !hasVolumeMount(defIC.VolumeMounts, "hermes-operator-dotenv-configmap") {
+			t.Error("expected operator configmap mount on default init-dotenv")
+		}
+		if !hasVolumeMount(defIC.VolumeMounts, "hermes-operator-dotenv-secret") {
+			t.Error("expected operator secret mount on default init-dotenv")
+		}
+
+		// Named profiles: only sidecar URLs, no API_SERVER_*/WEBHOOK_*.
+		profIC := findInitContainer(sts, "init-profiles-dotenv")
+		if profIC == nil {
+			t.Fatal("expected init-profiles-dotenv")
+		}
+		profScript := profIC.Args[0]
+		if !strings.Contains(profScript, "hermes-operator-dotenv-profile-coder") {
+			t.Errorf("expected operator dotenv mount for coder profile, got:\n%s", profScript)
+		}
+		if !strings.Contains(profScript, "hermes-operator-dotenv-profile-writer") {
+			t.Errorf("expected operator dotenv mount for writer profile, got:\n%s", profScript)
+		}
+		// Must NOT have API_SERVER or WEBHOOK in named-profile dotenv.
+		if strings.Contains(profScript, "API_SERVER") {
+			t.Errorf("API_SERVER_* must not appear in named-profile dotenv, got:\n%s", profScript)
+		}
+		if strings.Contains(profScript, "WEBHOOK") {
+			t.Errorf("WEBHOOK_* must not appear in named-profile dotenv, got:\n%s", profScript)
+		}
+		// Each named profile gets its own .env block.
+		if strings.Count(profScript, `hermes config env-path -p "coder"`) != 1 {
+			t.Errorf("expected one coder dotenv block, got:\n%s", profScript)
+		}
+		if strings.Count(profScript, `hermes config env-path -p "writer"`) != 1 {
+			t.Errorf("expected one writer dotenv block, got:\n%s", profScript)
+		}
+	})
+}
+
+func TestOperatorDotEnvCollision(t *testing.T) {
+	// User workspace.dotEnv keys override operator keys (user wins).
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Config: &agentsv1alpha1.HermesConfig{
+			APIServer: &agentsv1alpha1.HermesAPIServer{Enabled: true},
+		},
+		Workspace: &agentsv1alpha1.HermesWorkspace{
+			DotEnv: &agentsv1alpha1.HermesDotEnv{
+				SecretRef: &corev1.LocalObjectReference{Name: "my-env"},
+			},
+		},
+	}
+	sts := buildStatefulSet(ha)
+	ic := findInitContainer(sts, "init-dotenv")
+	if ic == nil {
+		t.Fatal("expected init-dotenv")
+	}
+	script := ic.Args[0]
+	// Operator mount path must come before user mount path.
+	operatorIdx := strings.Index(script, "/hermes-operator-dotenv-configmap")
+	userIdx := strings.Index(script, "/hermes-dotenv-secret")
+	if operatorIdx < 0 || userIdx < 0 {
+		t.Fatalf("expected both operator and user mount paths in script, got:\n%s", script)
+	}
+	if operatorIdx >= userIdx {
+		t.Errorf("expected operator mount before user mount; operator at %d, user at %d in:\n%s",
+			operatorIdx, userIdx, script)
+	}
+}
+
+func TestOperatorDotEnvOrdering(t *testing.T) {
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Config: &agentsv1alpha1.HermesConfig{
+			APIServer: &agentsv1alpha1.HermesAPIServer{Enabled: true},
+		},
+	}
+	sts := buildStatefulSet(ha)
+	var workspaceIdx, dotenvIdx = -1, -1
+	for i, c := range sts.Spec.Template.Spec.InitContainers {
+		switch c.Name {
+		case "init-workspace":
+			workspaceIdx = i
+		case "init-dotenv":
+			dotenvIdx = i
+		}
+	}
+	if workspaceIdx < 0 {
+		t.Fatal("init-workspace not found")
+	}
+	if dotenvIdx < 0 {
+		t.Fatal("init-dotenv not found")
+	}
+	if dotenvIdx <= workspaceIdx {
+		t.Errorf("expected init-dotenv (idx %d) after init-workspace (idx %d)", dotenvIdx, workspaceIdx)
+	}
+}
+
+func TestOperatorDotEnvUserDotEnvAlone(t *testing.T) {
+	// User dotEnv without any operator features still emits init-dotenv.
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Workspace: &agentsv1alpha1.HermesWorkspace{
+			DotEnv: &agentsv1alpha1.HermesDotEnv{
+				SecretRef: &corev1.LocalObjectReference{Name: "my-env"},
+			},
+		},
+	}
+	sts := buildStatefulSet(ha)
+	if findInitContainer(sts, "init-dotenv") == nil {
+		t.Error("expected init-dotenv when user dotEnv is set")
+	}
 }
