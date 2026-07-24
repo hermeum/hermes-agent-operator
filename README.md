@@ -119,9 +119,6 @@ hermes:
       port: 8642                   # optional; defaults to 8642. 
       corsOrigins:                 # optional; browser origins allowed to call the API server
         - https://app.example.com  # (sets API_SERVER_CORS_ORIGINS). CORS stays disabled when empty
-      existingSecret:              # optional; omit to use the operator-generated key
-        name: my-api-key-secret    # name of the Secret in the same namespace
-        key: API_SERVER_KEY        # key within that Secret
 ```
 
 #### `webhook`
@@ -134,9 +131,6 @@ hermes:
     webhook:                       # optional; omit to disable the webhook ingress
       enabled: true
       port: 8644                   # optional; defaults to 8644. 
-      secretRef:                   # optional; omit to use the operator-generated secret
-        name: my-webhook-secret    # name of the Secret in the same namespace
-        key: WEBHOOK_SECRET        # key within that Secret
 ```
 
 ### `hermes.storage`

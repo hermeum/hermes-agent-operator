@@ -396,12 +396,6 @@ type HermesAPIServer struct {
 	// to the agent's full toolset.
 	// +optional
 	CORSOrigins []string `json:"corsOrigins,omitempty"`
-	// existingSecret references a user-managed Secret that contains the API key.
-	// When set, its key is injected into the container instead of the operator-generated one.
-	// The referenced Secret must exist in the same namespace as the HermesAgent.
-	// The operator still generates its own Secret regardless of this field.
-	// +optional
-	ExistingSecret *corev1.SecretKeySelector `json:"existingSecret,omitempty"`
 }
 
 func (a *HermesAPIServer) IsEnabled() bool {
@@ -427,18 +421,10 @@ func (a *HermesAPIServer) GetCORSOrigins() []string {
 	return a.CORSOrigins
 }
 
-func (a *HermesAPIServer) GetExistingSecret() *corev1.SecretKeySelector {
-	if a == nil {
-		return nil
-	}
-	return a.ExistingSecret
-}
-
 // HermesWebhook configures the webhook ingress.
 type HermesWebhook struct {
 	// enabled activates the webhook listener (sets WEBHOOK_ENABLED=true).
-	// When enabled without secretRef, WEBHOOK_SECRET is injected from the
-	// operator-managed hermes Secret.
+	// WEBHOOK_SECRET is injected from the operator-managed hermes Secret.
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
 	// port is the port the webhook listener binds on (sets WEBHOOK_PORT when enabled).
@@ -449,11 +435,6 @@ type HermesWebhook struct {
 	// +kubebuilder:default=8644
 	// +optional
 	Port *int32 `json:"port,omitempty"`
-	// secretRef references an existing Secret key to use as the HMAC secret
-	// instead of the operator-generated one. Use this to share a known value
-	// with external webhook senders, or to set "INSECURE_NO_AUTH" for testing.
-	// +optional
-	SecretRef *corev1.SecretKeySelector `json:"secretRef,omitempty"`
 }
 
 func (w *HermesWebhook) IsEnabled() bool {
@@ -471,13 +452,6 @@ func (w *HermesWebhook) GetPortName() string {
 	return "webhook"
 }
 
-func (w *HermesWebhook) GetSecretRef() *corev1.SecretKeySelector {
-	if w == nil {
-		return nil
-	}
-	return w.SecretRef
-}
-
 // HermesConfig holds the Hermes agent config.yml and related configuration.
 type HermesConfig struct {
 	// raw holds the verbatim Hermes agent config.yml as free-form YAML/JSON.
@@ -485,8 +459,8 @@ type HermesConfig struct {
 	Raw *apiextensionsv1.JSON `json:"raw,omitempty"`
 	// apiServer configures the gateway API server. For convenience, the operator
 	// automatically generates an API key Secret internally — no manual secret
-	// management required. Set existingSecret to supply your own Secret instead.
-	// The Secret is persisted across reconciles; enabling the server injects it into the container.
+	// management required. The Secret is persisted across reconciles; enabling
+	// the server injects it into the container.
 	// +optional
 	APIServer *HermesAPIServer `json:"apiServer,omitempty"`
 	// webhook configures the webhook ingress.
