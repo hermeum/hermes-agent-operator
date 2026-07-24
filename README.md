@@ -121,6 +121,16 @@ hermes:
         - https://app.example.com  # (sets API_SERVER_CORS_ORIGINS). CORS stays disabled when empty
 ```
 
+To use your own API key instead of the operator-generated one, set `API_SERVER_KEY` via `hermes.workspace.dotEnv`. The operator writes its own keys first, then your `.env` entries, so a key you supply overrides the operator-generated value on collision (your value wins):
+
+```yaml
+hermes:
+  workspace:
+    dotEnv:
+      secretRef:
+        name: my-api-server-key     # Secret with key API_SERVER_KEY=sk-...
+```
+
 #### `webhook`
 
 Enable the webhook ingress. When `enabled: true`, the operator sets `WEBHOOK_ENABLED=true` and injects a `WEBHOOK_SECRET` (the HMAC secret) into the agent container. By default the secret is generated once and stored in the operator-managed `<agent-name>-hermes` Secret, then preserved across reconciles so it is not rotated.
@@ -131,6 +141,16 @@ hermes:
     webhook:                       # optional; omit to disable the webhook ingress
       enabled: true
       port: 8644                   # optional; defaults to 8644. 
+```
+
+To use your own HMAC secret instead of the operator-generated one — e.g. to share a known value with external webhook senders, or to set `INSECURE_NO_AUTH` for testing — set `WEBHOOK_SECRET` via `hermes.workspace.dotEnv`. The operator writes its own keys first, then your `.env` entries, so a key you supply overrides the operator-generated value on collision (your value wins):
+
+```yaml
+hermes:
+  workspace:
+    dotEnv:
+      secretRef:
+        name: my-webhook-secret    # Secret with key WEBHOOK_SECRET=<your-hmac-value>
 ```
 
 ### `hermes.storage`
