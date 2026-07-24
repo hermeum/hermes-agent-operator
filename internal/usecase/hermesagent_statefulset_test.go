@@ -282,6 +282,55 @@ func TestBuildSkillsScript(t *testing.T) {
 			t.Errorf("expected manifest path profiles/coder/skills, got:\n%s", got)
 		}
 	})
+
+	t.Run("update command present per skill", func(t *testing.T) {
+		got := buildSkillsScript(hermesDefaultProfile, []agentsv1alpha1.HermesSkill{
+			{Identifier: "openai/skills/skill-creator"},
+		})
+
+		wantUpdate := `hermes skills update -p "default" skill-creator || true`
+		if !strings.Contains(got, wantUpdate) {
+			t.Errorf("expected update command %q in script, got:\n%s", wantUpdate, got)
+		}
+	})
+
+	t.Run("update command uses explicit name", func(t *testing.T) {
+		got := buildSkillsScript(hermesDefaultProfile, []agentsv1alpha1.HermesSkill{
+			{Identifier: "https://example.com/SKILL.md", Name: "my-skill"},
+		})
+
+		wantUpdate := `hermes skills update -p "default" my-skill || true`
+		if !strings.Contains(got, wantUpdate) {
+			t.Errorf("expected update command %q in script, got:\n%s", wantUpdate, got)
+		}
+	})
+
+	t.Run("update command for named profile", func(t *testing.T) {
+		got := buildSkillsScript("coder", []agentsv1alpha1.HermesSkill{
+			{Identifier: "openai/skills/foo"},
+		})
+
+		wantUpdate := `hermes skills update -p "coder" foo || true`
+		if !strings.Contains(got, wantUpdate) {
+			t.Errorf("expected update command %q in script, got:\n%s", wantUpdate, got)
+		}
+	})
+
+	t.Run("update commands for multiple skills", func(t *testing.T) {
+		got := buildSkillsScript(hermesDefaultProfile, []agentsv1alpha1.HermesSkill{
+			{Identifier: "openai/skills/alpha"},
+			{Identifier: "openai/skills/beta.md"},
+		})
+
+		wantUpdate1 := `hermes skills update -p "default" alpha || true`
+		wantUpdate2 := `hermes skills update -p "default" beta || true`
+		if !strings.Contains(got, wantUpdate1) {
+			t.Errorf("expected update command %q in script, got:\n%s", wantUpdate1, got)
+		}
+		if !strings.Contains(got, wantUpdate2) {
+			t.Errorf("expected update command %q in script, got:\n%s", wantUpdate2, got)
+		}
+	})
 }
 
 func TestBuildBundlesScript(t *testing.T) {
