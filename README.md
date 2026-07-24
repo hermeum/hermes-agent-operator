@@ -119,9 +119,16 @@ hermes:
       port: 8642                   # optional; defaults to 8642. 
       corsOrigins:                 # optional; browser origins allowed to call the API server
         - https://app.example.com  # (sets API_SERVER_CORS_ORIGINS). CORS stays disabled when empty
-      existingSecret:              # optional; omit to use the operator-generated key
-        name: my-api-key-secret    # name of the Secret in the same namespace
-        key: API_SERVER_KEY        # key within that Secret
+```
+
+To use your own API key instead of the operator-generated one, set `API_SERVER_KEY` via `hermes.workspace.dotEnv` (your value overrides the operator-generated one):
+
+```yaml
+hermes:
+  workspace:
+    dotEnv:
+      secretRef:
+        name: my-api-server-key     # Secret with key API_SERVER_KEY=sk-...
 ```
 
 #### `webhook`
@@ -134,9 +141,16 @@ hermes:
     webhook:                       # optional; omit to disable the webhook ingress
       enabled: true
       port: 8644                   # optional; defaults to 8644. 
-      secretRef:                   # optional; omit to use the operator-generated secret
-        name: my-webhook-secret    # name of the Secret in the same namespace
-        key: WEBHOOK_SECRET        # key within that Secret
+```
+
+To use your own HMAC secret instead of the operator-generated one — e.g. to share a known value with external webhook senders, or to set `INSECURE_NO_AUTH` for testing — set `WEBHOOK_SECRET` via `hermes.workspace.dotEnv` (your value overrides the operator-generated one):
+
+```yaml
+hermes:
+  workspace:
+    dotEnv:
+      secretRef:
+        name: my-webhook-secret    # Secret with key WEBHOOK_SECRET=<your-hmac-value>
 ```
 
 ### `hermes.storage`
