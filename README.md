@@ -464,8 +464,8 @@ searxng:
     storageClassName: standard     # optional; omit to use the cluster default StorageClass
     existingClaim: my-searxng-pvc  # optional; omit to provision a new PVC automatically
   env:                             # optional; additional env vars for the SearXNG container
-    - name: SEARXNG_SECRET
-      value: my-secret
+    - name: UWSGI_WORKERS
+      value: "4"
 ```
 
 
