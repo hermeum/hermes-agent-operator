@@ -11,8 +11,6 @@ metadata:
   name: minimal-spec
 spec:
   hermes:
-    image:
-      tag: v2026.6.5
     config:
       # apiServer:
       #   enabled: true
