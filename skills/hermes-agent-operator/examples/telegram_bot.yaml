@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: telegram-bot-secrets
+stringData:
+  OLLAMA_API_KEY: ""
+  TELEGRAM_BOT_TOKEN: ""
+  TELEGRAM_ALLOWED_USERS: ""
+---
+apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: telegram-bot
+spec:
+  hermes:
+    config:
+      raw:
+        model:
+          base_url: https://ollama.com/v1
+          default: glm-5.2
+          provider: ollama-cloud
+        # Telegram gateway configuration.
+        # Env vars (TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USERS) are injected
+        # via the .env Secret referenced in workspace.dotEnv.secretRef below.
+        gateway:
+          platforms:
+            telegram:
+              extra:
+                # Show Online/Offline in the bot's short description.
+                status_indicator: true
+                # Optional custom strings (defaults: "Online" / "Offline"):
+                status_online: "🟢 Online"
+                status_offline: "🔴 Offline"
+    workspace:
+      dotEnv:
+        secretRef:
+          name: telegram-bot-secrets
