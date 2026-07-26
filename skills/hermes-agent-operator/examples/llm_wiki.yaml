@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: llm-wiki-secrets
+stringData:
+  OLLAMA_API_KEY: ""
+  # For headless Obsidian Sync (browse the wiki in the desktop/mobile app)
+  OBSIDIAN_ACCOUNT_EMAIL: ""
+  OBSIDIAN_ACCOUNT_PASSWORD: ""
+---
+apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: llm-wiki
+spec:
+  hermes:
+    skills:
+      - identifier: skills/research/llm-wiki
+    # obsidian-headless provides the `ob` CLI for headless Obsidian Sync
+    packages:
+      npm:
+        install:
+          - obsidian-headless
+    config:
+      raw:
+        model:
+          base_url: https://ollama.com/v1
+          default: glm-5.2
+          provider: ollama-cloud
+    env:
+      - name: WIKI_PATH
+        value: /opt/data/home/wiki
+      - name: OBSIDIAN_VAULT_PATH
+        value: /opt/data/home/wiki
+    storage:
+      persistence:
+        enabled: true
+        size: 5Gi
+    initChownData: true
+    workspace:
+      dotEnv:
+        secretRef:
+          name: llm-wiki-secrets
+      files:
+        SOUL.md: |
+          You are a knowledge-base curator. The llm-wiki skill defines how you
+          build and maintain the wiki — follow it.
+
+          Environment notes:
+          - The wiki lives at /opt/data/home/wiki on a persistent volume
+          - The same directory is the Obsidian vault (OBSIDIAN_VAULT_PATH)
+          - The `ob` CLI (obsidian-headless) is available for Obsidian Sync
+        .profile: |
+          export PATH="$HERMES_HOME/.npm-packages/bin:$PATH"
