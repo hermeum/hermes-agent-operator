@@ -88,18 +88,51 @@ type HermesStorage struct {
 }
 
 // HermesDotEnv configures generation of a $HERMES_HOME/.env file from a
-// Kubernetes Secret and/or ConfigMap.
-// +kubebuilder:validation:XValidation:rule="has(self.secretRef) || has(self.configMapRef)",message="at least one of secretRef or configMapRef must be set"
+// Kubernetes Secret and/or ConfigMap. Both singular (secretRef/configMapRef)
+// and plural (secretRefs/configMapRefs) forms are supported and may be combined.
+//
+// Precedence on key collision (last-wins):
+//  1. configMapRef (singular)
+//  2. configMapRefs (plural, in order)
+//  3. secretRef (singular)
+//  4. secretRefs (plural, in order)
+//
+// Secrets override ConfigMaps, and later entries override earlier ones within
+// the same type.
+// +kubebuilder:validation:XValidation:rule="has(self.secretRef) || has(self.configMapRef) || has(self.secretRefs) || has(self.configMapRefs)",message="at least one of secretRef, configMapRef, secretRefs, or configMapRefs must be set"
 type HermesDotEnv struct {
 	// secretRef references a Kubernetes Secret whose keys and values are
-	// written as KEY=VALUE lines to $HERMES_HOME/.env. If configMapRef is
-	// also set, these values take precedence on key collisions.
+	// written as KEY=VALUE lines to $HERMES_HOME/.env. Secrets override
+	// ConfigMap keys of the same name. See HermesDotEnv for the full
+	// precedence order on key collisions.
+	//
+	// Deprecated: Use secretRefs for new fields; singular forms will be
+	// removed in the v1 type.
 	// +optional
 	SecretRef *corev1.LocalObjectReference `json:"secretRef,omitempty"`
 	// configMapRef references a Kubernetes ConfigMap whose keys and values are
-	// written as KEY=VALUE lines to $HERMES_HOME/.env.
+	// written as KEY=VALUE lines to $HERMES_HOME/.env. See HermesDotEnv for
+	// the full precedence order on key collisions.
+	//
+	// Deprecated: Use configMapRefs for new fields; singular forms will be
+	// removed in the v1 type.
 	// +optional
 	ConfigMapRef *corev1.LocalObjectReference `json:"configMapRef,omitempty"`
+	// secretRefs references Kubernetes Secrets whose keys and values are
+	// written as KEY=VALUE lines to $HERMES_HOME/.env. Entries are applied
+	// in order; later entries override earlier ones on key collision, and
+	// all Secrets override all ConfigMaps. See HermesDotEnv for the full
+	// precedence order.
+	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	SecretRefs []corev1.LocalObjectReference `json:"secretRefs,omitempty"`
+	// configMapRefs references Kubernetes ConfigMaps whose keys and values
+	// are written as KEY=VALUE lines to $HERMES_HOME/.env. Entries are
+	// applied in order; later entries override earlier ones on key
+	// collision. See HermesDotEnv for the full precedence order.
+	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	ConfigMapRefs []corev1.LocalObjectReference `json:"configMapRefs,omitempty"`
 }
 
 // HermesWorkspace defines files to seed in the agent workspace.
@@ -108,10 +141,11 @@ type HermesWorkspace struct {
 	// Paths may contain "/" for subdirectories (e.g. "skills/test/SKILL.md").
 	// +optional
 	Files map[string]string `json:"files,omitempty"`
-	// dotEnv generates a $HERMES_HOME/.env file from a Kubernetes Secret
-	// and/or ConfigMap. Each key in the referenced Secret/ConfigMap becomes a
-	// KEY=VALUE line in the file. If both are set, Secret keys override
-	// ConfigMap keys of the same name.
+	// dotEnv generates a $HERMES_HOME/.env file from Kubernetes Secrets
+	// and/or ConfigMaps. Each key in the referenced Secret/ConfigMap becomes a
+	// KEY=VALUE line in the file. Both singular (secretRef/configMapRef) and
+	// plural (secretRefs/configMapRefs) forms are supported and may be
+	// combined; see HermesDotEnv for the precedence order on key collisions.
 	// +optional
 	DotEnv *HermesDotEnv `json:"dotEnv,omitempty"`
 }

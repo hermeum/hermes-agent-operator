@@ -8,6 +8,7 @@ import (
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"maps"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -519,6 +520,8 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		}
 
 		if de != nil {
+			// ConfigMaps: singular first, then plural in order (last-wins on
+			// key collision; Secrets override ConfigMaps).
 			if de.ConfigMapRef != nil {
 				const dotenvConfigMapVolume = "hermes-dotenv-configmap"
 				const dotenvConfigMapMount = "/hermes-dotenv-configmap"
@@ -534,6 +537,22 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				mountPaths = append(mountPaths, dotenvConfigMapMount)
 			}
 
+			for i, ref := range de.ConfigMapRefs {
+				volName := fmt.Sprintf("hermes-dotenv-configmap-%d", i)
+				mountPath := "/hermes-dotenv-configmap-" + strconv.Itoa(i)
+				volumes = append(volumes, corev1.Volume{
+					Name: volName,
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{Name: ref.Name},
+						},
+					},
+				})
+				mounts = append(mounts, corev1.VolumeMount{Name: volName, MountPath: mountPath, ReadOnly: true})
+				mountPaths = append(mountPaths, mountPath)
+			}
+
+			// Secrets: singular first, then plural in order.
 			if de.SecretRef != nil {
 				const dotenvVolume = "hermes-dotenv-secret"
 				const dotenvMount = "/hermes-dotenv-secret"
@@ -547,6 +566,19 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				})
 				mounts = append(mounts, corev1.VolumeMount{Name: dotenvVolume, MountPath: dotenvMount, ReadOnly: true})
 				mountPaths = append(mountPaths, dotenvMount)
+			}
+
+			for i, ref := range de.SecretRefs {
+				volName := fmt.Sprintf("hermes-dotenv-secret-%d", i)
+				mountPath := "/hermes-dotenv-secret-" + strconv.Itoa(i)
+				volumes = append(volumes, corev1.Volume{
+					Name: volName,
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{SecretName: ref.Name},
+					},
+				})
+				mounts = append(mounts, corev1.VolumeMount{Name: volName, MountPath: mountPath, ReadOnly: true})
+				mountPaths = append(mountPaths, mountPath)
 			}
 		}
 
@@ -643,6 +675,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				}
 
 				if de != nil {
+					// ConfigMaps: singular first, then plural in order.
 					if de.ConfigMapRef != nil {
 						volName := "hermes-dotenv-configmap-profile-" + name
 						mountPath := "/hermes-dotenv-configmap-profile-" + name
@@ -660,6 +693,24 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 						mountPaths = append(mountPaths, mountPath)
 					}
 
+					for i, ref := range de.ConfigMapRefs {
+						volName := "hermes-dotenv-configmap-profile-" + name + "-" + strconv.Itoa(i)
+						mountPath := "/hermes-dotenv-configmap-profile-" + name + "-" + strconv.Itoa(i)
+						volumes = append(volumes, corev1.Volume{
+							Name: volName,
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{Name: ref.Name},
+								},
+							},
+						})
+						ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
+							Name: volName, MountPath: mountPath, ReadOnly: true,
+						})
+						mountPaths = append(mountPaths, mountPath)
+					}
+
+					// Secrets: singular first, then plural in order.
 					if de.SecretRef != nil {
 						volName := "hermes-dotenv-secret-profile-" + name
 						mountPath := "/hermes-dotenv-secret-profile-" + name
@@ -667,6 +718,21 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 							Name: volName,
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{SecretName: de.SecretRef.Name},
+							},
+						})
+						ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
+							Name: volName, MountPath: mountPath, ReadOnly: true,
+						})
+						mountPaths = append(mountPaths, mountPath)
+					}
+
+					for i, ref := range de.SecretRefs {
+						volName := "hermes-dotenv-secret-profile-" + name + "-" + strconv.Itoa(i)
+						mountPath := "/hermes-dotenv-secret-profile-" + name + "-" + strconv.Itoa(i)
+						volumes = append(volumes, corev1.Volume{
+							Name: volName,
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{SecretName: ref.Name},
 							},
 						})
 						ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{

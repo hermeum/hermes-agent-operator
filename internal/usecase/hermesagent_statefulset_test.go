@@ -959,3 +959,164 @@ func TestOperatorDotEnvUserDotEnvAlone(t *testing.T) {
 		t.Error("expected init-dotenv when user dotEnv is set")
 	}
 }
+
+func TestDotEnvPluralConfigMapRefs(t *testing.T) {
+	// Plural configMapRefs alone mounts N volumes in order.
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Workspace: &agentsv1alpha1.HermesWorkspace{
+			DotEnv: &agentsv1alpha1.HermesDotEnv{
+				ConfigMapRefs: []corev1.LocalObjectReference{
+					{Name: "shared-config"},
+					{Name: "ai-config"},
+				},
+			},
+		},
+	}
+	sts := buildStatefulSet(ha)
+	ic := findInitContainer(sts, "init-dotenv")
+	if ic == nil {
+		t.Fatal("expected init-dotenv")
+	}
+	script := ic.Args[0]
+	// Both plural configmap mount paths must be present, in order.
+	idx0 := strings.Index(script, "/hermes-dotenv-configmap-0")
+	idx1 := strings.Index(script, "/hermes-dotenv-configmap-1")
+	if idx0 < 0 || idx1 < 0 {
+		t.Fatalf("expected plural configmap mount paths in script, got:\n%s", script)
+	}
+	if idx0 >= idx1 {
+		t.Errorf("expected configmap-0 before configmap-1; got %d, %d in:\n%s", idx0, idx1, script)
+	}
+	// Two plural configmap volumes expected.
+	count := 0
+	for _, v := range sts.Spec.Template.Spec.Volumes {
+		if strings.HasPrefix(v.Name, "hermes-dotenv-configmap-") {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("expected 2 plural configmap volumes, got %d", count)
+	}
+}
+
+func TestDotEnvPluralSecretRefs(t *testing.T) {
+	// Plural secretRefs alone mounts N volumes in order.
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Workspace: &agentsv1alpha1.HermesWorkspace{
+			DotEnv: &agentsv1alpha1.HermesDotEnv{
+				SecretRefs: []corev1.LocalObjectReference{
+					{Name: "ai-providers"},
+					{Name: "external-apis"},
+				},
+			},
+		},
+	}
+	sts := buildStatefulSet(ha)
+	ic := findInitContainer(sts, "init-dotenv")
+	if ic == nil {
+		t.Fatal("expected init-dotenv")
+	}
+	script := ic.Args[0]
+	idx0 := strings.Index(script, "/hermes-dotenv-secret-0")
+	idx1 := strings.Index(script, "/hermes-dotenv-secret-1")
+	if idx0 < 0 || idx1 < 0 {
+		t.Fatalf("expected plural secret mount paths in script, got:\n%s", script)
+	}
+	if idx0 >= idx1 {
+		t.Errorf("expected secret-0 before secret-1; got %d, %d in:\n%s", idx0, idx1, script)
+	}
+	count := 0
+	for _, v := range sts.Spec.Template.Spec.Volumes {
+		if strings.HasPrefix(v.Name, "hermes-dotenv-secret-") {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("expected 2 plural secret volumes, got %d", count)
+	}
+}
+
+func TestDotEnvMixedSingularAndPluralOrder(t *testing.T) {
+	// Singular first, then plural in order; ConfigMaps before Secrets.
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Workspace: &agentsv1alpha1.HermesWorkspace{
+			DotEnv: &agentsv1alpha1.HermesDotEnv{
+				ConfigMapRef:  &corev1.LocalObjectReference{Name: "legacy-config"},
+				ConfigMapRefs: []corev1.LocalObjectReference{{Name: "shared-config"}},
+				SecretRef:     &corev1.LocalObjectReference{Name: "legacy-secret"},
+				SecretRefs:    []corev1.LocalObjectReference{{Name: "ai-providers"}},
+			},
+		},
+	}
+	sts := buildStatefulSet(ha)
+	ic := findInitContainer(sts, "init-dotenv")
+	if ic == nil {
+		t.Fatal("expected init-dotenv")
+	}
+	script := ic.Args[0]
+	// Expected order: configmap (singular) < configmap-0 < secret (singular) < secret-0.
+	cmIdx := strings.Index(script, "/hermes-dotenv-configmap\"")
+	cm0Idx := strings.Index(script, "/hermes-dotenv-configmap-0")
+	secIdx := strings.Index(script, "/hermes-dotenv-secret\"")
+	sec0Idx := strings.Index(script, "/hermes-dotenv-secret-0")
+	for _, idx := range []int{cmIdx, cm0Idx, secIdx, sec0Idx} {
+		if idx < 0 {
+			t.Fatalf("missing expected mount path in script:\n%s", script)
+		}
+	}
+	if !(cmIdx < cm0Idx && cm0Idx < secIdx && secIdx < sec0Idx) {
+		t.Errorf("expected order cm < cm-0 < secret < secret-0; got %d %d %d %d in:\n%s",
+			cmIdx, cm0Idx, secIdx, sec0Idx, script)
+	}
+	// Total 4 dotenv volumes (1 singular cm + 1 plural cm + 1 singular secret + 1 plural secret).
+	count := 0
+	for _, v := range sts.Spec.Template.Spec.Volumes {
+		if strings.HasPrefix(v.Name, "hermes-dotenv-") {
+			count++
+		}
+	}
+	if count != 4 {
+		t.Errorf("expected 4 dotenv volumes, got %d", count)
+	}
+}
+
+func TestDotEnvPluralRefsPerProfile(t *testing.T) {
+	// Per-profile plural refs mount with profile-scoped volume names.
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Profiles: map[string]agentsv1alpha1.HermesProfile{
+			"writer": {
+				Workspace: &agentsv1alpha1.HermesWorkspace{
+					DotEnv: &agentsv1alpha1.HermesDotEnv{
+						ConfigMapRefs: []corev1.LocalObjectReference{{Name: "writer-config"}},
+						SecretRefs:    []corev1.LocalObjectReference{{Name: "writer-secret"}},
+					},
+				},
+			},
+		},
+	}
+	sts := buildStatefulSet(ha)
+	ic := findInitContainer(sts, "init-profiles-dotenv")
+	if ic == nil {
+		t.Fatal("expected init-profiles-dotenv")
+	}
+	cmFound := false
+	secFound := false
+	for _, vm := range ic.VolumeMounts {
+		if vm.Name == "hermes-dotenv-configmap-profile-writer-0" {
+			cmFound = true
+		}
+		if vm.Name == "hermes-dotenv-secret-profile-writer-0" {
+			secFound = true
+		}
+	}
+	if !cmFound {
+		t.Error("expected per-profile plural configmap volume mount")
+	}
+	if !secFound {
+		t.Error("expected per-profile plural secret volume mount")
+	}
+}
