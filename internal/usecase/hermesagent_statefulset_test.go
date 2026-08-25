@@ -1067,7 +1067,7 @@ func TestDotEnvMixedSingularAndPluralOrder(t *testing.T) {
 			t.Fatalf("missing expected mount path in script:\n%s", script)
 		}
 	}
-	if !(cmIdx < cm0Idx && cm0Idx < secIdx && secIdx < sec0Idx) {
+	if cmIdx >= cm0Idx || cm0Idx >= secIdx || secIdx >= sec0Idx {
 		t.Errorf("expected order cm < cm-0 < secret < secret-0; got %d %d %d %d in:\n%s",
 			cmIdx, cm0Idx, secIdx, sec0Idx, script)
 	}
