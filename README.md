@@ -615,6 +615,28 @@ podAnnotations:                      # optional
 ```
 
 
+## Heartbeat
+
+The operator sends an **anonymous heartbeat** via [PostHog](https://posthog.com) so we can count how many operator installations are running. Prometheus telemetry (reconciliation metrics) stays entirely in your cluster; the heartbeat is the only call home, and it can be disabled.
+
+What is collected (and nothing else):
+
+- An **anonymous deployment ID** — a random UUID generated each time a controller starts. It is not persisted and contains no user, cluster, or host information. Every running controller sends its own heartbeat, so the distinct number of deployment IDs in a recent window equals the number of running installations.
+- The **operator version**.
+
+What is **not** collected: agent names, namespaces, configuration, workspace contents, hostnames, IP addresses, or any other user-identifiable data.
+
+To disable the heartbeat, set `manager.heartbeat.enabled=false` when installing:
+
+```sh
+helm upgrade hermes-agent-operator oci://ghcr.io/hermeum/charts/hermes-agent-operator \
+  --install --namespace hermes-agent --create-namespace \
+  --set manager.heartbeat.enabled=false
+```
+
+or run the manager with `--heartbeat-disabled`.
+
+
 ## FAQ
 
 **Q: How are things self-installed by Hermes managed via the custom resource?**

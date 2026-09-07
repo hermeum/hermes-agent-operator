@@ -21,6 +21,8 @@ import (
 	"flag"
 	"os"
 
+	"github.com/google/uuid"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -38,12 +40,16 @@ import (
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"hermeum/hermes-agent-operator/internal/controller"
 	"hermeum/hermes-agent-operator/internal/infras"
+	"hermeum/hermes-agent-operator/internal/usecase"
 	// +kubebuilder:scaffold:imports
 )
 
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+	// version is the operator version reported in analytics events. It is
+	// injected at build time via -ldflags.
+	version = "dev"
 )
 
 func init() {
@@ -80,6 +86,9 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	var heartbeatDisabled bool
+	flag.BoolVar(&heartbeatDisabled, "heartbeat-disabled", false,
+		"If set, the anonymous deployment heartbeat (PostHog) is disabled.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -181,6 +190,19 @@ func main() {
 
 	tel := infras.NewPrometheusTelemetry()
 
+	sender := usecase.HeartbeatSender(usecase.NoopHeartbeat{})
+	if !heartbeatDisabled {
+		ph, err := infras.NewPostHogHeartbeat(uuid.NewString())
+		if err != nil {
+			setupLog.Error(err, "Failed to create PostHog heartbeat, heartbeat disabled")
+		} else {
+			sender = ph
+		}
+	} else {
+		setupLog.Info("Anonymous deployment heartbeat disabled")
+	}
+	heartbeat := usecase.NewHeartbeatReporter(sender, version)
+
 	if err := (&controller.HermesAgentReconciler{
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
@@ -205,4 +227,5 @@ func main() {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}
+	heartbeat.Close()
 }

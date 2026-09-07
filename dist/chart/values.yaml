@@ -27,6 +27,13 @@ manager:
   args:
     - --leader-elect
 
+  ## Anonymous deployment heartbeat (PostHog) used to count running operator
+  ## installs. Each run reports an anonymous random deployment ID and the
+  ## operator version. Disable by setting enabled: false.
+  ##
+  heartbeat:
+    enabled: true
+
   ## Image pull secrets
   ##
   # imagePullSecrets:
