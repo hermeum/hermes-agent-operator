@@ -3046,6 +3046,9 @@ spec:
                                     configMapRef references a Kubernetes ConfigMap whose keys and values are
                                     written as KEY=VALUE lines to $HERMES_HOME/.env. See HermesDotEnv for
                                     the full precedence order on key collisions.
+
+                                    Deprecated: Use configMapRefs for new fields; singular forms will be
+                                    removed in the v1 type.
                                   properties:
                                     name:
                                       default: ""
@@ -3088,6 +3091,9 @@ spec:
                                     written as KEY=VALUE lines to $HERMES_HOME/.env. Secrets override
                                     ConfigMap keys of the same name. See HermesDotEnv for the full
                                     precedence order on key collisions.
+
+                                    Deprecated: Use secretRefs for new fields; singular forms will be
+                                    removed in the v1 type.
                                   properties:
                                     name:
                                       default: ""
@@ -3142,7 +3148,9 @@ spec:
                       type: object
                     description: |-
                       profiles is a map of named Hermes profiles to create and configure.
-                      Each profile is set up via dedicated init containers after the default profile.
+                      Each profile is set up via its own init-profile-<name> init container,
+                      which runs after the consolidated init-hermes container that configures
+                      the default profile.
                     type: object
                   resources:
                     description: resources overrides the resource requests and limits
@@ -3277,6 +3285,9 @@ spec:
                               configMapRef references a Kubernetes ConfigMap whose keys and values are
                               written as KEY=VALUE lines to $HERMES_HOME/.env. See HermesDotEnv for
                               the full precedence order on key collisions.
+
+                              Deprecated: Use configMapRefs for new fields; singular forms will be
+                              removed in the v1 type.
                             properties:
                               name:
                                 default: ""
@@ -3319,6 +3330,9 @@ spec:
                               written as KEY=VALUE lines to $HERMES_HOME/.env. Secrets override
                               ConfigMap keys of the same name. See HermesDotEnv for the full
                               precedence order on key collisions.
+
+                              Deprecated: Use secretRefs for new fields; singular forms will be
+                              removed in the v1 type.
                             properties:
                               name:
                                 default: ""
@@ -3374,7 +3388,7 @@ spec:
               initContainers:
                 description: |-
                   InitContainers is a list of additional init containers to run before the main container.
-                  They run after the operator-managed init-config and init-skills containers.
+                  They run after the operator-managed init-hermes and init-profile-<name> containers.
                 items:
                   description: A single application container that you want to run
                     within a pod.

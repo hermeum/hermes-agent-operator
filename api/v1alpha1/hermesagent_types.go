@@ -638,7 +638,9 @@ type Hermes struct {
 	// +kubebuilder:validation:MaxItems=10
 	InitScripts []HermesInitScript `json:"initScripts,omitempty"`
 	// profiles is a map of named Hermes profiles to create and configure.
-	// Each profile is set up via dedicated init containers after the default profile.
+	// Each profile is set up via its own init-profile-<name> init container,
+	// which runs after the consolidated init-hermes container that configures
+	// the default profile.
 	// +optional
 	Profiles map[string]HermesProfile `json:"profiles,omitempty"`
 }
@@ -1326,7 +1328,7 @@ type HermesAgentSpec struct {
 	Networking *Networking `json:"networking,omitempty"`
 
 	// InitContainers is a list of additional init containers to run before the main container.
-	// They run after the operator-managed init-config and init-skills containers.
+	// They run after the operator-managed init-hermes and init-profile-<name> containers.
 	// +kubebuilder:validation:MaxItems=10
 	// +optional
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`

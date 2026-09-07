@@ -6,13 +6,20 @@ import (
 
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const testTrue = "true"
+const (
+	testTrue = "true"
+	// consolidatedInitContainerName is the name of the operator-managed init
+	// container that configures the default profile.
+	consolidatedInitContainerName = "init-hermes"
+)
 
 func minimalHA() *agentsv1alpha1.HermesAgent {
 	return &agentsv1alpha1.HermesAgent{
@@ -614,7 +621,7 @@ func hasVolumeMount(mounts []corev1.VolumeMount, name string) bool {
 }
 
 func TestOperatorDotEnvAPIServer(t *testing.T) {
-	t.Run("enabled: ConfigMap has operator keys, init-dotenv mounts them", func(t *testing.T) {
+	t.Run("enabled: ConfigMap has operator keys, init-hermes mounts them", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
 			Config: &agentsv1alpha1.HermesConfig{
@@ -639,17 +646,17 @@ func TestOperatorDotEnvAPIServer(t *testing.T) {
 			t.Errorf("expected API_SERVER_HOST=0.0.0.0, got %q", cm.Data["API_SERVER_HOST"])
 		}
 
-		// init-dotenv must exist and mount the operator ConfigMap and Secret.
+		// init-hermes must exist and mount the operator ConfigMap and Secret.
 		sts := buildStatefulSet(ha)
-		ic := findInitContainer(sts, "init-dotenv")
+		ic := findInitContainer(sts, consolidatedInitContainerName)
 		if ic == nil {
-			t.Fatal("expected init-dotenv init container")
+			t.Fatal("expected init-hermes init container")
 		}
 		if !hasVolumeMount(ic.VolumeMounts, "hermes-operator-dotenv-configmap") {
-			t.Error("expected hermes-operator-dotenv-configmap volume mount on init-dotenv")
+			t.Error("expected hermes-operator-dotenv-configmap volume mount on init-hermes")
 		}
 		if !hasVolumeMount(ic.VolumeMounts, "hermes-operator-dotenv-secret") {
-			t.Error("expected hermes-operator-dotenv-secret volume mount on init-dotenv")
+			t.Error("expected hermes-operator-dotenv-secret volume mount on init-hermes")
 		}
 		// The script must iterate the operator mount paths.
 		if !strings.Contains(ic.Args[0], "/hermes-operator-dotenv-configmap") {
@@ -707,7 +714,7 @@ func TestOperatorDotEnvAPIServer(t *testing.T) {
 		}
 	})
 
-	t.Run("disabled: no operator keys in ConfigMap, no init-dotenv", func(t *testing.T) {
+	t.Run("disabled: no operator keys in ConfigMap, no dotenv section", func(t *testing.T) {
 		ha := minimalHA()
 		cm, err := buildHermesConfigMap(ha)
 		if err != nil {
@@ -719,8 +726,12 @@ func TestOperatorDotEnvAPIServer(t *testing.T) {
 			}
 		}
 		sts := buildStatefulSet(ha)
-		if ic := findInitContainer(sts, "init-dotenv"); ic != nil {
-			t.Errorf("expected no init-dotenv when nothing enabled, got: %v", ic)
+		ic := findInitContainer(sts, consolidatedInitContainerName)
+		if ic == nil {
+			t.Fatal("expected init-hermes")
+		}
+		if strings.Contains(ic.Args[0], "hermes config env-path") {
+			t.Errorf("expected no dotenv section in init-hermes when nothing enabled, got:\n%s", ic.Args[0])
 		}
 	})
 }
@@ -745,12 +756,12 @@ func TestOperatorDotEnvWebhook(t *testing.T) {
 	}
 
 	sts := buildStatefulSet(ha)
-	ic := findInitContainer(sts, "init-dotenv")
+	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
-		t.Fatal("expected init-dotenv init container")
+		t.Fatal("expected init-hermes init container")
 	}
 	if !hasVolumeMount(ic.VolumeMounts, "hermes-operator-dotenv-secret") {
-		t.Error("expected hermes-operator-dotenv-secret volume mount on init-dotenv")
+		t.Error("expected hermes-operator-dotenv-secret volume mount on init-hermes")
 	}
 
 	// WEBHOOK_* env vars are injected via .env, not container env.
@@ -766,7 +777,7 @@ func TestOperatorDotEnvWebhook(t *testing.T) {
 }
 
 func TestOperatorDotEnvSidecars(t *testing.T) {
-	t.Run("searxng: SEARXNG_URL in ConfigMap and init-dotenv", func(t *testing.T) {
+	t.Run("searxng: SEARXNG_URL in ConfigMap and init-hermes", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true}
 
@@ -779,9 +790,9 @@ func TestOperatorDotEnvSidecars(t *testing.T) {
 		}
 
 		sts := buildStatefulSet(ha)
-		ic := findInitContainer(sts, "init-dotenv")
+		ic := findInitContainer(sts, consolidatedInitContainerName)
 		if ic == nil {
-			t.Fatal("expected init-dotenv init container")
+			t.Fatal("expected init-hermes init container")
 		}
 		if !strings.Contains(ic.Args[0], "/hermes-operator-dotenv-configmap") {
 			t.Errorf("expected operator configmap mount path in script, got:\n%s", ic.Args[0])
@@ -796,7 +807,7 @@ func TestOperatorDotEnvSidecars(t *testing.T) {
 		}
 	})
 
-	t.Run("camofox: CAMOFOX_URL in ConfigMap and init-dotenv", func(t *testing.T) {
+	t.Run("camofox: CAMOFOX_URL in ConfigMap and init-hermes", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.Camofox = &agentsv1alpha1.Camofox{Enabled: true}
 
@@ -809,9 +820,9 @@ func TestOperatorDotEnvSidecars(t *testing.T) {
 		}
 
 		sts := buildStatefulSet(ha)
-		ic := findInitContainer(sts, "init-dotenv")
+		ic := findInitContainer(sts, consolidatedInitContainerName)
 		if ic == nil {
-			t.Fatal("expected init-dotenv init container")
+			t.Fatal("expected init-hermes init container")
 		}
 		if !strings.Contains(ic.Args[0], "/hermes-operator-dotenv-configmap") {
 			t.Errorf("expected operator configmap mount path in script, got:\n%s", ic.Args[0])
@@ -845,42 +856,47 @@ func TestOperatorDotEnvMultiplex(t *testing.T) {
 		sts := buildStatefulSet(ha)
 
 		// Default profile: operator ConfigMap + Secret mounted.
-		defIC := findInitContainer(sts, "init-dotenv")
+		defIC := findInitContainer(sts, consolidatedInitContainerName)
 		if defIC == nil {
-			t.Fatal("expected init-dotenv")
+			t.Fatal("expected init-hermes")
 		}
 		if !hasVolumeMount(defIC.VolumeMounts, "hermes-operator-dotenv-configmap") {
-			t.Error("expected operator configmap mount on default init-dotenv")
+			t.Error("expected operator configmap mount on default init-hermes")
 		}
 		if !hasVolumeMount(defIC.VolumeMounts, "hermes-operator-dotenv-secret") {
-			t.Error("expected operator secret mount on default init-dotenv")
+			t.Error("expected operator secret mount on default init-hermes")
 		}
 
 		// Named profiles: only sidecar URLs, no API_SERVER_*/WEBHOOK_*.
-		profIC := findInitContainer(sts, "init-profiles-dotenv")
-		if profIC == nil {
-			t.Fatal("expected init-profiles-dotenv")
+		coderIC := findInitContainer(sts, "init-profile-coder")
+		if coderIC == nil {
+			t.Fatal("expected init-profile-coder")
 		}
-		profScript := profIC.Args[0]
-		if !strings.Contains(profScript, "hermes-operator-dotenv-profile-coder") {
-			t.Errorf("expected operator dotenv mount for coder profile, got:\n%s", profScript)
-		}
-		if !strings.Contains(profScript, "hermes-operator-dotenv-profile-writer") {
-			t.Errorf("expected operator dotenv mount for writer profile, got:\n%s", profScript)
+		coderScript := coderIC.Args[0]
+		if !strings.Contains(coderScript, "hermes-operator-dotenv-profile-coder") {
+			t.Errorf("expected operator dotenv mount for coder profile, got:\n%s", coderScript)
 		}
 		// Must NOT have API_SERVER or WEBHOOK in named-profile dotenv.
-		if strings.Contains(profScript, "API_SERVER") {
-			t.Errorf("API_SERVER_* must not appear in named-profile dotenv, got:\n%s", profScript)
+		if strings.Contains(coderScript, "API_SERVER") {
+			t.Errorf("API_SERVER_* must not appear in named-profile dotenv, got:\n%s", coderScript)
 		}
-		if strings.Contains(profScript, "WEBHOOK") {
-			t.Errorf("WEBHOOK_* must not appear in named-profile dotenv, got:\n%s", profScript)
+		if strings.Contains(coderScript, "WEBHOOK") {
+			t.Errorf("WEBHOOK_* must not appear in named-profile dotenv, got:\n%s", coderScript)
 		}
-		// Each named profile gets its own .env block.
-		if strings.Count(profScript, `hermes config env-path -p "coder"`) != 1 {
-			t.Errorf("expected one coder dotenv block, got:\n%s", profScript)
+		// Each named profile gets its own .env block and its own container.
+		if strings.Count(coderScript, `hermes config env-path -p "coder"`) != 1 {
+			t.Errorf("expected one coder dotenv block, got:\n%s", coderScript)
 		}
-		if strings.Count(profScript, `hermes config env-path -p "writer"`) != 1 {
-			t.Errorf("expected one writer dotenv block, got:\n%s", profScript)
+		writerIC := findInitContainer(sts, "init-profile-writer")
+		if writerIC == nil {
+			t.Fatal("expected init-profile-writer")
+		}
+		writerScript := writerIC.Args[0]
+		if !strings.Contains(writerScript, "hermes-operator-dotenv-profile-writer") {
+			t.Errorf("expected operator dotenv mount for writer profile, got:\n%s", writerScript)
+		}
+		if strings.Contains(writerScript, "hermes-operator-dotenv-profile-coder") {
+			t.Errorf("writer container must not mount coder dotenv volume, got:\n%s", writerScript)
 		}
 	})
 }
@@ -899,9 +915,9 @@ func TestOperatorDotEnvCollision(t *testing.T) {
 		},
 	}
 	sts := buildStatefulSet(ha)
-	ic := findInitContainer(sts, "init-dotenv")
+	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
-		t.Fatal("expected init-dotenv")
+		t.Fatal("expected init-hermes")
 	}
 	script := ic.Args[0]
 	// Operator mount path must come before user mount path.
@@ -924,28 +940,27 @@ func TestOperatorDotEnvOrdering(t *testing.T) {
 		},
 	}
 	sts := buildStatefulSet(ha)
-	var workspaceIdx, dotenvIdx = -1, -1
-	for i, c := range sts.Spec.Template.Spec.InitContainers {
-		switch c.Name {
-		case "init-workspace":
-			workspaceIdx = i
-		case "init-dotenv":
-			dotenvIdx = i
-		}
+	ic := findInitContainer(sts, consolidatedInitContainerName)
+	if ic == nil {
+		t.Fatal("expected init-hermes")
 	}
+	script := ic.Args[0]
+	// workspace step must run before the dotenv step inside the consolidated script.
+	workspaceIdx := strings.Index(script, "profile.default.workspace.")
+	dotenvIdx := strings.Index(script, `hermes config env-path -p "default"`)
 	if workspaceIdx < 0 {
-		t.Fatal("init-workspace not found")
+		t.Fatal("workspace step not found in init-hermes script")
 	}
 	if dotenvIdx < 0 {
-		t.Fatal("init-dotenv not found")
+		t.Fatal("dotenv step not found in init-hermes script")
 	}
 	if dotenvIdx <= workspaceIdx {
-		t.Errorf("expected init-dotenv (idx %d) after init-workspace (idx %d)", dotenvIdx, workspaceIdx)
+		t.Errorf("expected dotenv step after workspace step; workspace at %d, dotenv at %d", workspaceIdx, dotenvIdx)
 	}
 }
 
 func TestOperatorDotEnvUserDotEnvAlone(t *testing.T) {
-	// User dotEnv without any operator features still emits init-dotenv.
+	// User dotEnv without any operator features still emits a dotenv section in init-hermes.
 	ha := minimalHA()
 	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
 		Workspace: &agentsv1alpha1.HermesWorkspace{
@@ -955,8 +970,8 @@ func TestOperatorDotEnvUserDotEnvAlone(t *testing.T) {
 		},
 	}
 	sts := buildStatefulSet(ha)
-	if findInitContainer(sts, "init-dotenv") == nil {
-		t.Error("expected init-dotenv when user dotEnv is set")
+	if findInitContainer(sts, consolidatedInitContainerName) == nil {
+		t.Error("expected dotenv section in init-hermes when user dotEnv is set")
 	}
 }
 
@@ -974,9 +989,9 @@ func TestDotEnvPluralConfigMapRefs(t *testing.T) {
 		},
 	}
 	sts := buildStatefulSet(ha)
-	ic := findInitContainer(sts, "init-dotenv")
+	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
-		t.Fatal("expected init-dotenv")
+		t.Fatal("expected init-hermes")
 	}
 	script := ic.Args[0]
 	// Both plural configmap mount paths must be present, in order.
@@ -1014,9 +1029,9 @@ func TestDotEnvPluralSecretRefs(t *testing.T) {
 		},
 	}
 	sts := buildStatefulSet(ha)
-	ic := findInitContainer(sts, "init-dotenv")
+	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
-		t.Fatal("expected init-dotenv")
+		t.Fatal("expected init-hermes")
 	}
 	script := ic.Args[0]
 	idx0 := strings.Index(script, "/hermes-dotenv-secret-0")
@@ -1052,9 +1067,9 @@ func TestDotEnvMixedSingularAndPluralOrder(t *testing.T) {
 		},
 	}
 	sts := buildStatefulSet(ha)
-	ic := findInitContainer(sts, "init-dotenv")
+	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
-		t.Fatal("expected init-dotenv")
+		t.Fatal("expected init-hermes")
 	}
 	script := ic.Args[0]
 	// Expected order: configmap (singular) < configmap-0 < secret (singular) < secret-0.
@@ -1099,9 +1114,9 @@ func TestDotEnvPluralRefsPerProfile(t *testing.T) {
 		},
 	}
 	sts := buildStatefulSet(ha)
-	ic := findInitContainer(sts, "init-profiles-dotenv")
+	ic := findInitContainer(sts, "init-profile-writer")
 	if ic == nil {
-		t.Fatal("expected init-profiles-dotenv")
+		t.Fatal("expected init-profile-writer")
 	}
 	cmFound := false
 	secFound := false
@@ -1118,5 +1133,209 @@ func TestDotEnvPluralRefsPerProfile(t *testing.T) {
 	}
 	if !secFound {
 		t.Error("expected per-profile plural secret volume mount")
+	}
+}
+
+func TestConsolidatedInitContainers(t *testing.T) {
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Config: &agentsv1alpha1.HermesConfig{
+			Raw: &apiextensionsv1.JSON{Raw: []byte(`{"foo":"bar"}`)},
+		},
+		Profiles: map[string]agentsv1alpha1.HermesProfile{
+			"writer": {Clone: true},
+			"coder":  {},
+		},
+	}
+	ha.Spec.Hermes.Plugins = []agentsv1alpha1.HermesPlugin{{Identifier: "owner/repo"}}
+	ha.Spec.Hermes.Skills = []agentsv1alpha1.HermesSkill{{Identifier: "gh-aw/system-commands"}}
+	ha.Spec.Hermes.Packages = &agentsv1alpha1.HermesPackages{
+		Pip: &agentsv1alpha1.HermesPipPackages{Install: []string{"requests"}},
+		Npm: &agentsv1alpha1.HermesNpmPackages{Install: []string{"typescript"}},
+	}
+	ha.Spec.Hermes.Bundles = []agentsv1alpha1.HermesBundle{{Name: "ops"}}
+	ha.Spec.Hermes.Crons = []agentsv1alpha1.HermesCron{{Name: "daily", Schedule: "1h"}}
+	ha.Spec.Hermes.Workspace = &agentsv1alpha1.HermesWorkspace{
+		DotEnv: &agentsv1alpha1.HermesDotEnv{
+			SecretRef: &corev1.LocalObjectReference{Name: "my-env"},
+		},
+	}
+
+	sts := buildStatefulSet(ha)
+
+	// Exactly one consolidated default-profile init container.
+	var initHermes []*corev1.Container
+	var profileInits []*corev1.Container
+	for i := range sts.Spec.Template.Spec.InitContainers {
+		c := &sts.Spec.Template.Spec.InitContainers[i]
+		switch {
+		case c.Name == consolidatedInitContainerName:
+			initHermes = append(initHermes, c)
+		case strings.HasPrefix(c.Name, "init-profile-"):
+			profileInits = append(profileInits, c)
+		}
+	}
+	if len(initHermes) != 1 {
+		t.Fatalf("expected exactly one init-hermes, got %d", len(initHermes))
+	}
+	script := initHermes[0].Args[0]
+
+	// All default-profile steps present in the consolidated script, in order.
+	type step struct {
+		marker string
+		desc   string
+	}
+	steps := []step{
+		{`cp "/bootstrap/profile.default.config.yaml"`, "config"},
+		{"profile.default.workspace.", "workspace"},
+		{`hermes config env-path -p "default"`, "dotenv"},
+		{".python-packages", "python packages"},
+		{".npm-packages", "npm packages"},
+		{`hermes plugins install -p "default"`, "plugins"},
+		{`hermes skills install -p "default"`, "skills"},
+		{`hermes bundles create -p "default"`, "bundles"},
+		{`hermes cron create -p "default"`, "crons"},
+		{"profiles-manifest", "profiles cleanup"},
+	}
+	last := -1
+	for _, st := range steps {
+		idx := strings.Index(script, st.marker)
+		if idx < 0 {
+			t.Errorf("expected %s step in init-hermes script, got:\n%s", st.desc, script)
+			continue
+		}
+		if idx < last {
+			t.Errorf("expected %s step after previous step; %d < %d", st.desc, idx, last)
+		}
+		last = idx
+	}
+
+	// Steps run in subshells so early exit cannot abort later steps.
+	if strings.Count(script, "\n(\n") != len(steps) {
+		t.Errorf("expected %d subshells in init-hermes script, got %d:\n%s", len(steps), strings.Count(script, "\n(\n"), script)
+	}
+
+	// One init container per named profile, sorted alphabetically.
+	if len(profileInits) != 2 {
+		t.Fatalf("expected 2 per-profile init containers, got %d: %v", len(profileInits), profileInits)
+	}
+	if profileInits[0].Name != "init-profile-coder" || profileInits[1].Name != "init-profile-writer" {
+		t.Errorf("expected sorted profile containers [init-profile-coder init-profile-writer], got [%s %s]",
+			profileInits[0].Name, profileInits[1].Name)
+	}
+
+	// Each profile container creates its profile and configures it.
+	coderScript := profileInits[0].Args[0]
+	if !strings.Contains(coderScript, `hermes profile create "coder" --no-alias`) {
+		t.Errorf("expected profile creation in coder container, got:\n%s", coderScript)
+	}
+	if strings.Contains(coderScript, "--clone") {
+		t.Errorf("coder profile has clone=false, got:\n%s", coderScript)
+	}
+	if !strings.Contains(coderScript, `hermes config path -p "coder"`) {
+		t.Errorf("expected workspace setup in coder container, got:\n%s", coderScript)
+	}
+	writerScript := profileInits[1].Args[0]
+	if !strings.Contains(writerScript, `hermes profile create "writer" --no-alias --clone`) {
+		t.Errorf("expected clone in writer container, got:\n%s", writerScript)
+	}
+
+	// Profile containers run after init-hermes.
+	initHermesIdx := -1
+	for i, c := range sts.Spec.Template.Spec.InitContainers {
+		if c.Name == consolidatedInitContainerName {
+			initHermesIdx = i
+		}
+	}
+	for _, c := range profileInits {
+		found := -1
+		for i, cc := range sts.Spec.Template.Spec.InitContainers {
+			if cc.Name == c.Name {
+				found = i
+			}
+		}
+		if found <= initHermesIdx {
+			t.Errorf("expected %s after init-hermes (idx %d), got idx %d", c.Name, initHermesIdx, found)
+		}
+	}
+
+	// User initScripts run after all operator-managed init containers.
+	ha.Spec.Hermes.InitScripts = []agentsv1alpha1.HermesInitScript{{Name: "extra", Script: "echo hi"}}
+	sts2 := buildStatefulSet(ha)
+	extraIdx, lastManaged := -1, -1
+	for i, c := range sts2.Spec.Template.Spec.InitContainers {
+		if c.Name == "extra" {
+			extraIdx = i
+		}
+		if c.Name == consolidatedInitContainerName || strings.HasPrefix(c.Name, "init-profile-") {
+			lastManaged = i
+		}
+	}
+	if extraIdx < 0 || extraIdx <= lastManaged {
+		t.Errorf("expected user initScript after managed init containers; extra idx %d, last managed idx %d", extraIdx, lastManaged)
+	}
+}
+
+func TestConsolidatedInitContainersMinimal(t *testing.T) {
+	// No profiles: only init-hermes, no per-profile containers; no dotenv section.
+	ha := minimalHA()
+	sts := buildStatefulSet(ha)
+	if findInitContainer(sts, consolidatedInitContainerName) == nil {
+		t.Fatal("expected init-hermes")
+	}
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
+		if strings.HasPrefix(c.Name, "init-profile-") {
+			t.Errorf("unexpected per-profile container without profiles: %s", c.Name)
+		}
+	}
+	if strings.Contains(findInitContainer(sts, consolidatedInitContainerName).Args[0], "hermes config env-path") {
+		t.Error("expected no dotenv section with empty spec")
+	}
+	if strings.Contains(findInitContainer(sts, consolidatedInitContainerName).Args[0], "profiles-manifest") {
+		t.Error("expected no profiles cleanup without profiles")
+	}
+}
+
+func TestBuildProfilesCleanupScript(t *testing.T) {
+	got := buildProfilesCleanupScript(map[string]agentsv1alpha1.HermesProfile{
+		"a": {},
+		"b": {},
+	})
+	if !strings.Contains(got, `hermes profile delete "$pname" || true`) {
+		t.Errorf("expected stale profile deletion, got:\n%s", got)
+	}
+	if strings.Contains(got, "profile create") {
+		t.Errorf("cleanup script must not create profiles, got:\n%s", got)
+	}
+	if !strings.Contains(got, "a\nb") {
+		t.Errorf("expected manifest with sorted names a\\nb, got:\n%s", got)
+	}
+}
+
+func TestBuildProfileCreationScript(t *testing.T) {
+	got := buildProfileCreationScript("coder", true)
+	if !strings.Contains(got, `hermes profile create "coder" --no-alias --clone || true`) {
+		t.Errorf("expected create with clone, got:\n%s", got)
+	}
+	got2 := buildProfileCreationScript("writer", false)
+	if !strings.Contains(got2, `hermes profile create "writer" --no-alias || true`) {
+		t.Errorf("expected create without clone, got:\n%s", got2)
+	}
+	if strings.Contains(got2, "--clone") {
+		t.Errorf("unexpected --clone flag, got:\n%s", got2)
+	}
+}
+
+func TestCombineInitSteps(t *testing.T) {
+	got := combineInitSteps("step one", "step two")
+	if !strings.Contains(got, "==> Step 1/2") || !strings.Contains(got, "==> Step 2/2") {
+		t.Errorf("expected step banners, got:\n%s", got)
+	}
+	if !strings.Contains(got, "step one") || !strings.Contains(got, "step two") {
+		t.Errorf("expected both steps in script, got:\n%s", got)
+	}
+	// Each step wrapped in a subshell so `exit 0` in one step cannot abort the next.
+	if strings.Count(got, "\n(\n") != 2 {
+		t.Errorf("expected 2 subshells, got:\n%s", got)
 	}
 }
