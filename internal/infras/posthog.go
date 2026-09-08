@@ -14,9 +14,6 @@ const (
 	postHogAPIKey = "phc_z2nKsNVLSSSYbszJYmxzJZY2FZw4qBWnnrqNKM4vTbgZ"
 	// postHogHost is the PostHog endpoint (US region).
 	postHogHost = "https://us.i.posthog.com"
-	// deploymentIDGroupName is the PostHog group type under which events are
-	// aggregated.
-	deploymentIDGroupName = "deployment"
 )
 
 // PostHogHeartbeat reports anonymous heartbeat events to a PostHog project.
@@ -30,8 +27,7 @@ type PostHogHeartbeat struct {
 
 // NewPostHogHeartbeat creates a PostHog-backed HeartbeatSender. deploymentID
 // is the anonymous identifier of this controller run, generated at startup;
-// every event is attributed to the "deployment" PostHog group carrying that
-// identifier.
+// PostHog uses it as the distinct ID of every reported event.
 func NewPostHogHeartbeat(deploymentID string) (*PostHogHeartbeat, error) {
 	cl, err := posthog.NewWithConfig(postHogAPIKey, posthog.Config{
 		Endpoint:  postHogHost,
@@ -48,7 +44,6 @@ func (p *PostHogHeartbeat) SendHeartbeat(ctx context.Context, event string, prop
 	if properties == nil {
 		properties = map[string]any{}
 	}
-	properties["$groups"] = map[string]string{deploymentIDGroupName: p.deploymentID}
 	err := p.client.Enqueue(posthog.Capture{
 		DistinctId: p.deploymentID,
 		Event:      event,
