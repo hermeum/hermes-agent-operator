@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -31,6 +32,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -89,6 +91,9 @@ func main() {
 	var heartbeatDisabled bool
 	flag.BoolVar(&heartbeatDisabled, "heartbeat-disabled", false,
 		"If set, the anonymous deployment heartbeat (PostHog) is disabled.")
+	var watchNamespaces string
+	flag.StringVar(&watchNamespaces, "watch-namespace", "",
+		"Comma-separated list of namespaces to restrict the manager to. Empty means all namespaces.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -164,6 +169,20 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	// Restrict the informer cache and reconciliation scope to the namespaces
+	// passed via --watch-namespace. An empty value keeps the default
+	// cluster-wide behavior. Hard enforcement is done by the namespaced
+	// Role/RoleBinding installed for the manager service account.
+	namespaces := parseNamespaces(watchNamespaces)
+	cacheOptions := cache.Options{}
+	if len(namespaces) > 0 {
+		cacheOptions.DefaultNamespaces = make(map[string]cache.Config, len(namespaces))
+		for _, ns := range namespaces {
+			cacheOptions.DefaultNamespaces[ns] = cache.Config{}
+		}
+		setupLog.Info("Restricting manager to namespaces", "namespaces", namespaces)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
@@ -171,6 +190,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "24daf6e5.hermeum.app",
+		Cache:                  cacheOptions,
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -228,4 +248,29 @@ func main() {
 		os.Exit(1)
 	}
 	heartbeat.Close()
+}
+
+// parseNamespaces splits a comma-separated namespace list into unique,
+// non-empty, whitespace-trimmed namespace names. An empty input yields nil.
+func parseNamespaces(csv string) []string {
+	if strings.TrimSpace(csv) == "" {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	namespaces := make([]string, 0)
+	for ns := range strings.SplitSeq(csv, ",") {
+		ns = strings.TrimSpace(ns)
+		if ns == "" {
+			continue
+		}
+		if _, ok := seen[ns]; ok {
+			continue
+		}
+		seen[ns] = struct{}{}
+		namespaces = append(namespaces, ns)
+	}
+	if len(namespaces) == 0 {
+		return nil
+	}
+	return namespaces
 }

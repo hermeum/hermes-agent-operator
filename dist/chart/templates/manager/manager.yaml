@@ -87,6 +87,9 @@ spec:
         {{- if and (hasKey .Values.manager "heartbeat") (not .Values.manager.heartbeat.enabled) }}
         - --heartbeat-disabled
         {{- end }}
+        {{- with .Values.rbac.watchNamespaces }}
+        - --watch-namespace={{ join "," . }}
+        {{- end }}
         {{- range .Values.manager.args }}
         - {{ . }}
         {{- end }}

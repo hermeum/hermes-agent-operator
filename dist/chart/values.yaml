@@ -120,6 +120,14 @@ rbac:
   ##
   namespaced: false
 
+  ## Restrict the operator to the listed namespaces. When set, the operator
+  ## is granted a Role/RoleBinding in each listed namespace (instead of a
+  ## ClusterRole) and the manager runs with
+  ## --watch-namespace=<comma-separated list>. Takes precedence over
+  ## `namespaced`.
+  ##
+  # watchNamespaces: []
+
   ## Helper roles for CRD management (admin/editor/viewer)
   ##
   helpers:

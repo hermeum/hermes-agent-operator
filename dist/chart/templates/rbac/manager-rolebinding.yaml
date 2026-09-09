@@ -1,28 +1,49 @@
+{{- $namespaces := .Values.rbac.watchNamespaces | default list }}
+{{- $namespaced := or .Values.rbac.namespaced (not (empty $namespaces)) }}
+{{- $targets := list }}
+{{- if not (empty $namespaces) }}
+{{- $targets = $namespaces }}
+{{- else if $namespaced }}
+{{- $targets = list .Release.Namespace }}
+{{- end }}
+{{- if $namespaced }}
+{{- range $target := $targets }}
 apiVersion: rbac.authorization.k8s.io/v1
-{{- if .Values.rbac.namespaced }}
 kind: RoleBinding
-{{- else }}
-kind: ClusterRoleBinding
-{{- end }}
 metadata:
-{{- if .Values.rbac.namespaced }}
-  namespace: {{ .Release.Namespace }}
-{{- end }}
+  namespace: {{ $target }}
   labels:
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/name: {{ include "hermes-agent-operator.name" . }}
-    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/name: {{ include "hermes-agent-operator.name" $ }}
+    helm.sh/chart: {{ $.Chart.Name }}-{{ $.Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
   name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "manager-rolebinding" "context" $) }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  {{- if .Values.rbac.namespaced }}
   kind: Role
-  {{- else }}
-  kind: ClusterRole
-  {{- end }}
   name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
 subjects:
 - kind: ServiceAccount
-  name: {{ include "hermes-agent-operator.serviceAccountName" . }}
-  namespace: {{ .Release.Namespace }}
+  name: {{ include "hermes-agent-operator.serviceAccountName" $ }}
+  namespace: {{ $.Release.Namespace }}
+---
+{{- end }}
+{{- else }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/name: {{ include "hermes-agent-operator.name" $ }}
+    helm.sh/chart: {{ $.Chart.Name }}-{{ $.Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "manager-rolebinding" "context" $) }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "hermes-agent-operator.serviceAccountName" $ }}
+  namespace: {{ $.Release.Namespace }}
+{{- end }}
