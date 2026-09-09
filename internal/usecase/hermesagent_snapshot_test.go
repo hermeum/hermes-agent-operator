@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +16,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -33,9 +33,9 @@ func (silentTelemetry) IncNotFound(context.Context, IncNotFoundParam) {}
 
 type fakeSnapshotKube struct {
 	pvc       *corev1.PersistentVolumeClaim
-	snapshots []map[string]any
+	snapshots []VolumeSnapshot
 	listErr   error
-	created   []map[string]any
+	created   []VolumeSnapshot
 	deleted   []types.NamespacedName
 	statuses  []*agentsv1alpha1.HermesAgent
 	createErr error
@@ -161,7 +161,7 @@ func (f *fakeSnapshotKube) GetPersistentVolumeClaim(ctx context.Context, param G
 	}
 	return f.pvc, nil
 }
-func (f *fakeSnapshotKube) ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param ListVolumeSnapshotsOwnedByAgentParam) ([]map[string]any, error) {
+func (f *fakeSnapshotKube) ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param ListVolumeSnapshotsOwnedByAgentParam) ([]VolumeSnapshot, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -177,15 +177,11 @@ func (f *fakeSnapshotKube) CreateVolumeSnapshotOwnedByHermesAgent(ctx context.Co
 		return f.createErr
 	}
 	// Mimic the real infra: apply the agent attribution label before create.
-	obj := param.VolumeSnapshot
-	labels, _, _ := unstructured.NestedStringMap(obj, "metadata", "labels")
-	if labels == nil {
-		labels = map[string]string{}
+	obj := *param.VolumeSnapshot
+	if obj.Labels == nil {
+		obj.Labels = map[string]string{}
 	}
-	labels[fakeSnapshotAgentLabel] = param.HermesAgent.Name
-	if err := unstructured.SetNestedStringMap(obj, labels, "metadata", "labels"); err != nil {
-		return err
-	}
+	obj.Labels[fakeSnapshotAgentLabel] = param.HermesAgent.Name
 	f.created = append(f.created, obj)
 	return nil
 }
@@ -217,12 +213,12 @@ func boundPVC(name string) *corev1.PersistentVolumeClaim {
 	}
 }
 
-func snapshotObj(name string, created time.Time) map[string]any {
-	return map[string]any{
-		"metadata": map[string]any{
-			"name":              name,
-			"namespace":         "default",
-			"creationTimestamp": created.UTC().Format(time.RFC3339),
+func snapshotObj(name string, created time.Time) VolumeSnapshot {
+	return VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              name,
+			Namespace:         "default",
+			CreationTimestamp: metav1.Time{Time: created},
 		},
 	}
 }
@@ -285,7 +281,7 @@ func TestReconcileSnapshot_CatchUpAfterMissedRun(t *testing.T) {
 	if len(kube.created) != 1 {
 		t.Fatalf("expected exactly 1 catch-up snapshot, got %d", len(kube.created))
 	}
-	name, _, _ := unstructured.NestedString(kube.created[0], "metadata", "name")
+	name := kube.created[0].Name
 	if want := fmt.Sprintf("hermes-data-%s-0-", ha.Name); len(name) <= len(want) || name[:len(want)] != want {
 		t.Errorf("snapshot name %q should start with %q", name, want)
 	}
@@ -450,7 +446,7 @@ func TestReconcileSnapshot_RetentionKeepsNewest(t *testing.T) {
 	retention := 2
 	kube := &fakeSnapshotKube{
 		pvc: boundPVC("hermes-data-test-0"),
-		snapshots: []map[string]any{
+		snapshots: []VolumeSnapshot{
 			snapshotObj("hermes-data-test-0-20260901030000", time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)),
 			snapshotObj("hermes-data-test-0-20260902030000", time.Date(2026, 9, 2, 3, 0, 0, 0, time.UTC)),
 			snapshotObj("hermes-data-test-0-20260903030000", time.Date(2026, 9, 3, 3, 0, 0, 0, time.UTC)),
@@ -503,39 +499,33 @@ func TestBuildSnapshot(t *testing.T) {
 	ha.Spec.Hermes.Storage.Persistence.ExistingClaim = ptrString("my-claim")
 
 	name := buildSnapshotName("my-claim", time.Date(2026, 9, 7, 3, 0, 0, 0, time.UTC))
-	obj := buildSnapshot(ha, name)
+	snap := buildSnapshot(ha, name)
 
-	if got, _, _ := unstructured.NestedString(obj, "apiVersion"); got != "snapshot.storage.k8s.io/v1" {
-		t.Errorf("apiVersion = %q, want snapshot.storage.k8s.io/v1", got)
+	if snap.Name != name {
+		t.Errorf("name = %q, want %q", snap.Name, name)
 	}
-	if got, _, _ := unstructured.NestedString(obj, "kind"); got != "VolumeSnapshot" {
-		t.Errorf("kind = %q, want VolumeSnapshot", got)
+	if snap.Namespace != ha.Namespace {
+		t.Errorf("namespace = %q, want %q", snap.Namespace, ha.Namespace)
 	}
-	if got, _, _ := unstructured.NestedString(obj, "metadata", "name"); got != name {
-		t.Errorf("name = %q, want %q", got, name)
-	}
-	if got, _, _ := unstructured.NestedString(obj, "metadata", "namespace"); got != ha.Namespace {
-		t.Errorf("namespace = %q, want %q", got, ha.Namespace)
-	}
-	if got, _, _ := unstructured.NestedString(obj, "spec", "source", "persistentVolumeClaimName"); got != "my-claim" {
+	if got := snap.Spec.Source.PersistentVolumeClaimName; got != "my-claim" {
 		t.Errorf("source PVC = %q, want my-claim", got)
 	}
-	if got, _, _ := unstructured.NestedString(obj, "spec", "volumeSnapshotClassName"); got != "fast-class" {
-		t.Errorf("volumeSnapshotClassName = %q, want fast-class", got)
+	if got := snap.Spec.VolumeSnapshotClassName; got == nil || *got != "fast-class" {
+		t.Errorf("volumeSnapshotClassName = %v, want fast-class", got)
 	}
 	// The agent attribution label is applied by the infra layer, not the builder.
-	if _, found, _ := unstructured.NestedStringMap(obj, "metadata", "labels"); found {
-		t.Error("buildSnapshot should not set labels; attribution is applied by the infra layer")
+	if snap.Labels != nil {
+		t.Errorf("buildSnapshot should not set labels; attribution is applied by the infra layer, got %v", snap.Labels)
 	}
-	if _, hasOwner := obj["metadata"].(map[string]any)["ownerReferences"]; hasOwner {
+	if len(snap.OwnerReferences) != 0 {
 		t.Error("snapshots must not have ownerReferences")
 	}
 
-	// Omitting the class name must leave the field out entirely (cluster default applies).
+	// Omitting the class name must leave the field nil (cluster default applies).
 	ha.Spec.Hermes.Storage.Snapshot.VolumeSnapshotClassName = nil
-	obj = buildSnapshot(ha, name)
-	if _, found, _ := unstructured.NestedString(obj, "spec", "volumeSnapshotClassName"); found {
-		t.Error("volumeSnapshotClassName should be omitted when unset")
+	snap = buildSnapshot(ha, name)
+	if snap.Spec.VolumeSnapshotClassName != nil {
+		t.Errorf("volumeSnapshotClassName should be nil when unset, got %v", snap.Spec.VolumeSnapshotClassName)
 	}
 }
 
@@ -544,7 +534,7 @@ func TestReconcileSnapshot_StatusTracksAllSnapshots(t *testing.T) {
 	retention := 2
 	kube := &fakeSnapshotKube{
 		pvc: boundPVC("hermes-data-test-0"),
-		snapshots: []map[string]any{
+		snapshots: []VolumeSnapshot{
 			snapshotObj("hermes-data-test-0-20260901030000", time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)),
 			snapshotObj("hermes-data-test-0-20260902030000", time.Date(2026, 9, 2, 3, 0, 0, 0, time.UTC)),
 		},
@@ -611,15 +601,14 @@ func TestReconcileSnapshot_SnapshotNotOwned(t *testing.T) {
 	if len(kube.created) != 1 {
 		t.Fatalf("expected 1 snapshot, got %d", len(kube.created))
 	}
-	name, _, _ := unstructured.NestedString(kube.created[0], "metadata", "name")
-	if name[:len("my-claim-")] != "my-claim-" {
-		t.Errorf("existingClaim should be used for the snapshot name, got %q", name)
+	created := kube.created[0]
+	if !strings.HasPrefix(created.Name, "my-claim-") {
+		t.Errorf("existingClaim should be used for the snapshot name, got %q", created.Name)
 	}
-	labels, _, _ := unstructured.NestedStringMap(kube.created[0], "metadata", "labels")
-	if labels["agents.hermeum.app/agent"] != ha.Name {
-		t.Errorf("expected agent label %q, got %v", ha.Name, labels)
+	if created.Labels[fakeSnapshotAgentLabel] != ha.Name {
+		t.Errorf("expected agent label %q, got %v", ha.Name, created.Labels)
 	}
-	if _, hasOwner := kube.created[0]["metadata"].(map[string]any)["ownerReferences"]; hasOwner {
+	if len(created.OwnerReferences) != 0 {
 		t.Error("snapshots must not have ownerReferences")
 	}
 }

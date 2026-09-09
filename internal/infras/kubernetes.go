@@ -34,6 +34,12 @@ var volumeSnapshotGVK = schema.GroupVersionKind{
 	Kind:    "VolumeSnapshotList",
 }
 
+var volumeSnapshotObjectGVK = schema.GroupVersionKind{
+	Group:   volumeSnapshotGroup,
+	Version: volumeSnapshotVersion,
+	Kind:    volumeSnapshotKind,
+}
+
 type KubernetesClient struct {
 	client client.Client
 	scheme *runtime.Scheme
@@ -399,7 +405,10 @@ func (k *KubernetesClient) GetPersistentVolumeClaim(ctx context.Context, param u
 // usecase layer: when the VolumeSnapshot CRD is absent, ListVolumeSnapshots
 // returns a no-match error (meta.IsNoMatchError).
 
-func (k *KubernetesClient) ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param usecase.ListVolumeSnapshotsOwnedByAgentParam) ([]map[string]any, error) {
+// ListVolumeSnapshotsOwnedByAgent returns typed snapshots carrying the agent
+// attribution label. Undeclared fields in the API objects (e.g. status) are
+// ignored by the typed/unstructured conversion.
+func (k *KubernetesClient) ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param usecase.ListVolumeSnapshotsOwnedByAgentParam) ([]usecase.VolumeSnapshot, error) {
 	list := &unstructured.UnstructuredList{}
 	list.SetGroupVersionKind(volumeSnapshotGVK)
 	if err := k.client.List(ctx, list,
@@ -408,9 +417,13 @@ func (k *KubernetesClient) ListVolumeSnapshotsOwnedByAgent(ctx context.Context, 
 	); err != nil {
 		return nil, err
 	}
-	items := make([]map[string]any, 0, len(list.Items))
+	items := make([]usecase.VolumeSnapshot, 0, len(list.Items))
 	for i := range list.Items {
-		items = append(items, list.Items[i].Object)
+		snapshot, err := fromUnstructuredVolumeSnapshot(&list.Items[i])
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *snapshot)
 	}
 	return items, nil
 }
@@ -420,17 +433,39 @@ func (k *KubernetesClient) ListVolumeSnapshotsOwnedByAgent(ctx context.Context, 
 // methods, it deliberately does NOT call ctrl.SetControllerReference: deleting
 // the agent must never garbage-collect its backups (issue #75).
 func (k *KubernetesClient) CreateVolumeSnapshotOwnedByHermesAgent(ctx context.Context, param usecase.CreateVolumeSnapshotOfHermesAgentParam) error {
-	labels, _, _ := unstructured.NestedStringMap(param.VolumeSnapshot, "metadata", "labels")
-	if labels == nil {
-		labels = map[string]string{}
+	if param.VolumeSnapshot.Labels == nil {
+		param.VolumeSnapshot.Labels = map[string]string{}
 	}
-	labels[snapshotAgentLabel] = param.HermesAgent.Name
-	if err := unstructured.SetNestedStringMap(param.VolumeSnapshot, labels, "metadata", "labels"); err != nil {
+	param.VolumeSnapshot.Labels[snapshotAgentLabel] = param.HermesAgent.Name
+
+	obj, err := toUnstructuredVolumeSnapshot(param.VolumeSnapshot)
+	if err != nil {
 		return err
 	}
-
-	obj := &unstructured.Unstructured{Object: param.VolumeSnapshot}
 	return k.client.Create(ctx, obj)
+}
+
+// toUnstructuredVolumeSnapshot converts a typed VolumeSnapshot into an
+// unstructured object with the snapshot.storage.k8s.io GVK set.
+func toUnstructuredVolumeSnapshot(snapshot *usecase.VolumeSnapshot) (*unstructured.Unstructured, error) {
+	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	obj := &unstructured.Unstructured{Object: raw}
+	obj.SetGroupVersionKind(volumeSnapshotObjectGVK)
+	obj.SetKind(volumeSnapshotKind)
+	return obj, nil
+}
+
+// fromUnstructuredVolumeSnapshot converts an unstructured VolumeSnapshot into
+// the typed usecase representation.
+func fromUnstructuredVolumeSnapshot(obj *unstructured.Unstructured) (*usecase.VolumeSnapshot, error) {
+	snapshot := &usecase.VolumeSnapshot{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }
 
 func (k *KubernetesClient) DeleteVolumeSnapshot(ctx context.Context, param usecase.DeleteVolumeSnapshotParam) error {

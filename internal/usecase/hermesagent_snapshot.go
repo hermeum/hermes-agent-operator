@@ -14,7 +14,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -25,6 +24,26 @@ const (
 	condReasonCRDAbsent       = "VolumeSnapshotsNotInstalled"
 	condReasonInvalidSchedule = "InvalidSchedule"
 )
+
+// VolumeSnapshot is a minimal typed representation of the CSI
+// snapshot.storage.k8s.io/v1 VolumeSnapshot resource, covering the fields
+// this operator reads and writes. Undeclared fields (e.g. status, added by
+// the snapshot-controller) are ignored during typed/unstructured conversion.
+type VolumeSnapshot struct {
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              VolumeSnapshotSpec `json:"spec"`
+}
+
+// VolumeSnapshotSpec is the spec of a CSI VolumeSnapshot.
+type VolumeSnapshotSpec struct {
+	Source                  VolumeSnapshotSource `json:"source"`
+	VolumeSnapshotClassName *string              `json:"volumeSnapshotClassName,omitempty"`
+}
+
+// VolumeSnapshotSource identifies the source PVC of a VolumeSnapshot.
+type VolumeSnapshotSource struct {
+	PersistentVolumeClaimName string `json:"persistentVolumeClaimName"`
+}
 
 // reconcileSnapshot takes periodic CSI volume snapshots of the agent data PVC
 // on a cron schedule. Scheduling is CronJob-style: the next run is computed
@@ -158,51 +177,45 @@ func buildSnapshotName(pvcName string, t time.Time) string {
 // data PVC. The agent attribution label is applied by the infra layer
 // (CreateVolumeSnapshotOwnedByHermesAgent); snapshots are intentionally NOT
 // owner-referenced so deleting the agent never garbage-collects its backups.
-func buildSnapshot(ha *agentsv1alpha1.HermesAgent, name string) map[string]any {
-	obj := map[string]any{
-		"apiVersion": "snapshot.storage.k8s.io/v1",
-		"kind":       "VolumeSnapshot",
-		"metadata": map[string]any{
-			"name":      name,
-			"namespace": ha.Namespace,
+func buildSnapshot(ha *agentsv1alpha1.HermesAgent, name string) *VolumeSnapshot {
+	snapshot := &VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ha.Namespace,
 		},
-		"spec": map[string]any{
-			"source": map[string]any{
-				"persistentVolumeClaimName": buildDataPVCName(ha),
+		Spec: VolumeSnapshotSpec{
+			Source: VolumeSnapshotSource{
+				PersistentVolumeClaimName: buildDataPVCName(ha),
 			},
 		},
 	}
 	if className := ha.GetHermes().GetSnapshot().GetVolumeSnapshotClassName(); className != nil && *className != "" {
-		obj["spec"].(map[string]any)["volumeSnapshotClassName"] = *className
+		snapshot.Spec.VolumeSnapshotClassName = className
 	}
-	return obj
+	return snapshot
 }
 
 // applySnapshotRetention deletes all but the newest retention snapshots of
 // this agent, ordered by creation timestamp. Snapshots without the agent
 // label are never touched.
-func (u *HermesAgentUseCase) applySnapshotRetention(ctx context.Context, snapshots []map[string]any, retention int) error {
-	sorted := make([]map[string]any, len(snapshots))
+func (u *HermesAgentUseCase) applySnapshotRetention(ctx context.Context, snapshots []VolumeSnapshot, retention int) error {
+	sorted := make([]VolumeSnapshot, len(snapshots))
 	copy(sorted, snapshots)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		ti, _ := snapshotCreationTime(sorted[i])
-		tj, _ := snapshotCreationTime(sorted[j])
-		return ti.After(tj)
+		return sorted[i].CreationTimestamp.After(sorted[j].CreationTimestamp.Time)
 	})
 	if len(sorted) <= retention {
 		return nil
 	}
 
 	for _, old := range sorted[retention:] {
-		name, _, _ := unstructured.NestedString(old, "metadata", "name")
-		ns, _, _ := unstructured.NestedString(old, "metadata", "namespace")
 		err := u.kube.DeleteVolumeSnapshot(ctx, DeleteVolumeSnapshotParam{
-			NamespacedName: types.NamespacedName{Namespace: ns, Name: name},
+			NamespacedName: types.NamespacedName{Namespace: old.Namespace, Name: old.Name},
 		})
 		if err != nil {
 			return err
 		}
-		u.tel.Info(ctx, "Deleted expired VolumeSnapshot", "name", name)
+		u.tel.Info(ctx, "Deleted expired VolumeSnapshot", "name", old.Name)
 	}
 	return nil
 }
@@ -211,25 +224,24 @@ func (u *HermesAgentUseCase) applySnapshotRetention(ctx context.Context, snapsho
 // VolumeSnapshot list plus the snapshot just taken, sorted newest first and
 // capped at retention. Snapshots that were deleted (by retention or
 // externally) disappear from the list; the agent label scopes the input.
-func mergeSnapshotRefs(live []map[string]any, pvcName, newName string, newTime time.Time, retention int) []agentsv1alpha1.SnapshotRef {
+func mergeSnapshotRefs(live []VolumeSnapshot, pvcName, newName string, newTime time.Time, retention int) []agentsv1alpha1.SnapshotRef {
 	refs := make([]agentsv1alpha1.SnapshotRef, 0, len(live)+1)
 	seen := map[string]bool{}
-	for _, obj := range live {
-		name, _, _ := unstructured.NestedString(obj, "metadata", "name")
-		if name == "" || seen[name] {
+	for _, snap := range live {
+		if snap.Name == "" || seen[snap.Name] {
 			continue
 		}
-		created, err := snapshotCreationTime(obj)
-		if err != nil {
+		created := snap.CreationTimestamp.Time
+		if created.IsZero() {
 			continue
 		}
-		seen[name] = true
-		source, _, _ := unstructured.NestedString(obj, "spec", "source", "persistentVolumeClaimName")
+		seen[snap.Name] = true
+		source := snap.Spec.Source.PersistentVolumeClaimName
 		if source == "" {
 			source = pvcName
 		}
 		refs = append(refs, agentsv1alpha1.SnapshotRef{
-			Name:         name,
+			Name:         snap.Name,
 			PVC:          source,
 			CreationTime: metav1.Time{Time: created},
 		})
@@ -248,14 +260,6 @@ func mergeSnapshotRefs(live []map[string]any, pvcName, newName string, newTime t
 		refs = refs[:retention]
 	}
 	return refs
-}
-
-func snapshotCreationTime(obj map[string]any) (time.Time, error) {
-	raw, _, _ := unstructured.NestedString(obj, "metadata", "creationTimestamp")
-	if raw == "" {
-		return time.Time{}, fmt.Errorf("creationTimestamp not found")
-	}
-	return time.Parse(time.RFC3339, raw)
 }
 
 // setSnapshotUnsupported sets (or updates) the SnapshotUnsupported condition.

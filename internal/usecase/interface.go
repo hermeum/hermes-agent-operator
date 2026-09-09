@@ -103,7 +103,7 @@ type Kubernetes interface {
 
 	GetPersistentVolumeClaim(ctx context.Context, param GetPersistentVolumeClaimParam) (*corev1.PersistentVolumeClaim, error)
 
-	ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param ListVolumeSnapshotsOwnedByAgentParam) ([]map[string]any, error)
+	ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param ListVolumeSnapshotsOwnedByAgentParam) ([]VolumeSnapshot, error)
 	CreateVolumeSnapshotOwnedByHermesAgent(ctx context.Context, param CreateVolumeSnapshotOfHermesAgentParam) error
 	DeleteVolumeSnapshot(ctx context.Context, param DeleteVolumeSnapshotParam) error
 }
@@ -293,7 +293,7 @@ type ListVolumeSnapshotsOwnedByAgentParam struct {
 
 type CreateVolumeSnapshotOfHermesAgentParam struct {
 	HermesAgent    *agentsv1alpha1.HermesAgent
-	VolumeSnapshot map[string]any
+	VolumeSnapshot *VolumeSnapshot
 }
 
 type DeleteVolumeSnapshotParam struct {
