@@ -176,12 +176,15 @@ func (f *fakeSnapshotKube) CreateVolumeSnapshotOwnedByHermesAgent(ctx context.Co
 	if f.createErr != nil {
 		return f.createErr
 	}
-	// Mimic the real infra: apply the agent attribution label before create.
+	// Mimic the real infra: apply the agent attribution label before create,
+	// and persist as the API server would (creationTimestamp stamped).
 	obj := *param.VolumeSnapshot
 	if obj.Labels == nil {
 		obj.Labels = map[string]string{}
 	}
 	obj.Labels[fakeSnapshotAgentLabel] = param.HermesAgent.Name
+	obj.CreationTimestamp = metav1.Time{Time: time.Now()}
+	f.snapshots = append(f.snapshots, obj)
 	f.created = append(f.created, obj)
 	return nil
 }
@@ -189,6 +192,9 @@ func (f *fakeSnapshotKube) DeleteVolumeSnapshot(ctx context.Context, param Delet
 	f.deleted = append(f.deleted, param.NamespacedName)
 	return nil
 }
+
+// testPVCName is the existingClaim name used across the snapshot tests.
+const testPVCName = "my-claim"
 
 func snapshotHA(retention *int, schedule string) *agentsv1alpha1.HermesAgent {
 	ha := minimalHA()
@@ -478,27 +484,114 @@ func TestBuildDataPVCName(t *testing.T) {
 
 	t.Run("existingClaim wins", func(t *testing.T) {
 		ha := snapshotHA(nil, "0 3 * * *")
-		ha.Spec.Hermes.Storage.Persistence.ExistingClaim = ptrString("my-claim")
-		if got := buildDataPVCName(ha); got != "my-claim" {
-			t.Errorf("buildDataPVCName() = %q, want %q", got, "my-claim")
+		ha.Spec.Hermes.Storage.Persistence.ExistingClaim = ptrString(testPVCName)
+		if got := buildDataPVCName(ha); got != testPVCName {
+			t.Errorf("buildDataPVCName() = %q, want %q", got, testPVCName)
 		}
 	})
 }
 
 func TestBuildSnapshotName(t *testing.T) {
 	tm := time.Date(2026, 9, 7, 3, 0, 0, 0, time.UTC)
-	if got := buildSnapshotName("my-claim", tm); got != "my-claim-20260907030000" {
+	if got := buildSnapshotName(testPVCName, tm); got != "my-claim-20260907030000" {
 		t.Errorf("buildSnapshotName() = %q, want %q", got, "my-claim-20260907030000")
 	}
+}
+
+// Snapshot names used across the split/mapping tests.
+const (
+	snapshotNameOld    = "old"
+	snapshotNameMiddle = "middle"
+	snapshotNameNew    = "new"
+)
+
+func TestSplitSnapshots(t *testing.T) {
+	older := snapshotObj(snapshotNameOld, time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC))
+	middle := snapshotObj(snapshotNameMiddle, time.Date(2026, 9, 2, 3, 0, 0, 0, time.UTC))
+	newer := snapshotObj(snapshotNameNew, time.Date(2026, 9, 3, 3, 0, 0, 0, time.UTC))
+
+	t.Run("all live when within retention", func(t *testing.T) {
+		live, deprecated := splitSnapshots([]VolumeSnapshot{older, newer}, 2)
+		if len(deprecated) != 0 {
+			t.Errorf("expected no deprecated snapshots, got %v", deprecated)
+		}
+		if len(live) != 2 || live[0].Name != snapshotNameNew || live[1].Name != snapshotNameOld {
+			t.Errorf("expected live sorted newest first, got %v", live)
+		}
+	})
+
+	t.Run("newest kept, oldest deprecated", func(t *testing.T) {
+		live, deprecated := splitSnapshots([]VolumeSnapshot{older, middle, newer}, 1)
+		if len(live) != 1 || live[0].Name != snapshotNameNew {
+			t.Errorf("expected only newest live, got %v", live)
+		}
+		if len(deprecated) != 2 || deprecated[0].Name != snapshotNameMiddle || deprecated[1].Name != snapshotNameOld {
+			t.Errorf("expected deprecated sorted oldest last, got %v", deprecated)
+		}
+	})
+
+	t.Run("empty input", func(t *testing.T) {
+		live, deprecated := splitSnapshots(nil, 3)
+		if len(live) != 0 || len(deprecated) != 0 {
+			t.Errorf("expected empty partitions, got live=%v deprecated=%v", live, deprecated)
+		}
+	})
+}
+
+func TestSnapshotRef(t *testing.T) {
+	created := time.Date(2026, 9, 3, 3, 0, 0, 0, time.UTC)
+
+	snap := snapshotObj("s1", created)
+	snap.Spec.Source.PersistentVolumeClaimName = testPVCName
+	ref := snapshotRef(snap)
+	if ref.Name != "s1" || ref.PVC != testPVCName {
+		t.Errorf("unexpected ref: %+v", ref)
+	}
+	if !ref.CreationTime.Time.Equal(created) {
+		t.Errorf("creationTime = %v, want %v", ref.CreationTime.Time, created)
+	}
+}
+
+func TestSnapshotRefs(t *testing.T) {
+	older := snapshotObj(snapshotNameOld, time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC))
+	older.Spec.Source.PersistentVolumeClaimName = testPVCName
+	newer := snapshotObj(snapshotNameNew, time.Date(2026, 9, 3, 3, 0, 0, 0, time.UTC))
+	newer.Spec.Source.PersistentVolumeClaimName = testPVCName
+
+	refs := snapshotRefs([]VolumeSnapshot{newer, older})
+	if len(refs) != 2 {
+		t.Fatalf("expected 2 refs, got %d", len(refs))
+	}
+	if refs[0].Name != snapshotNameNew || refs[1].Name != snapshotNameOld {
+		t.Errorf("expected input order preserved, got %v", refs)
+	}
+
+	t.Run("skips entries without name or creation time", func(t *testing.T) {
+		nameless := VolumeSnapshot{Spec: VolumeSnapshotSpec{Source: VolumeSnapshotSource{PersistentVolumeClaimName: testPVCName}}}
+		untimed := snapshotObj("untimed", time.Time{})
+		if got := snapshotRefs([]VolumeSnapshot{nameless, untimed, older}); len(got) != 1 || got[0].Name != snapshotNameOld {
+			t.Errorf("expected only valid entries, got %v", got)
+		}
+	})
+
+	t.Run("skips snapshots being deleted", func(t *testing.T) {
+		terminating := snapshotObj(snapshotNameMiddle, time.Date(2026, 9, 2, 3, 0, 0, 0, time.UTC))
+		terminating.Spec.Source.PersistentVolumeClaimName = testPVCName
+		now := metav1.Now()
+		terminating.DeletionTimestamp = &now
+		if got := snapshotRefs([]VolumeSnapshot{terminating, newer, older}); len(got) != 2 || got[0].Name != snapshotNameNew {
+			t.Errorf("expected terminating snapshot skipped, got %v", got)
+		}
+	})
 }
 
 func TestBuildSnapshot(t *testing.T) {
 	ha := snapshotHA(nil, "0 3 * * *")
 	className := "fast-class"
 	ha.Spec.Hermes.Storage.Snapshot.VolumeSnapshotClassName = &className
-	ha.Spec.Hermes.Storage.Persistence.ExistingClaim = ptrString("my-claim")
+	ha.Spec.Hermes.Storage.Persistence.ExistingClaim = ptrString(testPVCName)
 
-	name := buildSnapshotName("my-claim", time.Date(2026, 9, 7, 3, 0, 0, 0, time.UTC))
+	name := buildSnapshotName(testPVCName, time.Date(2026, 9, 7, 3, 0, 0, 0, time.UTC))
 	snap := buildSnapshot(ha, name)
 
 	if snap.Name != name {
@@ -507,7 +600,7 @@ func TestBuildSnapshot(t *testing.T) {
 	if snap.Namespace != ha.Namespace {
 		t.Errorf("namespace = %q, want %q", snap.Namespace, ha.Namespace)
 	}
-	if got := snap.Spec.Source.PersistentVolumeClaimName; got != "my-claim" {
+	if got := snap.Spec.Source.PersistentVolumeClaimName; got != testPVCName {
 		t.Errorf("source PVC = %q, want my-claim", got)
 	}
 	if got := snap.Spec.VolumeSnapshotClassName; got == nil || *got != "fast-class" {
@@ -589,10 +682,10 @@ func TestReconcileSnapshot_CreateConflictTolerated(t *testing.T) {
 
 func TestReconcileSnapshot_SnapshotNotOwned(t *testing.T) {
 	ctx := context.Background()
-	kube := &fakeSnapshotKube{pvc: boundPVC("my-claim")}
+	kube := &fakeSnapshotKube{pvc: boundPVC(testPVCName)}
 	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
 	ha := snapshotHA(nil, "0 3 * * *")
-	ha.Spec.Hermes.Storage.Persistence.ExistingClaim = ptrString("my-claim")
+	ha.Spec.Hermes.Storage.Persistence.ExistingClaim = ptrString(testPVCName)
 	ha.Status.Snapshot.LastScheduleTime = &metav1.Time{Time: time.Now().Add(-48 * time.Hour)}
 
 	if _, err := uc.reconcileSnapshot(ctx, ha); err != nil {

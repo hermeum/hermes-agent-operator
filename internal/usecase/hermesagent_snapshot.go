@@ -112,8 +112,16 @@ func (u *HermesAgentUseCase) reconcileSnapshot(ctx context.Context, ha *agentsv1
 		}
 	}
 
-	if err := u.applySnapshotRetention(ctx, snapshots, snap.GetRetention()); err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	_, deprecated := splitSnapshots(snapshots, snap.GetRetention())
+
+	// Delete outdated snapshots beyond the retention window.
+	for _, old := range deprecated {
+		if err := u.kube.DeleteVolumeSnapshot(ctx, DeleteVolumeSnapshotParam{
+			NamespacedName: types.NamespacedName{Namespace: old.Namespace, Name: old.Name},
+		}); err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		u.tel.Info(ctx, "Deleted expired VolumeSnapshot", "name", old.Name)
 	}
 
 	now := time.Now()
@@ -143,8 +151,22 @@ func (u *HermesAgentUseCase) reconcileSnapshot(ctx context.Context, ha *agentsv1
 		u.tel.Info(ctx, "Created VolumeSnapshot", "name", name, "pvc", pvcName)
 	}
 
+	// Re-list so the status reflects the actual cluster state, including the
+	// snapshot just created; splitSnapshots caps the retained set again (a
+	// freshly deleted snapshot lingers in Terminating state until the
+	// snapshot-controller clears its finalizer, but it is the oldest entry
+	// and therefore falls out of the live bucket).
+	snapshots, err = u.kube.ListVolumeSnapshotsOwnedByAgent(ctx, ListVolumeSnapshotsOwnedByAgentParam{
+		Namespace: ha.Namespace,
+		AgentName: ha.Name,
+	})
+	if err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+	live, _ := splitSnapshots(snapshots, snap.GetRetention())
+
 	ha.Status.Snapshot.LastScheduleTime = &metav1.Time{Time: now}
-	ha.Status.Snapshot.Snapshots = mergeSnapshotRefs(snapshots, pvcName, name, now, snap.GetRetention())
+	ha.Status.Snapshot.Snapshots = snapshotRefs(live)
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
@@ -195,69 +217,42 @@ func buildSnapshot(ha *agentsv1alpha1.HermesAgent, name string) *VolumeSnapshot 
 	return snapshot
 }
 
-// applySnapshotRetention deletes all but the newest retention snapshots of
-// this agent, ordered by creation timestamp. Snapshots without the agent
-// label are never touched.
-func (u *HermesAgentUseCase) applySnapshotRetention(ctx context.Context, snapshots []VolumeSnapshot, retention int) error {
+// splitSnapshots partitions snapshots into live (the newest retention,
+// newest first) and deprecated (the rest, oldest last) by creation timestamp.
+// The input must carry the agent attribution label, which scopes it to this
+// agent's snapshots; everything else is never touched.
+func splitSnapshots(snapshots []VolumeSnapshot, retention int) (live, deprecated []VolumeSnapshot) {
 	sorted := make([]VolumeSnapshot, len(snapshots))
 	copy(sorted, snapshots)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		return sorted[i].CreationTimestamp.After(sorted[j].CreationTimestamp.Time)
 	})
 	if len(sorted) <= retention {
-		return nil
+		return sorted, nil
 	}
-
-	for _, old := range sorted[retention:] {
-		err := u.kube.DeleteVolumeSnapshot(ctx, DeleteVolumeSnapshotParam{
-			NamespacedName: types.NamespacedName{Namespace: old.Namespace, Name: old.Name},
-		})
-		if err != nil {
-			return err
-		}
-		u.tel.Info(ctx, "Deleted expired VolumeSnapshot", "name", old.Name)
-	}
-	return nil
+	return sorted[:retention], sorted[retention:]
 }
 
-// mergeSnapshotRefs rebuilds status.snapshot.snapshots from the live
-// VolumeSnapshot list plus the snapshot just taken, sorted newest first and
-// capped at retention. Snapshots that were deleted (by retention or
-// externally) disappear from the list; the agent label scopes the input.
-func mergeSnapshotRefs(live []VolumeSnapshot, pvcName, newName string, newTime time.Time, retention int) []agentsv1alpha1.SnapshotRef {
-	refs := make([]agentsv1alpha1.SnapshotRef, 0, len(live)+1)
-	seen := map[string]bool{}
-	for _, snap := range live {
-		if snap.Name == "" || seen[snap.Name] {
+// snapshotRef maps a VolumeSnapshot into its status representation.
+func snapshotRef(snap VolumeSnapshot) agentsv1alpha1.SnapshotRef {
+	return agentsv1alpha1.SnapshotRef{
+		Name:         snap.Name,
+		PVC:          snap.Spec.Source.PersistentVolumeClaimName,
+		CreationTime: snap.CreationTimestamp,
+	}
+}
+
+// snapshotRefs maps snapshots into status refs, preserving input order
+// (newest first). Entries without a name or creation timestamp are skipped,
+// as are snapshots being deleted (deletionTimestamp set): they are no longer
+// retained backups.
+func snapshotRefs(snapshots []VolumeSnapshot) []agentsv1alpha1.SnapshotRef {
+	refs := make([]agentsv1alpha1.SnapshotRef, 0, len(snapshots))
+	for _, snap := range snapshots {
+		if snap.Name == "" || snap.CreationTimestamp.IsZero() || snap.DeletionTimestamp != nil {
 			continue
 		}
-		created := snap.CreationTimestamp.Time
-		if created.IsZero() {
-			continue
-		}
-		seen[snap.Name] = true
-		source := snap.Spec.Source.PersistentVolumeClaimName
-		if source == "" {
-			source = pvcName
-		}
-		refs = append(refs, agentsv1alpha1.SnapshotRef{
-			Name:         snap.Name,
-			PVC:          source,
-			CreationTime: metav1.Time{Time: created},
-		})
-	}
-	if !seen[newName] {
-		refs = append(refs, agentsv1alpha1.SnapshotRef{
-			Name:         newName,
-			PVC:          pvcName,
-			CreationTime: metav1.Time{Time: newTime},
-		})
-	}
-	sort.SliceStable(refs, func(i, j int) bool {
-		return refs[i].CreationTime.After(refs[j].CreationTime.Time)
-	})
-	if len(refs) > retention {
-		refs = refs[:retention]
+		refs = append(refs, snapshotRef(snap))
 	}
 	return refs
 }
