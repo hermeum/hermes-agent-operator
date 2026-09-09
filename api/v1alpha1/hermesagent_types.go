@@ -28,6 +28,10 @@ import (
 
 const defaultImageTag = "latest"
 
+// DefaultSnapshotRetention is the number of newest snapshots kept when
+// HermesSnapshot.Retention is unset.
+const DefaultSnapshotRetention = 3
+
 // HermesAgentPhase represents the lifecycle phase of a HermesAgent, mirroring Pod phase with an added Suspended state.
 type HermesAgentPhase string
 
@@ -44,6 +48,16 @@ const (
 	PhaseUnknown HermesAgentPhase = "Unknown"
 	// PhaseSuspended means the agent has been suspended via Spec.Suspend.
 	PhaseSuspended HermesAgentPhase = "Suspended"
+)
+
+// HermesAgentConditionType is a type of HermesAgent condition.
+type HermesAgentConditionType string
+
+const (
+	// ConditionSnapshotUnsupported indicates that periodic snapshots are
+	// configured but the cluster cannot support them (e.g. the VolumeSnapshot
+	// CRD or snapshot-controller is not installed).
+	ConditionSnapshotUnsupported HermesAgentConditionType = "SnapshotUnsupported"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -80,11 +94,74 @@ func (p *HermesPersistence) GetSize() resource.Quantity {
 	return resource.MustParse("10Gi")
 }
 
+// HermesSnapshot configures periodic CSI volume snapshots of the agent data PVC.
+//
+// Scheduling is CronJob-style: the controller tracks status.snapshot.lastScheduleTime
+// and takes one catch-up snapshot if runs were missed. Snapshots are never
+// garbage-collected with the agent (no ownerReferences) — deleting the agent
+// preserves its backups.
+//
+// Requires a CSI driver with snapshot support plus the cluster-level
+// snapshot-controller (VolumeSnapshot CRD). When the CRD is absent the
+// operator surfaces a SnapshotUnsupported condition instead of failing.
+// +kubebuilder:validation:XValidation:rule="has(self.schedule) || !has(self.enabled) || !self.enabled",message="schedule is required when snapshot is enabled"
+type HermesSnapshot struct {
+	// enabled turns on periodic CSI volume snapshots of the agent data PVC.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// schedule is the cron expression controlling snapshot times
+	// (e.g. "0 3 * * *"). Required when enabled is true.
+	// +optional
+	Schedule string `json:"schedule,omitempty"`
+	// retention is the number of newest snapshots to keep. Older snapshots
+	// of this agent are deleted. Defaults to 3.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=3
+	// +optional
+	Retention *int `json:"retention,omitempty"`
+	// volumeSnapshotClassName selects the VolumeSnapshotClass; omit to use
+	// the cluster default.
+	// +optional
+	VolumeSnapshotClassName *string `json:"volumeSnapshotClassName,omitempty"`
+}
+
+// IsEnabled reports whether periodic snapshots should be taken.
+func (s *HermesSnapshot) IsEnabled() bool {
+	return s != nil && s.Enabled
+}
+
+// GetSchedule returns the cron schedule expression.
+func (s *HermesSnapshot) GetSchedule() string {
+	if s == nil {
+		return ""
+	}
+	return s.Schedule
+}
+
+// GetRetention returns the number of newest snapshots to keep.
+func (s *HermesSnapshot) GetRetention() int {
+	if s == nil || s.Retention == nil {
+		return DefaultSnapshotRetention
+	}
+	return *s.Retention
+}
+
+// GetVolumeSnapshotClassName returns the VolumeSnapshotClass name to use, if set.
+func (s *HermesSnapshot) GetVolumeSnapshotClassName() *string {
+	if s == nil {
+		return nil
+	}
+	return s.VolumeSnapshotClassName
+}
+
 // HermesStorage defines storage options for the Hermes agent.
 type HermesStorage struct {
 	// persistence configures a PersistentVolumeClaim for agent data.
 	// +optional
 	Persistence *HermesPersistence `json:"persistence,omitempty"`
+	// snapshot configures periodic CSI volume snapshots of the agent data PVC.
+	// +optional
+	Snapshot *HermesSnapshot `json:"snapshot,omitempty"`
 }
 
 // HermesDotEnv configures generation of a $HERMES_HOME/.env file from a
@@ -703,6 +780,14 @@ func (h *Hermes) GetPersistence() *HermesPersistence {
 		return nil
 	}
 	return h.Storage.Persistence
+}
+
+// GetSnapshot returns the snapshot configuration, if any.
+func (h *Hermes) GetSnapshot() *HermesSnapshot {
+	if h == nil || h.Storage == nil {
+		return nil
+	}
+	return h.Storage.Snapshot
 }
 
 func (h *Hermes) GetWorkspace() *HermesWorkspace {
@@ -1430,6 +1515,39 @@ type HermesAgentStatus struct {
 	// managedResources describes the Kubernetes resources currently owned by this HermesAgent.
 	// +optional
 	ManagedResources ManagedResources `json:"managedResources,omitempty"`
+
+	// snapshot tracks the state of periodic CSI volume snapshots of the
+	// agent data PVC.
+	// +optional
+	Snapshot SnapshotStatus `json:"snapshot,omitempty"`
+}
+
+// SnapshotStatus tracks periodic CSI volume snapshot scheduling for the agent data PVC.
+type SnapshotStatus struct {
+	// lastScheduleTime is the scheduled time of the most recently taken (or
+	// accounted for) snapshot, used to compute the next run.
+	// +optional
+	LastScheduleTime *metav1.Time `json:"lastScheduleTime,omitempty"`
+	// snapshots lists the VolumeSnapshots currently retained for this agent,
+	// newest first. Mirrors the retention policy: snapshots removed by
+	// retention are also removed from this list.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	Snapshots []SnapshotRef `json:"snapshots,omitempty"`
+}
+
+// SnapshotRef identifies a single VolumeSnapshot of the agent data PVC.
+type SnapshotRef struct {
+	// name is the VolumeSnapshot name.
+	// +required
+	Name string `json:"name"`
+	// pvc is the source PersistentVolumeClaim the snapshot was taken from.
+	// +required
+	PVC string `json:"pvc"`
+	// creationTime is when the VolumeSnapshot was created.
+	// +required
+	CreationTime metav1.Time `json:"creationTime"`
 }
 
 // +kubebuilder:object:root=true

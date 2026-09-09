@@ -124,6 +124,18 @@ func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam
 		return result, err
 	}
 
+	// Snapshots are reconciled last so their RequeueAfter drives the next
+	// scheduled wake-up.
+	snapshotResult, err := u.reconcileSnapshot(ctx, ha)
+	if err != nil {
+		u.tel.Error(ctx, err, "Failed to reconcile snapshots")
+		u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		return snapshotResult, err
+	}
+	if !snapshotResult.IsZero() {
+		return snapshotResult, nil
+	}
+
 	u.tel.Info(ctx, "Reconciliation completed successfully")
 	u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultSuccess})
 	return ctrl.Result{}, nil

@@ -3046,6 +3046,9 @@ spec:
                                     configMapRef references a Kubernetes ConfigMap whose keys and values are
                                     written as KEY=VALUE lines to $HERMES_HOME/.env. See HermesDotEnv for
                                     the full precedence order on key collisions.
+
+                                    Deprecated: Use configMapRefs for new fields; singular forms will be
+                                    removed in the v1 type.
                                   properties:
                                     name:
                                       default: ""
@@ -3088,6 +3091,9 @@ spec:
                                     written as KEY=VALUE lines to $HERMES_HOME/.env. Secrets override
                                     ConfigMap keys of the same name. See HermesDotEnv for the full
                                     precedence order on key collisions.
+
+                                    Deprecated: Use secretRefs for new fields; singular forms will be
+                                    removed in the v1 type.
                                   properties:
                                     name:
                                       default: ""
@@ -3259,6 +3265,35 @@ spec:
                               omit to use the cluster default.
                             type: string
                         type: object
+                      snapshot:
+                        description: snapshot configures periodic CSI volume snapshots
+                          of the agent data PVC.
+                        properties:
+                          enabled:
+                            description: enabled turns on periodic CSI volume snapshots
+                              of the agent data PVC.
+                            type: boolean
+                          retention:
+                            default: 3
+                            description: |-
+                              retention is the number of newest snapshots to keep. Older snapshots
+                              of this agent are deleted. Defaults to 3.
+                            minimum: 1
+                            type: integer
+                          schedule:
+                            description: |-
+                              schedule is the cron expression controlling snapshot times
+                              (e.g. "0 3 * * *"). Required when enabled is true.
+                            type: string
+                          volumeSnapshotClassName:
+                            description: |-
+                              volumeSnapshotClassName selects the VolumeSnapshotClass; omit to use
+                              the cluster default.
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: schedule is required when snapshot is enabled
+                          rule: has(self.schedule) || !has(self.enabled) || !self.enabled
                     type: object
                   workspace:
                     description: workspace defines files to seed in the agent's home
@@ -3277,6 +3312,9 @@ spec:
                               configMapRef references a Kubernetes ConfigMap whose keys and values are
                               written as KEY=VALUE lines to $HERMES_HOME/.env. See HermesDotEnv for
                               the full precedence order on key collisions.
+
+                              Deprecated: Use configMapRefs for new fields; singular forms will be
+                              removed in the v1 type.
                             properties:
                               name:
                                 default: ""
@@ -3319,6 +3357,9 @@ spec:
                               written as KEY=VALUE lines to $HERMES_HOME/.env. Secrets override
                               ConfigMap keys of the same name. See HermesDotEnv for the full
                               precedence order on key collisions.
+
+                              Deprecated: Use secretRefs for new fields; singular forms will be
+                              removed in the v1 type.
                             properties:
                               name:
                                 default: ""
@@ -7257,6 +7298,48 @@ spec:
                   Populated when the pod is pending (e.g. "Unschedulable") or unhealthy
                   (e.g. "CrashLoopBackOff", "OOMKilled"). Empty when the agent is running normally.
                 type: string
+              snapshot:
+                description: |-
+                  snapshot tracks the state of periodic CSI volume snapshots of the
+                  agent data PVC.
+                properties:
+                  lastScheduleTime:
+                    description: |-
+                      lastScheduleTime is the scheduled time of the most recently taken (or
+                      accounted for) snapshot, used to compute the next run.
+                    format: date-time
+                    type: string
+                  snapshots:
+                    description: |-
+                      snapshots lists the VolumeSnapshots currently retained for this agent,
+                      newest first. Mirrors the retention policy: snapshots removed by
+                      retention are also removed from this list.
+                    items:
+                      description: SnapshotRef identifies a single VolumeSnapshot
+                        of the agent data PVC.
+                      properties:
+                        creationTime:
+                          description: creationTime is when the VolumeSnapshot was
+                            created.
+                          format: date-time
+                          type: string
+                        name:
+                          description: name is the VolumeSnapshot name.
+                          type: string
+                        pvc:
+                          description: pvc is the source PersistentVolumeClaim the
+                            snapshot was taken from.
+                          type: string
+                      required:
+                      - creationTime
+                      - name
+                      - pvc
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                type: object
             type: object
         required:
         - spec

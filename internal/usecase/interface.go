@@ -100,6 +100,12 @@ type Kubernetes interface {
 	CreateNetworkPolicyOwnedByHermesAgent(ctx context.Context, param CreateNetworkPolicyOfHermesAgentParam) error
 	UpdateNetworkPolicyOwnedByHermesAgent(ctx context.Context, param UpdateNetworkPolicyParam) error
 	DeleteNetworkPolicy(ctx context.Context, param DeleteNetworkPolicyParam) error
+
+	GetPersistentVolumeClaim(ctx context.Context, param GetPersistentVolumeClaimParam) (*corev1.PersistentVolumeClaim, error)
+
+	ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param ListVolumeSnapshotsOwnedByAgentParam) ([]map[string]any, error)
+	CreateVolumeSnapshotOwnedByHermesAgent(ctx context.Context, param CreateVolumeSnapshotOfHermesAgentParam) error
+	DeleteVolumeSnapshot(ctx context.Context, param DeleteVolumeSnapshotParam) error
 }
 
 type GetHermesAgentParam struct {
@@ -273,5 +279,23 @@ type UpdateNetworkPolicyParam struct {
 }
 
 type DeleteNetworkPolicyParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type GetPersistentVolumeClaimParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type ListVolumeSnapshotsOwnedByAgentParam struct {
+	Namespace string
+	AgentName string
+}
+
+type CreateVolumeSnapshotOfHermesAgentParam struct {
+	HermesAgent    *agentsv1alpha1.HermesAgent
+	VolumeSnapshot map[string]any
+}
+
+type DeleteVolumeSnapshotParam struct {
 	NamespacedName types.NamespacedName
 }

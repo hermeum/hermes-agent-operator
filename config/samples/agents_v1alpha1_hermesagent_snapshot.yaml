@@ -1,0 +1,15 @@
+apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: hermesagent-sample-snapshot
+spec:
+  hermes:
+    storage:
+      persistence:
+        enabled: true
+        size: 10Gi
+      snapshot:
+        enabled: true
+        schedule: "0 3 * * *"        # daily at 03:00
+        retention: 7                 # keep newest 7 snapshots
+        # volumeSnapshotClassName: my-snapshot-class  # optional; falls back to cluster default

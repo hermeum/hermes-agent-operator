@@ -24,8 +24,11 @@ import (
 const (
 	hermesContainerName          = "hermes-agent"
 	hermesWorkspacePathSeparator = "--"
-	hermesDefaultProfile         = "default"
-	annotationDesiredSpecHash    = domain + "/desired-spec-hash"
+	// hermesHomeVolume is the StatefulSet volumeClaimTemplate name for the agent
+	// data PVC. Package-level so other reconcilers (e.g. snapshots) can share it.
+	hermesHomeVolume          = "hermes-data"
+	hermesDefaultProfile      = "default"
+	annotationDesiredSpecHash = domain + "/desired-spec-hash"
 	// searxngURL is the in-pod URL the hermes-agent uses to reach the SearXNG sidecar.
 	searxngURL = "http://localhost:8080"
 	// camofoxURL is the in-pod URL the hermes-agent uses to reach the Camofox sidecar.
@@ -295,7 +298,6 @@ func buildInitContainerSecurityContext() *corev1.SecurityContext {
 //nolint:gocyclo // inherent to the breadth of init containers and volume wiring
 func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
 	const (
-		hermesHomeVolume      = "hermes-data"
 		hermesHomeMount       = "/opt/data"
 		hermesDSHMVolume      = "dshm"
 		hermesDSHMMount       = "/dev/shm"

@@ -12,10 +12,27 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const (
+	volumeSnapshotGroup   = "snapshot.storage.k8s.io"
+	volumeSnapshotVersion = "v1"
+	volumeSnapshotKind    = "VolumeSnapshot"
+
+	volumeSnapshotAPIVersion = volumeSnapshotGroup + "/" + volumeSnapshotVersion
+	snapshotAgentLabel       = "agents.hermeum.app/agent"
+)
+
+var volumeSnapshotGVK = schema.GroupVersionKind{
+	Group:   volumeSnapshotGroup,
+	Version: volumeSnapshotVersion,
+	Kind:    "VolumeSnapshotList",
+}
 
 type KubernetesClient struct {
 	client client.Client
@@ -365,4 +382,61 @@ func (k *KubernetesClient) DeleteNetworkPolicy(ctx context.Context, param usecas
 		},
 	}
 	return client.IgnoreNotFound(k.client.Delete(ctx, np))
+}
+
+func (k *KubernetesClient) GetPersistentVolumeClaim(ctx context.Context, param usecase.GetPersistentVolumeClaimParam) (*corev1.PersistentVolumeClaim, error) {
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := k.client.Get(ctx, param.NamespacedName, pvc); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pvc, nil
+}
+
+// VolumeSnapshotsSupported is implemented via the REST mapper probe in the
+// usecase layer: when the VolumeSnapshot CRD is absent, ListVolumeSnapshots
+// returns a no-match error (meta.IsNoMatchError).
+
+func (k *KubernetesClient) ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param usecase.ListVolumeSnapshotsOwnedByAgentParam) ([]map[string]any, error) {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(volumeSnapshotGVK)
+	if err := k.client.List(ctx, list,
+		client.InNamespace(param.Namespace),
+		client.MatchingLabels{snapshotAgentLabel: param.AgentName},
+	); err != nil {
+		return nil, err
+	}
+	items := make([]map[string]any, 0, len(list.Items))
+	for i := range list.Items {
+		items = append(items, list.Items[i].Object)
+	}
+	return items, nil
+}
+
+// CreateVolumeSnapshotOwnedByHermesAgent creates a VolumeSnapshot attributed
+// to the HermesAgent via the snapshotAgentLabel. Unlike other *OwnedByHermesAgent
+// methods, it deliberately does NOT call ctrl.SetControllerReference: deleting
+// the agent must never garbage-collect its backups (issue #75).
+func (k *KubernetesClient) CreateVolumeSnapshotOwnedByHermesAgent(ctx context.Context, param usecase.CreateVolumeSnapshotOfHermesAgentParam) error {
+	labels, _, _ := unstructured.NestedStringMap(param.VolumeSnapshot, "metadata", "labels")
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[snapshotAgentLabel] = param.HermesAgent.Name
+	if err := unstructured.SetNestedStringMap(param.VolumeSnapshot, labels, "metadata", "labels"); err != nil {
+		return err
+	}
+
+	obj := &unstructured.Unstructured{Object: param.VolumeSnapshot}
+	return k.client.Create(ctx, obj)
+}
+
+func (k *KubernetesClient) DeleteVolumeSnapshot(ctx context.Context, param usecase.DeleteVolumeSnapshotParam) error {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(volumeSnapshotGVK)
+	obj.SetName(param.NamespacedName.Name)
+	obj.SetNamespace(param.NamespacedName.Namespace)
+	return client.IgnoreNotFound(k.client.Delete(ctx, obj))
 }
