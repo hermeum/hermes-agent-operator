@@ -167,6 +167,41 @@ hermes:
       existingClaim: my-pvc        # optional; omit to provision a new PVC automatically
 ```
 
+#### `snapshot`
+
+Periodic CSI volume snapshots of the agent data PVC — the only state in the deployment that cannot be reproduced (sessions, skills, memories, `.env` history).
+
+> **Prerequisites:** your StorageClass must be backed by a CSI driver with snapshot support, and the cluster must run the [snapshot-controller](https://github.com/kubernetes-csi/external-snapshotter#installation) (VolumeSnapshot CRDs + controller from `kubernetes-csi/external-snapshotter`). Without it, the operator surfaces a `SnapshotUnsupported` condition instead of failing silently.
+
+```yaml
+hermes:
+  storage:
+    snapshot:                      # optional; omit to disable snapshots
+      enabled: true
+      schedule: "0 3 * * *"        # required when enabled; standard cron expression
+      retention: 3                 # optional; keep newest N snapshots, defaults to 3
+      volumeSnapshotClassName: my-class  # optional; omit to use the cluster default
+```
+
+**Behavior:**
+
+- Cron-scheduled; if runs were missed, exactly one catch-up snapshot is taken. Skipped while [`suspend`ed](#suspend).
+- Named `<pvc>-<yyyymmddhhmmss>`, labeled `agents.hermeum.app/agent=<name>`, and **not owned by the agent** — deleting the HermesAgent never garbage-collects its backups.
+- Retention keeps the newest N snapshots and deletes the rest.
+- Retained snapshots are listed in `status.snapshot`:
+
+  ```sh
+  kubectl get hermesagent my-agent -o jsonpath='{.status.snapshot}'
+  ```
+
+  To list the VolumeSnapshot objects of an agent directly:
+
+  ```sh
+  kubectl get volumesnapshots -l agents.hermeum.app/agent=my-agent
+  ```
+
+- Restoring from a snapshot is not yet supported (planned follow-up).
+
 
 ### `hermes.workspace`
 
