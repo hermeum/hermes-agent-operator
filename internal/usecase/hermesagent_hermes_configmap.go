@@ -205,7 +205,7 @@ func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, er
 	}
 
 	// Operator-managed env vars for the dotenv init container. These keys are
-	// mounted (with an Items filter) into init-dotenv so they land in .env.
+	// mounted (with an Items filter) into the consolidated init-hermes container so they land in .env.
 	// Non-secret values go in the ConfigMap; secret values (API_SERVER_KEY,
 	// WEBHOOK_SECRET) are in the operator Secret and mounted separately.
 	if apiServer := ha.GetHermes().GetAPIServer(); apiServer.IsEnabled() {

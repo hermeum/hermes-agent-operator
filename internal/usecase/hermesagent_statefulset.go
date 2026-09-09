@@ -464,23 +464,30 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		})
 	}
 
-	// config: init container copies config.yaml from the bootstrap ConfigMap to the data volume.
-	if hc := ha.GetHermes().GetConfig(); hc != nil {
-		initContainers = append(initContainers, initContainer("init-config", buildConfigScript(hermesDefaultProfile)))
-	}
-
-	// workspace: init container copies workspace files from the bootstrap ConfigMap.
-	// ConfigMap keys use the format "profile.default.workspace.<path>" with "/" replaced by "--".
-	initContainers = append(initContainers, initContainer("init-workspace", buildWorkspaceScript(hermesDefaultProfile)))
-
-	// dotenv: init container writes the default profile .env.
+	// A single consolidated init container configures the default profile:
+	// config → workspace → dotenv → packages → plugins → skills → bundles →
+	// crons → stale-profile cleanup. Steps run in subshells so a skipped step
+	// (e.g. "packages up-to-date, exit 0") cannot abort the remaining steps.
 	//
-	// Operator-managed env vars (API_SERVER_*, WEBHOOK_*, SEARXNG_URL,
+	// dotenv: operator-managed env vars (API_SERVER_*, WEBHOOK_*, SEARXNG_URL,
 	// CAMOFOX_URL) are stored as keys in the Hermes ConfigMap and Secret, then
 	// mounted into the init container with Items filters so the existing
 	// `for f in .../*` loop dumps them as KEY=VALUE lines — the same mechanism
 	// as user workspace.dotEnv. Operator mounts come first so user dotEnv keys
 	// override on collision (user wins).
+	var defaultSteps []string
+	var defaultMounts []corev1.VolumeMount
+
+	// config: copy config.yaml from the bootstrap ConfigMap to the data volume.
+	if ha.GetHermes().GetConfig() != nil {
+		defaultSteps = append(defaultSteps, buildConfigScript(hermesDefaultProfile))
+	}
+
+	// workspace: copy workspace files from the bootstrap ConfigMap.
+	// ConfigMap keys use the format "profile.default.workspace.<path>" with "/" replaced by "--".
+	defaultSteps = append(defaultSteps, buildWorkspaceScript(hermesDefaultProfile))
+
+	// dotenv: write the default profile .env.
 	de := ha.GetHermes().GetWorkspace().GetDotEnv()
 	operatorItems := buildOperatorDotEnvItems(ha)
 	operatorSecretItems := buildOperatorDotEnvSecretItems(ha)
@@ -584,205 +591,154 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			}
 		}
 
-		ic := initContainer("init-dotenv", buildDotEnvScript(hermesDefaultProfile, mountPaths...))
-		ic.VolumeMounts = append(ic.VolumeMounts, mounts...)
-		initContainers = append(initContainers, ic)
+		defaultSteps = append(defaultSteps, buildDotEnvScript(hermesDefaultProfile, mountPaths...))
+		defaultMounts = mounts
 	}
 
-	// python-packages: init container installs desired packages into $HERMES_HOME/.python-packages.
-	pythonPackages := ha.GetHermes().GetPackages().GetPip()
-	initContainers = append(initContainers, initContainer("init-python-packages", buildPythonPackagesScript(pythonPackages)))
+	// python-packages: install desired packages into $HERMES_HOME/.python-packages.
+	defaultSteps = append(defaultSteps, buildPythonPackagesScript(ha.GetHermes().GetPackages().GetPip()))
 
-	// npm-packages: init container installs desired packages into $HERMES_HOME/.npm-packages.
-	npmPackages := ha.GetHermes().GetPackages().GetNpm()
-	initContainers = append(initContainers, initContainer("init-npm-packages", buildNPMPackagesScript(npmPackages)))
+	// npm-packages: install desired packages into $HERMES_HOME/.npm-packages.
+	defaultSteps = append(defaultSteps, buildNPMPackagesScript(ha.GetHermes().GetPackages().GetNpm()))
 
-	// plugins: init container installs desired plugins and removes stale ones.
-	plugins := ha.GetHermes().GetPlugins()
-	initContainers = append(initContainers, initContainer("init-plugins", buildPluginsScript(hermesDefaultProfile, plugins)))
+	// plugins: install desired plugins and remove stale ones.
+	defaultSteps = append(defaultSteps, buildPluginsScript(hermesDefaultProfile, ha.GetHermes().GetPlugins()))
 
-	// skills: init container installs/uninstalls skills via the hermes CLI.
-	skills := ha.GetHermes().GetSkills()
-	initContainers = append(initContainers, initContainer("init-skills", buildSkillsScript(hermesDefaultProfile, skills)))
+	// skills: install/uninstall skills via the hermes CLI.
+	defaultSteps = append(defaultSteps, buildSkillsScript(hermesDefaultProfile, ha.GetHermes().GetSkills()))
 
-	// bundles: init container reconciles bundles via the hermes CLI.
-	bundles := ha.GetHermes().GetBundles()
-	initContainers = append(initContainers, initContainer("init-bundles", buildBundlesScript(hermesDefaultProfile, bundles)))
+	// bundles: reconcile bundles via the hermes CLI.
+	defaultSteps = append(defaultSteps, buildBundlesScript(hermesDefaultProfile, ha.GetHermes().GetBundles()))
 
-	// crons: init container reconciles scheduled jobs via the hermes CLI.
-	crons := ha.GetHermes().GetCrons()
-	initContainers = append(initContainers, initContainer("init-crons", buildCronsScript(hermesDefaultProfile, crons)))
+	// crons: reconcile scheduled jobs via the hermes CLI.
+	defaultSteps = append(defaultSteps, buildCronsScript(hermesDefaultProfile, ha.GetHermes().GetCrons()))
 
-	// profiles: create named profiles and configure each with its own init containers.
-	if profiles := ha.GetHermes().GetProfiles(); len(profiles) > 0 {
-		names := sortedProfileNames(profiles)
+	// profiles cleanup: remove named profiles no longer desired and write the
+	// desired profiles manifest. Profile creation happens in the per-profile
+	// init containers below (after the default profile is fully configured, so
+	// --clone copies complete state).
+	profiles := ha.GetHermes().GetProfiles()
+	if len(profiles) > 0 {
+		defaultSteps = append(defaultSteps, buildProfilesCleanupScript(profiles))
+	}
 
-		initContainers = append(initContainers,
-			initContainer("init-profiles", buildProfilesCreationScript(profiles)))
+	initContainers = append(initContainers, func() corev1.Container {
+		ic := initContainer("init-hermes", combineInitSteps(defaultSteps...))
+		ic.VolumeMounts = append(ic.VolumeMounts, defaultMounts...)
+		return ic
+	}())
 
-		{
-			var s strings.Builder
-			for _, name := range names {
-				if profiles[name].Config.GetRaw() != nil {
-					s.WriteString(buildConfigScript(name))
-				}
-			}
-			if s.Len() > 0 {
-				initContainers = append(initContainers,
-					initContainer("init-profiles-config", s.String()))
-			}
+	// One init container per named profile: create the profile, then configure
+	// it (config → workspace → dotenv → plugins → skills → bundles → crons).
+	sidecarItemsForProfiles := buildProfileSidecarDotEnvItems(ha)
+	for _, name := range sortedProfileNames(profiles) {
+		profile := profiles[name]
+		var steps []string
+		var profileMounts []corev1.VolumeMount
+
+		steps = append(steps, buildProfileCreationScript(name, profile.Clone))
+
+		if profile.Config.GetRaw() != nil {
+			steps = append(steps, buildConfigScript(name))
 		}
 
-		{
-			var s strings.Builder
-			for _, name := range names {
-				s.WriteString(buildWorkspaceScript(name))
+		steps = append(steps, buildWorkspaceScript(name))
+
+		// dotenv: SEARXNG_URL / CAMOFOX_URL point at shared sidecars and are
+		// written to every named profile's .env. API_SERVER_* / WEBHOOK_* are
+		// intentionally excluded — they belong to the default profile's
+		// gateway.
+		if de := profile.Workspace.GetDotEnv(); de != nil || len(sidecarItemsForProfiles) > 0 {
+			var mountPaths []string
+
+			// Operator sidecar keys first (user keys override on collision).
+			if len(sidecarItemsForProfiles) > 0 {
+				volName := "hermes-operator-dotenv-profile-" + name
+				mountPath := "/hermes-operator-dotenv-profile-" + name
+				volumes = append(volumes, corev1.Volume{
+					Name: volName,
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
+							Items:                sidecarItemsForProfiles,
+						},
+					},
+				})
+				profileMounts = append(profileMounts, corev1.VolumeMount{Name: volName, MountPath: mountPath, ReadOnly: true})
+				mountPaths = append(mountPaths, mountPath)
 			}
-			initContainers = append(initContainers,
-				initContainer("init-profiles-workspace", s.String()))
-		}
 
-		{
-			var s strings.Builder
-			ic := initContainer("init-profiles-dotenv", "")
-			// SEARXNG_URL / CAMOFOX_URL point at shared sidecars and are written
-			// to every named profile's .env. API_SERVER_* / WEBHOOK_* are
-			// intentionally excluded — they belong to the default profile's
-			// gateway.
-			sidecarItems := buildProfileSidecarDotEnvItems(ha)
-			for _, name := range names {
-				de := profiles[name].Workspace.GetDotEnv()
-				if de == nil && len(sidecarItems) == 0 {
-					continue
-				}
-				var mountPaths []string
-
-				// Operator sidecar keys first (user keys override on collision).
-				if len(sidecarItems) > 0 {
-					volName := "hermes-operator-dotenv-profile-" + name
-					mountPath := "/hermes-operator-dotenv-profile-" + name
+			if de != nil {
+				// ConfigMaps: singular first, then plural in order.
+				if de.ConfigMapRef != nil {
+					volName := "hermes-dotenv-configmap-profile-" + name
+					mountPath := "/hermes-dotenv-configmap-profile-" + name
 					volumes = append(volumes, corev1.Volume{
 						Name: volName,
 						VolumeSource: corev1.VolumeSource{
 							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetHermesName()},
-								Items:                sidecarItems,
+								LocalObjectReference: corev1.LocalObjectReference{Name: de.ConfigMapRef.Name},
 							},
 						},
 					})
-					ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
-						Name: volName, MountPath: mountPath, ReadOnly: true,
-					})
+					profileMounts = append(profileMounts, corev1.VolumeMount{Name: volName, MountPath: mountPath, ReadOnly: true})
 					mountPaths = append(mountPaths, mountPath)
 				}
 
-				if de != nil {
-					// ConfigMaps: singular first, then plural in order.
-					if de.ConfigMapRef != nil {
-						volName := "hermes-dotenv-configmap-profile-" + name
-						mountPath := "/hermes-dotenv-configmap-profile-" + name
-						volumes = append(volumes, corev1.Volume{
-							Name: volName,
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{Name: de.ConfigMapRef.Name},
-								},
+				for i, ref := range de.ConfigMapRefs {
+					volName := "hermes-dotenv-configmap-profile-" + name + "-" + strconv.Itoa(i)
+					mountPath := "/hermes-dotenv-configmap-profile-" + name + "-" + strconv.Itoa(i)
+					volumes = append(volumes, corev1.Volume{
+						Name: volName,
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{Name: ref.Name},
 							},
-						})
-						ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
-							Name: volName, MountPath: mountPath, ReadOnly: true,
-						})
-						mountPaths = append(mountPaths, mountPath)
-					}
-
-					for i, ref := range de.ConfigMapRefs {
-						volName := "hermes-dotenv-configmap-profile-" + name + "-" + strconv.Itoa(i)
-						mountPath := "/hermes-dotenv-configmap-profile-" + name + "-" + strconv.Itoa(i)
-						volumes = append(volumes, corev1.Volume{
-							Name: volName,
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{Name: ref.Name},
-								},
-							},
-						})
-						ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
-							Name: volName, MountPath: mountPath, ReadOnly: true,
-						})
-						mountPaths = append(mountPaths, mountPath)
-					}
-
-					// Secrets: singular first, then plural in order.
-					if de.SecretRef != nil {
-						volName := "hermes-dotenv-secret-profile-" + name
-						mountPath := "/hermes-dotenv-secret-profile-" + name
-						volumes = append(volumes, corev1.Volume{
-							Name: volName,
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{SecretName: de.SecretRef.Name},
-							},
-						})
-						ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
-							Name: volName, MountPath: mountPath, ReadOnly: true,
-						})
-						mountPaths = append(mountPaths, mountPath)
-					}
-
-					for i, ref := range de.SecretRefs {
-						volName := "hermes-dotenv-secret-profile-" + name + "-" + strconv.Itoa(i)
-						mountPath := "/hermes-dotenv-secret-profile-" + name + "-" + strconv.Itoa(i)
-						volumes = append(volumes, corev1.Volume{
-							Name: volName,
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{SecretName: ref.Name},
-							},
-						})
-						ic.VolumeMounts = append(ic.VolumeMounts, corev1.VolumeMount{
-							Name: volName, MountPath: mountPath, ReadOnly: true,
-						})
-						mountPaths = append(mountPaths, mountPath)
-					}
+						},
+					})
+					profileMounts = append(profileMounts, corev1.VolumeMount{Name: volName, MountPath: mountPath, ReadOnly: true})
+					mountPaths = append(mountPaths, mountPath)
 				}
 
-				s.WriteString(buildDotEnvScript(name, mountPaths...))
+				// Secrets: singular first, then plural in order.
+				if de.SecretRef != nil {
+					volName := "hermes-dotenv-secret-profile-" + name
+					mountPath := "/hermes-dotenv-secret-profile-" + name
+					volumes = append(volumes, corev1.Volume{
+						Name: volName,
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{SecretName: de.SecretRef.Name},
+						},
+					})
+					profileMounts = append(profileMounts, corev1.VolumeMount{Name: volName, MountPath: mountPath, ReadOnly: true})
+					mountPaths = append(mountPaths, mountPath)
+				}
+
+				for i, ref := range de.SecretRefs {
+					volName := "hermes-dotenv-secret-profile-" + name + "-" + strconv.Itoa(i)
+					mountPath := "/hermes-dotenv-secret-profile-" + name + "-" + strconv.Itoa(i)
+					volumes = append(volumes, corev1.Volume{
+						Name: volName,
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{SecretName: ref.Name},
+						},
+					})
+					profileMounts = append(profileMounts, corev1.VolumeMount{Name: volName, MountPath: mountPath, ReadOnly: true})
+					mountPaths = append(mountPaths, mountPath)
+				}
 			}
-			if s.Len() > 0 {
-				ic.Args = []string{s.String()}
-				initContainers = append(initContainers, ic)
-			}
+
+			steps = append(steps, buildDotEnvScript(name, mountPaths...))
 		}
 
-		{
-			var s strings.Builder
-			for _, name := range names {
-				s.WriteString(buildPluginsScript(name, profiles[name].Plugins))
-			}
-			initContainers = append(initContainers, initContainer("init-profiles-plugins", s.String()))
-		}
+		steps = append(steps, buildPluginsScript(name, profile.Plugins))
+		steps = append(steps, buildSkillsScript(name, profile.Skills))
+		steps = append(steps, buildBundlesScript(name, profile.Bundles))
+		steps = append(steps, buildCronsScript(name, profile.Crons))
 
-		{
-			var s strings.Builder
-			for _, name := range names {
-				s.WriteString(buildSkillsScript(name, profiles[name].Skills))
-			}
-			initContainers = append(initContainers, initContainer("init-profiles-skills", s.String()))
-		}
-
-		{
-			var s strings.Builder
-			for _, name := range names {
-				s.WriteString(buildBundlesScript(name, profiles[name].Bundles))
-			}
-			initContainers = append(initContainers, initContainer("init-profiles-bundles", s.String()))
-		}
-
-		{
-			var s strings.Builder
-			for _, name := range names {
-				s.WriteString(buildCronsScript(name, profiles[name].Crons))
-			}
-			initContainers = append(initContainers, initContainer("init-profiles-crons", s.String()))
-		}
+		ic := initContainer("init-profile-"+name, combineInitSteps(steps...))
+		ic.VolumeMounts = append(ic.VolumeMounts, profileMounts...)
+		initContainers = append(initContainers, ic)
 	}
 
 	// initScripts: user-provided scripts run as init containers after all managed ones.
@@ -1434,19 +1390,13 @@ func sortedProfileNames(profiles map[string]agentsv1alpha1.HermesProfile) []stri
 	return names
 }
 
-func buildProfilesCreationScript(profiles map[string]agentsv1alpha1.HermesProfile) string {
+// buildProfilesCleanupScript removes named profiles no longer desired and
+// rewrites the profiles manifest. It runs inside the consolidated init-hermes
+// container; profile creation happens in the per-profile init containers.
+func buildProfilesCleanupScript(profiles map[string]agentsv1alpha1.HermesProfile) string {
 	names := sortedProfileNames(profiles)
 	casePattern := `"` + strings.Join(names, `"|"`) + `"`
 	manifestContent := strings.Join(names, "\n")
-
-	createLines := make([]string, 0, len(names))
-	for _, name := range names {
-		cmd := fmt.Sprintf("hermes profile create %q --no-alias", name)
-		if profiles[name].Clone {
-			cmd += " --clone"
-		}
-		createLines = append(createLines, cmd+" || true")
-	}
 
 	return fmt.Sprintf(`set -eu
 PROFILES_MANIFEST="$HERMES_HOME/.hermes-agent-operator/profiles-manifest"
@@ -1462,12 +1412,36 @@ if [ -f "$PROFILES_MANIFEST" ]; then
   done < "$PROFILES_MANIFEST"
 fi
 
-%s
-
 cat > "$PROFILES_MANIFEST" << 'PROFILES_EOF'
 %s
 PROFILES_EOF
-`, casePattern, strings.Join(createLines, "\n"), manifestContent)
+`, casePattern, manifestContent)
+}
+
+// buildProfileCreationScript creates a single named profile. It runs as the
+// first step of the profile's own init container, after the default profile
+// has been fully configured (so --clone copies complete state).
+func buildProfileCreationScript(name string, clone bool) string {
+	cmd := fmt.Sprintf("hermes profile create %q --no-alias", name)
+	if clone {
+		cmd += " --clone"
+	}
+	return fmt.Sprintf(`set -eu
+%s || true
+echo "Profile %s ready"
+`, cmd, name)
+}
+
+// combineInitSteps joins step scripts into a single init script. Each step is
+// wrapped in a subshell so steps that exit early (e.g. "packages up-to-date,
+// exit 0") cannot abort the remaining steps, and a banner echoes the step
+// number for diagnosability.
+func combineInitSteps(steps ...string) string {
+	var s strings.Builder
+	for i, step := range steps {
+		fmt.Fprintf(&s, "echo '==> Step %d/%d'\n(\n%s\n)\n", i+1, len(steps), step)
+	}
+	return s.String()
 }
 
 func buildCronsScript(profile string, crons []agentsv1alpha1.HermesCron) string {

@@ -27,6 +27,13 @@ manager:
   args:
     - --leader-elect
 
+  ## Anonymous deployment heartbeat (PostHog) used to count running operator
+  ## installs. Each run reports an anonymous random deployment ID and the
+  ## operator version. Disable by setting enabled: false.
+  ##
+  heartbeat:
+    enabled: true
+
   ## Image pull secrets
   ##
   # imagePullSecrets:
@@ -112,6 +119,14 @@ rbac:
   ## - true: Role/RoleBinding (release namespace only)
   ##
   namespaced: false
+
+  ## Restrict the operator to the listed namespaces. When set, the operator
+  ## is granted a Role/RoleBinding in each listed namespace (instead of a
+  ## ClusterRole) and the manager runs with
+  ## --watch-namespace=<comma-separated list>. Takes precedence over
+  ## `namespaced`.
+  ##
+  # watchNamespaces: []
 
   ## Helper roles for CRD management (admin/editor/viewer)
   ##

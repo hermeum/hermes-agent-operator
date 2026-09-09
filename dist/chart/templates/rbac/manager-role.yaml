@@ -1,13 +1,22 @@
+{{- $namespaces := .Values.rbac.watchNamespaces | default list }}
+{{- $namespaced := or .Values.rbac.namespaced (not (empty $namespaces)) }}
+{{- $targets := list }}
+{{- if not (empty $namespaces) }}
+{{- $targets = $namespaces }}
+{{- else if $namespaced }}
+{{- $targets = list .Release.Namespace }}
+{{- end }}
+{{- if $namespaced }}
+{{- range $target := $targets }}
 apiVersion: rbac.authorization.k8s.io/v1
-{{- if .Values.rbac.namespaced }}
 kind: Role
-{{- else }}
-kind: ClusterRole
-{{- end }}
 metadata:
-{{- if .Values.rbac.namespaced }}
-  namespace: {{ .Release.Namespace }}
-{{- end }}
+  namespace: {{ $target }}
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/name: {{ include "hermes-agent-operator.name" $ }}
+    helm.sh/chart: {{ $.Chart.Name }}-{{ $.Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
   name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
 rules:
 - apiGroups:
@@ -106,3 +115,108 @@ rules:
   - patch
   - update
   - watch
+---
+{{- end }}
+{{- else }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - agents.hermeum.app
+  resources:
+  - hermesagents
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - agents.hermeum.app
+  resources:
+  - hermesagents/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - agents.hermeum.app
+  resources:
+  - hermesagents/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+{{- end }}

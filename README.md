@@ -2,7 +2,9 @@
 
 <p align="center"><img alt="Hermes Gopher" src="./img/hermes-agent-gopher.png" width="300" height="300"/></p>
 
-Self-hosting [Hermes agent](https://github.com/nousresearch/hermes-agent) on Kubernetes in a declarative, reproducible manner. 
+Self-hosting [Hermes agent](https://github.com/nousresearch/hermes-agent) on Kubernetes in a declarative, reproducible manner.
+
+> **Note:** If you need a platform to manage Hermes agents for your team, check out [Hermeum](https://github.com/hermeum/hermeum) — it's built on this operator and adds a dashboard, templates, and shared credentials.
 
 ## Why
 
@@ -648,6 +650,28 @@ podAnnotations:                      # optional
   rotatedAt: "2026-07-06T12:00:00Z"  # any change here triggers a rolling restart
   prometheus.io/scrape: "true"       # also usable for ordinary pod annotations
 ```
+
+
+## Heartbeat
+
+The operator sends an **anonymous heartbeat** via [PostHog](https://posthog.com) so we can count how many operator installations are running. Prometheus telemetry (reconciliation metrics) stays entirely in your cluster; the heartbeat is the only call home, and it can be disabled.
+
+What is collected (and nothing else):
+
+- An **anonymous deployment ID** — a random UUID generated each time a controller starts. It is not persisted and contains no user, cluster, or host information. Every running controller sends its own heartbeat, so the distinct number of deployment IDs in a recent window equals the number of running installations.
+- The **operator version**.
+
+What is **not** collected: agent names, namespaces, configuration, workspace contents, hostnames, IP addresses, or any other user-identifiable data.
+
+To disable the heartbeat, set `manager.heartbeat.enabled=false` when installing:
+
+```sh
+helm upgrade hermes-agent-operator oci://ghcr.io/hermeum/charts/hermes-agent-operator \
+  --install --namespace hermes-agent --create-namespace \
+  --set manager.heartbeat.enabled=false
+```
+
+or run the manager with `--heartbeat-disabled`.
 
 
 ## FAQ
