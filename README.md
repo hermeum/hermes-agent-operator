@@ -2,7 +2,9 @@
 
 <p align="center"><img alt="Hermes Gopher" src="./img/hermes-agent-gopher.png" width="300" height="300"/></p>
 
-Self-hosting [Hermes agent](https://github.com/nousresearch/hermes-agent) on Kubernetes in a declarative, reproducible manner. 
+Self-hosting [Hermes agent](https://github.com/nousresearch/hermes-agent) on Kubernetes in a declarative, reproducible manner.
+
+> **Note:** If you need a platform to manage Hermes agents for your team, check out [Hermeum](https://github.com/hermeum/hermeum) — it's built on this operator and adds a dashboard, templates, and shared credentials.
 
 ## Why
 
