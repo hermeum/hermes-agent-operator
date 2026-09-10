@@ -202,21 +202,19 @@ hermes:
       volumeSnapshotClassName: my-class  # optional; omit to use the cluster default
 ```
 
-**Behavior:**
+Retained snapshots are listed in `status.snapshot`:
 
-- Cron-scheduled; if runs were missed, exactly one catch-up snapshot is taken. Skipped while [`suspend`ed](#suspend).
-- Named `<pvc>-<yyyymmddhhmmss>`, labeled `agents.hermeum.app/agent=<name>`, and **not owned by the agent** — deleting the HermesAgent never garbage-collects its backups.
-- Retention keeps the newest N snapshots and deletes the rest.
-- Retained snapshots are listed in `status.snapshot`:
-  ```sh
-  kubectl get hermesagent my-agent -o jsonpath='{.status.snapshot}'
-  ```
+```sh
+kubectl get hermesagent my-agent -o jsonpath='{.status.snapshot}'
+```
 
-  To list the VolumeSnapshot objects of an agent directly:
-  ```sh
-  kubectl get volumesnapshots -l agents.hermeum.app/agent=my-agent
-  ```
-- Restore back into the agent with [`persistence.existingSnapshot`](#persistenceexistingsnapshot).
+To list the VolumeSnapshot objects of an agent directly:
+
+```sh
+kubectl get volumesnapshots -l agents.hermeum.app/agent=my-agent
+```
+
+Restore back into the agent with [`persistence.existingSnapshot`](#persistenceexistingsnapshot).
 
 ### `hermes.workspace`
 
