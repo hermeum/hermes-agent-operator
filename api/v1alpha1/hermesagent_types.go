@@ -58,6 +58,11 @@ const (
 	// configured but the cluster cannot support them (e.g. the VolumeSnapshot
 	// CRD or snapshot-controller is not installed).
 	ConditionSnapshotUnsupported HermesAgentConditionType = "SnapshotUnsupported"
+	// ConditionRestoreFailed indicates that the data volume configured via
+	// persistence.existingSnapshot cannot be provisioned (e.g. the referenced
+	// VolumeSnapshot does not exist or is not ReadyToUse). The condition is
+	// cleared once the restored PVC is provisioned or the field is unset.
+	ConditionRestoreFailed HermesAgentConditionType = "RestoreFailed"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -78,11 +83,30 @@ type HermesPersistence struct {
 	// When set, enabled/size/storageClassName are ignored.
 	// +optional
 	ExistingClaim *string `json:"existingClaim,omitempty"`
+	// existingSnapshot mounts the agent data volume as a PersistentVolumeClaim
+	// restored from the named VolumeSnapshot in the agent's namespace, instead
+	// of provisioning a new empty PVC. The snapshot must be ReadyToUse; the
+	// restored PVC is managed by the operator, sized from the snapshot's
+	// restoreSize, and named <snapshot>-restore. When set, enabled and size
+	// are ignored; storageClassName selects the restored PVC's storage class
+	// (omit to use the cluster default). Changing the snapshot
+	// re-provisions a new PVC and rolls the agent onto it. The snapshot
+	// itself is never modified or deleted.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +optional
+	ExistingSnapshot *string `json:"existingSnapshot,omitempty"`
 }
 
 func (p *HermesPersistence) GetExistingClaim() string {
 	if p != nil && p.ExistingClaim != nil {
 		return *p.ExistingClaim
+	}
+	return ""
+}
+
+func (p *HermesPersistence) GetExistingSnapshot() string {
+	if p != nil && p.ExistingSnapshot != nil {
+		return *p.ExistingSnapshot
 	}
 	return ""
 }

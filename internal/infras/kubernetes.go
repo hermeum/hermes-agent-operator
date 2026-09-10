@@ -180,6 +180,16 @@ func (k *KubernetesClient) UpdateStatefulSetOwnedByHermesAgent(ctx context.Conte
 	return k.client.Update(ctx, param.StatefulSet)
 }
 
+func (k *KubernetesClient) DeleteStatefulSet(ctx context.Context, param usecase.DeleteStatefulSetParam) error {
+	sts := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      param.NamespacedName.Name,
+			Namespace: param.NamespacedName.Namespace,
+		},
+	}
+	return client.IgnoreNotFound(k.client.Delete(ctx, sts))
+}
+
 func (k *KubernetesClient) GetServiceAccount(ctx context.Context, param usecase.GetServiceAccountParam) (*corev1.ServiceAccount, error) {
 	sa := &corev1.ServiceAccount{}
 	if err := k.client.Get(ctx, param.NamespacedName, sa); err != nil {
@@ -401,9 +411,32 @@ func (k *KubernetesClient) GetPersistentVolumeClaim(ctx context.Context, param u
 	return pvc, nil
 }
 
+func (k *KubernetesClient) CreatePersistentVolumeClaimOwnedByHermesAgent(ctx context.Context, param usecase.CreatePersistentVolumeClaimOfHermesAgentParam) error {
+	if err := ctrl.SetControllerReference(param.HermesAgent, param.PersistentVolumeClaim, k.scheme); err != nil {
+		return err
+	}
+	return k.client.Create(ctx, param.PersistentVolumeClaim)
+}
+
 // VolumeSnapshotsSupported is implemented via the REST mapper probe in the
 // usecase layer: when the VolumeSnapshot CRD is absent, ListVolumeSnapshots
 // returns a no-match error (meta.IsNoMatchError).
+
+// GetVolumeSnapshot returns a single VolumeSnapshot by name. Undeclared
+// fields in the API object are ignored by the typed/unstructured conversion.
+func (k *KubernetesClient) GetVolumeSnapshot(ctx context.Context, param usecase.GetVolumeSnapshotParam) (*usecase.VolumeSnapshot, error) {
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(volumeSnapshotObjectGVK)
+	obj.SetName(param.NamespacedName.Name)
+	obj.SetNamespace(param.NamespacedName.Namespace)
+	if err := k.client.Get(ctx, param.NamespacedName, obj); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return fromUnstructuredVolumeSnapshot(obj)
+}
 
 // ListVolumeSnapshotsOwnedByAgent returns typed snapshots carrying the agent
 // attribution label. Undeclared fields in the API objects (e.g. status) are

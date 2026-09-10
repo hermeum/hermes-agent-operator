@@ -114,6 +114,66 @@ func TestBuildStatefulSetPodAnnotations(t *testing.T) {
 	})
 }
 
+func TestBuildStatefulSetPersistenceVolumes(t *testing.T) {
+	findVolume := func(sts *appsv1.StatefulSet) *corev1.Volume {
+		for i := range sts.Spec.Template.Spec.Volumes {
+			if sts.Spec.Template.Spec.Volumes[i].Name == hermesHomeVolume {
+				return &sts.Spec.Template.Spec.Volumes[i]
+			}
+		}
+		return nil
+	}
+
+	t.Run("existingSnapshot mounts the restored PVC explicitly", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Storage: &agentsv1alpha1.HermesStorage{
+			Persistence: &agentsv1alpha1.HermesPersistence{
+				Enabled:          true,
+				ExistingSnapshot: ptrString("snap-1"),
+			},
+		}}
+		sts := buildStatefulSet(ha)
+		if len(sts.Spec.VolumeClaimTemplates) != 0 {
+			t.Error("existingSnapshot must not provision a volumeClaimTemplate")
+		}
+		vol := findVolume(sts)
+		if vol == nil || vol.PersistentVolumeClaim == nil || vol.PersistentVolumeClaim.ClaimName != "snap-1-restore" {
+			t.Errorf("expected explicit volume mounting snap-1-restore, got %+v", vol)
+		}
+	})
+
+	t.Run("existingClaim wins over existingSnapshot", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Storage: &agentsv1alpha1.HermesStorage{
+			Persistence: &agentsv1alpha1.HermesPersistence{
+				Enabled:          true,
+				ExistingClaim:    ptrString("my-claim"),
+				ExistingSnapshot: ptrString("snap-1"),
+			},
+		}}
+		sts := buildStatefulSet(ha)
+		vol := findVolume(sts)
+		if vol == nil || vol.PersistentVolumeClaim == nil || vol.PersistentVolumeClaim.ClaimName != "my-claim" {
+			t.Errorf("expected existingClaim to win, got %+v", vol)
+		}
+	})
+
+	t.Run("enabled without snapshot uses volumeClaimTemplate", func(t *testing.T) {
+		ha := minimalHA()
+		size := resource.MustParse("10Gi")
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Storage: &agentsv1alpha1.HermesStorage{
+			Persistence: &agentsv1alpha1.HermesPersistence{Enabled: true, Size: &size},
+		}}
+		sts := buildStatefulSet(ha)
+		if len(sts.Spec.VolumeClaimTemplates) != 1 || sts.Spec.VolumeClaimTemplates[0].Name != hermesHomeVolume {
+			t.Errorf("expected hermes-data volumeClaimTemplate, got %+v", sts.Spec.VolumeClaimTemplates)
+		}
+		if findVolume(sts) != nil {
+			t.Error("expected no explicit hermes-data volume")
+		}
+	})
+}
+
 func ptrBool(b bool) *bool       { return &b }
 func ptrInt(i int) *int          { return &i }
 func ptrString(s string) *string { return &s }

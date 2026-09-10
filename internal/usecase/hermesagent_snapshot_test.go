@@ -85,6 +85,9 @@ func (f *fakeSnapshotKube) CreateStatefulSetOwnedByHermesAgent(ctx context.Conte
 func (f *fakeSnapshotKube) UpdateStatefulSetOwnedByHermesAgent(ctx context.Context, param UpdateStatefulSetParam) error {
 	return nil
 }
+func (f *fakeSnapshotKube) DeleteStatefulSet(ctx context.Context, param DeleteStatefulSetParam) error {
+	return nil
+}
 func (f *fakeSnapshotKube) GetServiceAccount(ctx context.Context, param GetServiceAccountParam) (*corev1.ServiceAccount, error) {
 	return nil, nil
 }
@@ -160,6 +163,18 @@ func (f *fakeSnapshotKube) GetPersistentVolumeClaim(ctx context.Context, param G
 		return nil, nil
 	}
 	return f.pvc, nil
+}
+func (f *fakeSnapshotKube) CreatePersistentVolumeClaimOwnedByHermesAgent(ctx context.Context, param CreatePersistentVolumeClaimOfHermesAgentParam) error {
+	return nil
+}
+func (f *fakeSnapshotKube) GetVolumeSnapshot(ctx context.Context, param GetVolumeSnapshotParam) (*VolumeSnapshot, error) {
+	for _, snap := range f.snapshots {
+		if snap.Name == param.NamespacedName.Name && snap.Namespace == param.NamespacedName.Namespace {
+			s := snap
+			return &s, nil
+		}
+	}
+	return nil, nil
 }
 func (f *fakeSnapshotKube) ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param ListVolumeSnapshotsOwnedByAgentParam) ([]VolumeSnapshot, error) {
 	if f.listErr != nil {
@@ -484,6 +499,23 @@ func TestBuildDataPVCName(t *testing.T) {
 
 	t.Run("existingClaim wins", func(t *testing.T) {
 		ha := snapshotHA(nil, "0 3 * * *")
+		ha.Spec.Hermes.Storage.Persistence.ExistingClaim = ptrString(testPVCName)
+		if got := buildDataPVCName(ha); got != testPVCName {
+			t.Errorf("buildDataPVCName() = %q, want %q", got, testPVCName)
+		}
+	})
+
+	t.Run("existingSnapshot restores into dedicated PVC", func(t *testing.T) {
+		ha := snapshotHA(nil, "0 3 * * *")
+		ha.Spec.Hermes.Storage.Persistence.ExistingSnapshot = ptrString("snap-1")
+		if got := buildDataPVCName(ha); got != "snap-1-restore" {
+			t.Errorf("buildDataPVCName() = %q, want %q", got, "snap-1-restore")
+		}
+	})
+
+	t.Run("existingClaim wins over existingSnapshot", func(t *testing.T) {
+		ha := snapshotHA(nil, "0 3 * * *")
+		ha.Spec.Hermes.Storage.Persistence.ExistingSnapshot = ptrString("snap-1")
 		ha.Spec.Hermes.Storage.Persistence.ExistingClaim = ptrString(testPVCName)
 		if got := buildDataPVCName(ha); got != testPVCName {
 			t.Errorf("buildDataPVCName() = %q, want %q", got, testPVCName)

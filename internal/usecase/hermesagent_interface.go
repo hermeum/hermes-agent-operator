@@ -70,6 +70,7 @@ type Kubernetes interface {
 	GetStatefulSet(ctx context.Context, param GetStatefulSetParam) (*appsv1.StatefulSet, error)
 	CreateStatefulSetOwnedByHermesAgent(ctx context.Context, param CreateStatefulSetOfHermesAgentParam) error
 	UpdateStatefulSetOwnedByHermesAgent(ctx context.Context, param UpdateStatefulSetParam) error
+	DeleteStatefulSet(ctx context.Context, param DeleteStatefulSetParam) error
 
 	GetServiceAccount(ctx context.Context, param GetServiceAccountParam) (*corev1.ServiceAccount, error)
 	CreateServiceAccountOwnedByHermesAgent(ctx context.Context, param CreateServiceAccountOfHermesAgentParam) error
@@ -102,7 +103,9 @@ type Kubernetes interface {
 	DeleteNetworkPolicy(ctx context.Context, param DeleteNetworkPolicyParam) error
 
 	GetPersistentVolumeClaim(ctx context.Context, param GetPersistentVolumeClaimParam) (*corev1.PersistentVolumeClaim, error)
+	CreatePersistentVolumeClaimOwnedByHermesAgent(ctx context.Context, param CreatePersistentVolumeClaimOfHermesAgentParam) error
 
+	GetVolumeSnapshot(ctx context.Context, param GetVolumeSnapshotParam) (*VolumeSnapshot, error)
 	ListVolumeSnapshotsOwnedByAgent(ctx context.Context, param ListVolumeSnapshotsOwnedByAgentParam) ([]VolumeSnapshot, error)
 	CreateVolumeSnapshotOwnedByHermesAgent(ctx context.Context, param CreateVolumeSnapshotOfHermesAgentParam) error
 	DeleteVolumeSnapshot(ctx context.Context, param DeleteVolumeSnapshotParam) error
@@ -172,6 +175,10 @@ type CreateStatefulSetOfHermesAgentParam struct {
 type UpdateStatefulSetParam struct {
 	HermesAgent *agentsv1alpha1.HermesAgent
 	StatefulSet *appsv1.StatefulSet
+}
+
+type DeleteStatefulSetParam struct {
+	NamespacedName types.NamespacedName
 }
 
 type GetServiceAccountParam struct {
@@ -283,6 +290,15 @@ type DeleteNetworkPolicyParam struct {
 }
 
 type GetPersistentVolumeClaimParam struct {
+	NamespacedName types.NamespacedName
+}
+
+type CreatePersistentVolumeClaimOfHermesAgentParam struct {
+	HermesAgent           *agentsv1alpha1.HermesAgent
+	PersistentVolumeClaim *corev1.PersistentVolumeClaim
+}
+
+type GetVolumeSnapshotParam struct {
 	NamespacedName types.NamespacedName
 }
 

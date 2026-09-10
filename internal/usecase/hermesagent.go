@@ -116,6 +116,16 @@ func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam
 		}
 		return result, err
 	}
+	// The restore PVC must be provisioned (and an empty-PVC-shaped
+	// StatefulSet removed) before the StatefulSet is reconciled, so the
+	// recreated StatefulSet mounts the restored volume.
+	if result, err := u.reconcileRestore(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile restore")
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
+		return result, err
+	}
 	if result, err := u.reconcileStatefulSet(ctx, ha); err != nil || !result.IsZero() {
 		if err != nil {
 			u.tel.Error(ctx, err, "Failed to reconcile StatefulSet")

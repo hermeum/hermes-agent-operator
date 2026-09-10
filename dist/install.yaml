@@ -3262,6 +3262,19 @@ spec:
                               existingClaim mounts a pre-existing PVC by name instead of provisioning a new one.
                               When set, enabled/size/storageClassName are ignored.
                             type: string
+                          existingSnapshot:
+                            description: |-
+                              existingSnapshot mounts the agent data volume as a PersistentVolumeClaim
+                              restored from the named VolumeSnapshot in the agent's namespace, instead
+                              of provisioning a new empty PVC. The snapshot must be ReadyToUse; the
+                              restored PVC is managed by the operator, sized from the snapshot's
+                              restoreSize, and named <snapshot>-restore. When set, enabled and size
+                              are ignored; storageClassName selects the restored PVC's storage class
+                              (omit to use the cluster default). Changing the snapshot
+                              re-provisions a new PVC and rolls the agent onto it. The snapshot
+                              itself is never modified or deleted.
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                            type: string
                           size:
                             anyOf:
                             - type: integer
@@ -3275,6 +3288,35 @@ spec:
                               omit to use the cluster default.
                             type: string
                         type: object
+                      snapshot:
+                        description: snapshot configures periodic CSI volume snapshots
+                          of the agent data PVC.
+                        properties:
+                          enabled:
+                            description: enabled turns on periodic CSI volume snapshots
+                              of the agent data PVC.
+                            type: boolean
+                          retention:
+                            default: 3
+                            description: |-
+                              retention is the number of newest snapshots to keep. Older snapshots
+                              of this agent are deleted. Defaults to 3.
+                            minimum: 1
+                            type: integer
+                          schedule:
+                            description: |-
+                              schedule is the cron expression controlling snapshot times
+                              (e.g. "0 3 * * *"). Required when enabled is true.
+                            type: string
+                          volumeSnapshotClassName:
+                            description: |-
+                              volumeSnapshotClassName selects the VolumeSnapshotClass; omit to use
+                              the cluster default.
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: schedule is required when snapshot is enabled
+                          rule: has(self.schedule) || !has(self.enabled) || !self.enabled
                     type: object
                   workspace:
                     description: workspace defines files to seed in the agent's home
@@ -7279,6 +7321,48 @@ spec:
                   Populated when the pod is pending (e.g. "Unschedulable") or unhealthy
                   (e.g. "CrashLoopBackOff", "OOMKilled"). Empty when the agent is running normally.
                 type: string
+              snapshot:
+                description: |-
+                  snapshot tracks the state of periodic CSI volume snapshots of the
+                  agent data PVC.
+                properties:
+                  lastScheduleTime:
+                    description: |-
+                      lastScheduleTime is the scheduled time of the most recently taken (or
+                      accounted for) snapshot, used to compute the next run.
+                    format: date-time
+                    type: string
+                  snapshots:
+                    description: |-
+                      snapshots lists the VolumeSnapshots currently retained for this agent,
+                      newest first. Mirrors the retention policy: snapshots removed by
+                      retention are also removed from this list.
+                    items:
+                      description: SnapshotRef identifies a single VolumeSnapshot
+                        of the agent data PVC.
+                      properties:
+                        creationTime:
+                          description: creationTime is when the VolumeSnapshot was
+                            created.
+                          format: date-time
+                          type: string
+                        name:
+                          description: name is the VolumeSnapshot name.
+                          type: string
+                        pvc:
+                          description: pvc is the source PersistentVolumeClaim the
+                            snapshot was taken from.
+                          type: string
+                      required:
+                      - creationTime
+                      - name
+                      - pvc
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                type: object
             type: object
         required:
         - spec
@@ -7434,6 +7518,7 @@ rules:
   resources:
   - persistentvolumeclaims
   verbs:
+  - create
   - get
   - list
   - watch
@@ -7510,6 +7595,15 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - snapshot.storage.k8s.io
+  resources:
+  - volumesnapshots
+  verbs:
+  - create
+  - delete
+  - get
+  - list
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

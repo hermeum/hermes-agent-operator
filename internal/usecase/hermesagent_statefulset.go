@@ -414,7 +414,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		})
 	}
 
-	// persistence: existingClaim > enabled PVC > emptyDir fallback.
+	// persistence: existingClaim > existingSnapshot PVC > enabled PVC > emptyDir fallback.
 	hp := ha.GetHermes().GetPersistence()
 	if ec := hp.GetExistingClaim(); ec != "" {
 		volumes = append(volumes, corev1.Volume{
@@ -422,6 +422,15 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: ec,
+				},
+			},
+		})
+	} else if es := hp.GetExistingSnapshot(); es != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name: hermesHomeVolume,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: buildRestoredPVCName(es),
 				},
 			},
 		})

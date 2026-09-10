@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -27,11 +28,15 @@ const (
 
 // VolumeSnapshot is a minimal typed representation of the CSI
 // snapshot.storage.k8s.io/v1 VolumeSnapshot resource, covering the fields
-// this operator reads and writes. Undeclared fields (e.g. status, added by
-// the snapshot-controller) are ignored during typed/unstructured conversion.
+// this operator reads and writes. Undeclared fields are ignored during
+// typed/unstructured conversion.
 type VolumeSnapshot struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              VolumeSnapshotSpec `json:"spec"`
+	// Status carries the snapshot-controller-reported state. Only populated
+	// on reads; never written back by this operator.
+	// +optional
+	Status *VolumeSnapshotStatus `json:"status,omitempty"`
 }
 
 // VolumeSnapshotSpec is the spec of a CSI VolumeSnapshot.
@@ -43,6 +48,19 @@ type VolumeSnapshotSpec struct {
 // VolumeSnapshotSource identifies the source PVC of a VolumeSnapshot.
 type VolumeSnapshotSource struct {
 	PersistentVolumeClaimName string `json:"persistentVolumeClaimName"`
+}
+
+// VolumeSnapshotStatus is the status of a CSI VolumeSnapshot as reported by
+// the snapshot-controller.
+type VolumeSnapshotStatus struct {
+	// readyToUse indicates whether the snapshot can be used as a
+	// provisioning dataSource.
+	// +optional
+	ReadyToUse *bool `json:"readyToUse,omitempty"`
+	// restoreSize is the minimum volume size required to restore from the
+	// snapshot.
+	// +optional
+	RestoreSize *resource.Quantity `json:"restoreSize,omitempty"`
 }
 
 // reconcileSnapshot takes periodic CSI volume snapshots of the agent data PVC
@@ -179,12 +197,16 @@ func (u *HermesAgentUseCase) reconcileSnapshot(ctx context.Context, ha *agentsv1
 }
 
 // buildDataPVCName resolves the name of the agent data PVC. A user-supplied
-// existingClaim wins; otherwise the PVC is provisioned by the StatefulSet
+// existingClaim wins; an existingSnapshot restores into a dedicated PVC named
+// <snapshot>-restore; otherwise the PVC is provisioned by the StatefulSet
 // volumeClaimTemplate (hermesHomeVolume) and named <template-name>-<pod-name>,
 // where the data pod is <agent>-0.
 func buildDataPVCName(ha *agentsv1alpha1.HermesAgent) string {
 	if ec := ha.GetHermes().GetPersistence().GetExistingClaim(); ec != "" {
 		return ec
+	}
+	if es := ha.GetHermes().GetPersistence().GetExistingSnapshot(); es != "" {
+		return buildRestoredPVCName(es)
 	}
 	return fmt.Sprintf("%s-%s-0", hermesHomeVolume, ha.Name)
 }
