@@ -17,7 +17,13 @@ import (
 
 const namespaceNameLabel = "kubernetes.io/metadata.name"
 
-func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+func (u *HermesAgentUseCase) reconcileNetworkPolicy(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (result ctrl.Result, err error) {
+	defer func() {
+		if err != nil {
+			err = u.markReconcileFailed(ctx, ha, condReasonNetworkPolicyFailed, err)
+		}
+	}()
+
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
 	existing, err := u.kube.GetNetworkPolicy(ctx, GetNetworkPolicyParam{NamespacedName: nsName})

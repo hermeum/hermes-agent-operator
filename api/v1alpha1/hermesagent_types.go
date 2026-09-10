@@ -54,6 +54,10 @@ const (
 type HermesAgentConditionType string
 
 const (
+	// ConditionReady indicates whether the operator reconciled all managed
+	// resources successfully in the most recent reconcile pass. It reflects
+	// controller reconciliation, not workload health (see status.phase).
+	ConditionReady HermesAgentConditionType = "Ready"
 	// ConditionSnapshotUnsupported indicates that periodic snapshots are
 	// configured but the cluster cannot support them (e.g. the VolumeSnapshot
 	// CRD or snapshot-controller is not installed).
@@ -1555,6 +1559,7 @@ type SnapshotRef struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // HermesAgent is the Schema for the hermesagents API

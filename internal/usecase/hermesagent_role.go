@@ -13,7 +13,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (result ctrl.Result, err error) {
+	defer func() {
+		if err != nil {
+			err = u.markReconcileFailed(ctx, ha, condReasonRoleFailed, err)
+		}
+	}()
+
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
 	existingRole, err := u.kube.GetRole(ctx, GetRoleParam{NamespacedName: nsName})

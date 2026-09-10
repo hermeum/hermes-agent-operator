@@ -40,7 +40,13 @@ const (
 // is disabled or moved to another port.
 var hermesHealthCheckCommand = []string{"hermes", "gateway", "status"}
 
-func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (result ctrl.Result, err error) {
+	defer func() {
+		if err != nil {
+			err = u.markReconcileFailed(ctx, ha, condReasonStatefulSetFailed, err)
+		}
+	}()
+
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
 	sts, err := u.kube.GetStatefulSet(ctx, GetStatefulSetParam{
@@ -97,6 +103,10 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	ha.Status.ManagedResources.StatefulSet = ha.Name
 	ha.Status.Phase, ha.Status.Reason = u.deriveStatus(ctx, ha)
+	// The StatefulSet loop runs after every other resource loop, so reaching
+	// this point means all managed resources reconciled. Workload readiness
+	// itself is tracked by status.phase, not by this condition.
+	u.markReady(ctx, ha)
 	if err := u.kube.UpdateHermesAgentStatus(ctx, UpdateHermesAgentStatusParam{HermesAgent: ha}); err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}

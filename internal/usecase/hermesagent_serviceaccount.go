@@ -13,7 +13,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+func (u *HermesAgentUseCase) reconcileServiceAccount(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (result ctrl.Result, err error) {
+	defer func() {
+		if err != nil {
+			err = u.markReconcileFailed(ctx, ha, condReasonServiceAccountFailed, err)
+		}
+	}()
+
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
 	existing, err := u.kube.GetServiceAccount(ctx, GetServiceAccountParam{NamespacedName: nsName})

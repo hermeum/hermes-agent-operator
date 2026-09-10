@@ -17,7 +17,13 @@ import (
 	sigsyaml "sigs.k8s.io/yaml"
 )
 
-func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (result ctrl.Result, err error) {
+	defer func() {
+		if err != nil {
+			err = u.markReconcileFailed(ctx, ha, condReasonHermesConfigMapFailed, err)
+		}
+	}()
+
 	cmName := ha.GetHermesName()
 	cm, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{
 		NamespacedName: types.NamespacedName{Name: cmName, Namespace: ha.Namespace},

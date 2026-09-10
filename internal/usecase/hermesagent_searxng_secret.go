@@ -14,7 +14,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
+func (u *HermesAgentUseCase) reconcileSearXNGSecret(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (result ctrl.Result, err error) {
+	defer func() {
+		if err != nil {
+			err = u.markReconcileFailed(ctx, ha, condReasonSearXNGSecretFailed, err)
+		}
+	}()
+
 	secretNsName := types.NamespacedName{Name: ha.GetSearXNGName(), Namespace: ha.Namespace}
 
 	existing, err := u.kube.GetSecret(ctx, GetSecretParam{NamespacedName: secretNsName})
