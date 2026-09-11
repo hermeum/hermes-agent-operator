@@ -468,7 +468,7 @@ func TestReconcileSnapshot_RetentionKeepsNewest(t *testing.T) {
 	kube := &fakeSnapshotKube{
 		pvc: boundPVC("hermes-data-test-0"),
 		snapshots: []VolumeSnapshot{
-			snapshotObj("hermes-data-test-0-20260901030000", time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)),
+			snapshotObj(retentionExpiredSnapshot, time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)),
 			snapshotObj("hermes-data-test-0-20260902030000", time.Date(2026, 9, 2, 3, 0, 0, 0, time.UTC)),
 			snapshotObj("hermes-data-test-0-20260903030000", time.Date(2026, 9, 3, 3, 0, 0, 0, time.UTC)),
 		},
@@ -484,9 +484,42 @@ func TestReconcileSnapshot_RetentionKeepsNewest(t *testing.T) {
 	if len(kube.deleted) != 1 {
 		t.Fatalf("expected 1 deletion, got %d: %v", len(kube.deleted), kube.deleted)
 	}
-	if kube.deleted[0].Name != "hermes-data-test-0-20260901030000" {
+	if kube.deleted[0].Name != retentionExpiredSnapshot {
 		t.Errorf("expected oldest snapshot deleted, got %q", kube.deleted[0].Name)
 	}
+}
+
+func TestReconcileSnapshot_RetentionNeverDeletesRestoreSource(t *testing.T) {
+	ctx := context.Background()
+	retention := 2
+	kube := &fakeSnapshotKube{
+		pvc: boundPVC("hermes-data-test-0"),
+		snapshots: []VolumeSnapshot{
+			snapshotObj(retentionExpiredSnapshot, time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)),
+			snapshotObj("hermes-data-test-0-20260902030000", time.Date(2026, 9, 2, 3, 0, 0, 0, time.UTC)),
+			snapshotObj("hermes-data-test-0-20260903030000", time.Date(2026, 9, 3, 3, 0, 0, 0, time.UTC)),
+		},
+	}
+	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
+
+	ha := snapshotHA(&retention, "0 3 * * *")
+	// The restore source is the oldest snapshot, already outside the
+	// retention window: retention must skip it.
+	ha.Spec.Hermes.Storage.Persistence.ExistingSnapshot = ptrString(retentionExpiredSnapshot)
+	// Schedule far in the future so only retention runs.
+	ha.Status.Snapshot.LastScheduleTime = &metav1.Time{Time: time.Now().Add(-time.Hour)}
+	if _, err := uc.reconcileSnapshot(ctx, ha); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kube.deleted) != 0 {
+		t.Errorf("no snapshot must be deleted when the only expired one is the restore source, got %v", kube.deleted)
+	}
+	for _, snap := range kube.snapshots {
+		if snap.Name == retentionExpiredSnapshot {
+			return
+		}
+	}
+	t.Error("restore source snapshot must be preserved")
 }
 
 func TestBuildDataPVCName(t *testing.T) {
@@ -535,6 +568,10 @@ const (
 	snapshotNameOld    = "old"
 	snapshotNameMiddle = "middle"
 	snapshotNameNew    = "new"
+
+	// retentionExpiredSnapshot is the oldest snapshot in the retention
+	// tests (Sep 1 03:00) — the one retention expires first.
+	retentionExpiredSnapshot = "hermes-data-test-0-20260901030000"
 )
 
 func TestSplitSnapshots(t *testing.T) {
@@ -660,7 +697,7 @@ func TestReconcileSnapshot_StatusTracksAllSnapshots(t *testing.T) {
 	kube := &fakeSnapshotKube{
 		pvc: boundPVC("hermes-data-test-0"),
 		snapshots: []VolumeSnapshot{
-			snapshotObj("hermes-data-test-0-20260901030000", time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)),
+			snapshotObj(retentionExpiredSnapshot, time.Date(2026, 9, 1, 3, 0, 0, 0, time.UTC)),
 			snapshotObj("hermes-data-test-0-20260902030000", time.Date(2026, 9, 2, 3, 0, 0, 0, time.UTC)),
 		},
 	}
@@ -684,7 +721,7 @@ func TestReconcileSnapshot_StatusTracksAllSnapshots(t *testing.T) {
 	}
 	// Retention deleted the oldest live snapshot (Sep 1).
 	for _, ref := range ha.Status.Snapshot.Snapshots {
-		if ref.Name == "hermes-data-test-0-20260901030000" {
+		if ref.Name == retentionExpiredSnapshot {
 			t.Errorf("retention-expired snapshot %q still in status", ref.Name)
 		}
 	}

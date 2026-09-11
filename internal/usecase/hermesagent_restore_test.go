@@ -230,6 +230,16 @@ func (f *fakeRestoreKube) DeleteVolumeSnapshot(ctx context.Context, param Delete
 	return nil
 }
 
+// pendingPVC returns a PVC that exists but is not yet bound (the shape a
+// PVC has on a WaitForFirstConsumer storage class before its first
+// consumer mounts it).
+func pendingPVC(name string) *corev1.PersistentVolumeClaim {
+	return &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+	}
+}
+
 // restoreHA builds a HermesAgent with persistence (enabled PVC) and an
 // existingSnapshot source.
 func restoreHA(source string) *agentsv1alpha1.HermesAgent {
@@ -390,34 +400,27 @@ func TestReconcileRestore_ProvisionsPVCWhileAgentRuns(t *testing.T) {
 	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
 	ha := restoreHA(restoreSourceSnapshot)
 
-	// First reconcile: the restore PVC is created (unbound) while the old
-	// volume, pod, and StatefulSet are untouched.
-	if _, err := uc.reconcileRestore(ctx, ha); err != nil {
+	// First reconcile: the restore PVC is created and the reshape starts in
+	// the same pass — the VCT-shaped StatefulSet is deleted immediately
+	// (mount-first: on a WaitForFirstConsumer storage class the PVC only
+	// binds once the recreated pod mounts it, so waiting for Bound would
+	// deadlock). The old data PVC is left in place.
+	result, err := uc.reconcileRestore(ctx, ha)
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	assertRestoredPVC(t, kube, restoreSourceSnapshot, "15Gi")
-	if kube.stsDeletes != 0 {
-		t.Error("StatefulSet must not be deleted before the restore PVC is bound")
+	if kube.stsDeletes != 1 {
+		t.Errorf("expected StatefulSet deleted once in the same pass as provisioning, got %d", kube.stsDeletes)
+	}
+	if result.RequeueAfter != 30*time.Second {
+		t.Errorf("expected requeue after reshape, got %v", result)
 	}
 	if _, ok := kube.pvcs[restoreOldPVCName]; !ok {
 		t.Error("the old data PVC must be left in place")
 	}
 
-	// PVC binds; second reconcile reshapes: deletes the VCT-shaped
-	// StatefulSet once so the next pass recreates it with the explicit volume.
-	kube.pvcs[restoreRestoredPVC].Status.Phase = corev1.ClaimBound
-	result, err := uc.reconcileRestore(ctx, ha)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.RequeueAfter != 30*time.Second {
-		t.Errorf("expected requeue after reshape, got %v", result)
-	}
-	if kube.stsDeletes != 1 {
-		t.Errorf("expected StatefulSet deleted once, got %d", kube.stsDeletes)
-	}
-
-	// Third reconcile: no StatefulSet, nothing left to do — zero result lets
+	// Second reconcile: no StatefulSet, nothing left to do — zero result lets
 	// reconcileStatefulSet recreate it with the restored volume.
 	result, err = uc.reconcileRestore(ctx, ha)
 	if err != nil {
@@ -441,27 +444,78 @@ func TestReconcileRestore_ProvisionsPVCWhileAgentRuns(t *testing.T) {
 	}
 }
 
-func TestReconcileRestore_UnboundPVCRequeues(t *testing.T) {
+func TestReconcileRestore_PendingPVCStillReshapes(t *testing.T) {
+	// WaitForFirstConsumer contract: the restore PVC binds only when a pod
+	// mounts it, so the reshape must not wait for ClaimBound. A pending PVC
+	// with a VCT-shaped StatefulSet must still trigger the one-time delete;
+	// reconcileStatefulSet recreates the StatefulSet mounting the restored
+	// volume, and the agent pod becomes the first consumer.
 	ctx := context.Background()
 	kube := newFakeRestoreKube()
 	kube.snapshots[simpleSnapshot] = readySnapshot(simpleSnapshot, "10Gi")
+	// The restored PVC exists but is Pending.
+	kube.pvcs[simpleRestoredPVC] = pendingPVC(simpleRestoredPVC)
 	kube.sts = vctStatefulSet()
 	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
 	ha := restoreHA(simpleSnapshot)
 
-	// PVC created but pending: no teardown, no completion.
-	if _, err := uc.reconcileRestore(ctx, ha); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
 	result, err := uc.reconcileRestore(ctx, ha)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.RequeueAfter != 30*time.Second {
-		t.Errorf("expected 30s requeue while unbound, got %v", result.RequeueAfter)
+	if kube.stsDeletes != 1 {
+		t.Errorf("expected StatefulSet deleted once despite pending PVC, got %d", kube.stsDeletes)
 	}
-	if kube.stsDeletes != 0 {
-		t.Error("StatefulSet must not be deleted while the restore PVC is unbound")
+	if result.RequeueAfter != 30*time.Second {
+		t.Errorf("expected requeue after reshape, got %v", result)
+	}
+
+	// Next pass: StatefulSet gone, restore converged, no further churn.
+	result, err = uc.reconcileRestore(ctx, ha)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsZero() {
+		t.Errorf("expected zero result, got %v", result)
+	}
+	if kube.stsDeletes != 1 {
+		t.Errorf("restore must be idempotent, stsDeletes=%d", kube.stsDeletes)
+	}
+}
+
+func TestReconcileRestore_IgnoresSourceSnapshotOncePVExists(t *testing.T) {
+	// The restored PVC is the desired state: once it exists, the source
+	// snapshot may be gone (e.g. pruned by retention) without failing the
+	// restore or blocking the reshape.
+	ctx := context.Background()
+	kube := newFakeRestoreKube()
+	// No snapshot in the fake at all.
+	kube.pvcs[simpleRestoredPVC] = pendingPVC(simpleRestoredPVC)
+	kube.sts = vctStatefulSet()
+	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
+	ha := restoreHA(simpleSnapshot)
+
+	result, err := uc.reconcileRestore(ctx, ha)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if kube.stsDeletes != 1 {
+		t.Errorf("expected StatefulSet deleted once, got %d", kube.stsDeletes)
+	}
+	cond := meta.FindStatusCondition(ha.Status.Conditions, string(agentsv1alpha1.ConditionRestoreFailed))
+	if cond != nil {
+		t.Errorf("no RestoreFailed condition expected once the PVC exists, got %+v", cond)
+	}
+	_ = result
+
+	// And with the PVC bound and no StatefulSet: clean zero result.
+	kube.pvcs[simpleRestoredPVC] = boundPVC(simpleRestoredPVC)
+	result, err = uc.reconcileRestore(ctx, ha)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.IsZero() {
+		t.Errorf("expected zero result, got %v", result)
 	}
 }
 

@@ -132,6 +132,18 @@ func (u *HermesAgentUseCase) reconcileSnapshot(ctx context.Context, ha *agentsv1
 
 	_, deprecated := splitSnapshots(snapshots, snap.GetRetention())
 
+	// The snapshot referenced by persistence.existingSnapshot is the live
+	// restore source: retention must never delete it.
+	if source := ha.GetHermes().GetPersistence().GetExistingSnapshot(); source != "" {
+		pruned := deprecated[:0]
+		for _, snap := range deprecated {
+			if snap.Name != source {
+				pruned = append(pruned, snap)
+			}
+		}
+		deprecated = pruned
+	}
+
 	// Delete outdated snapshots beyond the retention window.
 	for _, old := range deprecated {
 		if err := u.kube.DeleteVolumeSnapshot(ctx, DeleteVolumeSnapshotParam{

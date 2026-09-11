@@ -38,9 +38,12 @@ var volumeSnapshotAPIGroupPtr = func() *string {
 // the desired state is "the data volume is the PVC restored from this
 // snapshot", and every reconcile converges to it.
 //
-//   - the snapshot must exist in the agent's namespace and be ReadyToUse;
-//     otherwise a RestoreFailed condition is surfaced and the reconcile
-//     requeues, leaving the agent on its current volume;
+//   - the snapshot must exist in the agent's namespace and be ReadyToUse —
+//     but only while the restored PVC does not exist yet. Once provisioned,
+//     the PVC is the desired state and the source snapshot is no longer
+//     consulted: it may be deleted (e.g. by retention) without affecting the
+//     restored volume. A missing snapshot still surfaces a RestoreFailed
+//     condition and requeues, leaving the agent on its current volume;
 //   - the restored PVC is named <snapshot>-restore, created with the
 //     snapshot as its dataSource, sized from the snapshot's restoreSize,
 //     and owned by the agent. Provisioning happens while the agent keeps
@@ -48,7 +51,10 @@ var volumeSnapshotAPIGroupPtr = func() *string {
 //   - the StatefulSet volumeClaimTemplate is immutable, so an
 //     empty-PVC-shaped StatefulSet is deleted once (a rolling update then
 //     cannot reshape it); the next reconcile recreates it mounting the
-//     restored PVC via an explicit volume;
+//     restored PVC via an explicit volume. The reshape does not wait for
+//     the PVC to bind: on a WaitForFirstConsumer storage class the PVC
+//     only binds once a pod mounts it, so the agent pod is expected to be
+//     the first consumer;
 //   - previous volumes are left in place; cleaning them up is the user's
 //     responsibility. The snapshot itself is never modified or deleted.
 func (u *HermesAgentUseCase) reconcileRestore(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (ctrl.Result, error) {
@@ -64,14 +70,6 @@ func (u *HermesAgentUseCase) reconcileRestore(ctx context.Context, ha *agentsv1a
 	}
 
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
-	sourceSnapshot, err := u.getReadySnapshot(ctx, ha, source)
-	if err != nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
-	}
-	if sourceSnapshot == nil {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
-
 	restoredPVCName := buildRestoredPVCName(source)
 
 	// Provision the restore PVC from the snapshot while the agent keeps
@@ -83,6 +81,13 @@ func (u *HermesAgentUseCase) reconcileRestore(ctx context.Context, ha *agentsv1a
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 	if restored == nil {
+		sourceSnapshot, err := u.getReadySnapshot(ctx, ha, source)
+		if err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		if sourceSnapshot == nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 		desired := buildRestoredPVC(ha, sourceSnapshot)
 		if err := u.kube.CreatePersistentVolumeClaimOwnedByHermesAgent(ctx, CreatePersistentVolumeClaimOfHermesAgentParam{
 			HermesAgent:           ha,
@@ -100,10 +105,6 @@ func (u *HermesAgentUseCase) reconcileRestore(ctx context.Context, ha *agentsv1a
 		if restored == nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
-	}
-	if restored.Status.Phase != corev1.ClaimBound {
-		u.tel.Info(ctx, "Waiting for restore PVC to bind", "name", restoredPVCName)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// Reshape gate (forward-only): an existing StatefulSet carries the
