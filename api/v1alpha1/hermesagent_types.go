@@ -1523,6 +1523,15 @@ type HermesAgentSpec struct {
 	// +optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
 
+	// PriorityClassName sets the PriorityClass name for the Hermes agent pod.
+	// The named PriorityClass must already exist in the cluster.  Omit this
+	// field to use the cluster's globalDefault PriorityClass, if one is
+	// configured.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	PriorityClassName string `json:"priorityClassName,omitempty"`
+
 	// RuntimeClassName sets the RuntimeClass name for the Hermes agent pod.
 	// The named RuntimeClass must already exist in the cluster.  Omit this
 	// field to run the pod on the cluster's default container runtime.
@@ -1729,6 +1738,12 @@ func (h *HermesAgent) GetPodAnnotations() map[string]string {
 // GetPodLabels returns the custom pod template labels, if any.
 func (h *HermesAgent) GetPodLabels() map[string]string {
 	return h.Spec.PodLabels
+}
+
+// GetPriorityClassName returns the PriorityClass name for the agent pod.  It
+// returns "" when the field is unset.
+func (h *HermesAgent) GetPriorityClassName() string {
+	return h.Spec.PriorityClassName
 }
 
 // GetRuntimeClassName returns the RuntimeClass name for the agent pod.  It

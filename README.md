@@ -96,6 +96,7 @@ Then run the `/hermes-agent-operator` skill to create a custom resource.
 - [`hostUsers`](#hostusers)
 - [`podAnnotations`](#podannotations)
 - [`podLabels`](#podlabels)
+- [`priorityClassName`](#priorityclassname)
 - [`runtimeClassName`](#runtimeclassname)
 
 ### `hermes.config`
@@ -710,6 +711,16 @@ podLabels:                           # optional
 ```
 
 The operator-managed `app.kubernetes.io/name`, `app.kubernetes.io/instance` and `app.kubernetes.io/managed-by` labels are applied last and always win.  An entry in `podLabels` cannot shadow one of them, and cannot break the `StatefulSet` pod selector.  The labels go on the **pod template only**; the `StatefulSet` labels do not change.  A change to any key starts a rolling restart.
+
+### `priorityClassName`
+
+Assign the agent `Pod` a [`PriorityClass`](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/).  A `PriorityClass` controls the `Pod`'s scheduling order.  It also controls how early the `Pod` is evicted under node pressure.
+
+```yaml
+priorityClassName: system-cluster-critical  # optional; omit to use the cluster's globalDefault
+```
+
+The `PriorityClass` must already exist in the cluster.  The operator does not create it.  A change to this value starts a rolling restart of the `StatefulSet`'s pods.
 
 ### `runtimeClassName`
 
