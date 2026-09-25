@@ -82,6 +82,7 @@ Then run the `/hermes-agent-operator` skill to create a custom resource.
 - [`hermes.bundles`](#hermesbundles)
 - [`hermes.env` / `hermes.envFrom`](#hermesenv--hermesenvfrom)
 - [`hermes.resources`](#hermesresources)
+- [`hermes.image`](#hermesimage)
 - [`hermes.initChownData`](#hermesinit​chowndata)
 - [`hermes.initScripts`](#hermesinitscripts)
 - [`hermes.profiles`](#hermesprofiles)
@@ -412,6 +413,27 @@ hermes:
       memory: 1Gi
 ```
 
+### `hermes.image`
+
+Override the container image used for the hermes-agent container and every operator-managed init container. Defaults: repository `nousresearch/hermes-agent`, tag `latest`.
+
+```yaml
+hermes:
+  image:                           # optional; omit to use the default image
+    repository: nousresearch/hermes-agent
+    tag: latest
+```
+
+To pin the agent to immutable content, carry a digest in `repository` and leave `tag` unset (the tag suffix is skipped automatically, exactly like the manager image in the Helm chart):
+
+```yaml
+hermes:
+  image:
+    repository: nousresearch/hermes-agent@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+The same applies to the sidecar images: `searxng.image.repository` and `camofox.image.repository` also accept a digest-pinned repository, and their `tag` is ignored when they carry one.
+
 ### `hermes.initChownData`
 
 Run an init container that sets `/opt/data` ownership to the hermes user (`10000:10000`). Useful when using an existing PVC whose data was written by a different user.
@@ -493,7 +515,7 @@ web:
 searxng:
   enabled: true                    # defaults to false; omit the entire block to disable
   image:                           # optional; omit to use the default image (searxng/searxng:latest)
-    repository: searxng/searxng
+    repository: searxng/searxng     # may carry a digest (searxng/searxng@sha256:...); tag is ignored when it does
     tag: latest
   resources:                       # optional; omit to use no resource constraints
     limits:
@@ -527,7 +549,7 @@ Optional sidecar for browser automation via [Camofox](https://github.com/jo-inc/
 camofox:
   enabled: true                    # defaults to false; omit the entire block to disable
   image:                           # optional; omit to use the default image (ghcr.io/jo-inc/camofox-browser:latest)
-    repository: ghcr.io/jo-inc/camofox-browser
+    repository: ghcr.io/jo-inc/camofox-browser   # may carry a digest (…@sha256:...); tag is ignored when it does
     tag: latest
   resources:                       # optional; omit to use no resource constraints
     limits:

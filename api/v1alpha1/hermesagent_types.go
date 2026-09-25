@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"maps"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -27,6 +28,18 @@ import (
 )
 
 const defaultImageTag = "latest"
+
+// imageReference renders an image reference from a repository and tag.
+// When the repository already pins content (it contains "@", e.g.
+// "nousresearch/hermes-agent@sha256:..."), it is returned verbatim: a tag
+// cannot be combined with a digest, and appending one would produce an
+// invalid reference. Any tag (explicit or default) is ignored in that case.
+func imageReference(repo, tag string) string {
+	if strings.Contains(repo, "@") {
+		return repo
+	}
+	return repo + ":" + tag
+}
 
 // DefaultSnapshotRetention is the number of newest snapshots kept when
 // HermesSnapshot.Retention is unset.
@@ -1000,7 +1013,7 @@ func (h *Hermes) GetImage() string {
 			tag = h.Image.Tag
 		}
 	}
-	return repo + ":" + tag
+	return imageReference(repo, tag)
 }
 
 // Networking defines network-related configuration.
@@ -1261,7 +1274,7 @@ func (s *SearXNG) GetImage() string {
 			tag = s.Image.Tag
 		}
 	}
-	return repo + ":" + tag
+	return imageReference(repo, tag)
 }
 
 // SearXNGPersistence configures a PersistentVolumeClaim for the SearXNG cache.
@@ -1346,7 +1359,7 @@ func (c *Camofox) GetImage() string {
 			tag = c.Image.Tag
 		}
 	}
-	return repo + ":" + tag
+	return imageReference(repo, tag)
 }
 
 // GetResources returns the Camofox container resource requirements.
