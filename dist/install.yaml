@@ -3438,6 +3438,14 @@ spec:
                         type: object
                     type: object
                 type: object
+              hostUsers:
+                description: |-
+                  HostUsers selects the user namespace for the Hermes agent pod.  Set it
+                  to false to give the pod its own user namespace, so that root inside
+                  the container maps to an unprivileged UID on the node and a container
+                  breakout does not land on the node as root.  Omit the field to share
+                  the host user namespace, which is the Kubernetes default.
+                type: boolean
               initContainers:
                 description: |-
                   InitContainers is a list of additional init containers to run before the main container.

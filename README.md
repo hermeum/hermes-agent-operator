@@ -92,6 +92,7 @@ Then run the `/hermes-agent-operator` skill to create a custom resource.
 - [`networking.service`](#networkingservice)
 - [`networking.ingress`](#networkingingress)
 - [`suspend`](#suspend)
+- [`hostUsers`](#hostusers)
 - [`podAnnotations`](#podannotations)
 - [`podLabels`](#podlabels)
 
@@ -634,6 +635,18 @@ Pause the agent by scaling its StatefulSet to 0 without deleting the resource or
 ```yaml
 suspend: true                      # optional; defaults to false
 ```
+
+### `hostUsers`
+
+Run the agent pod in its own [user namespace](https://kubernetes.io/docs/concepts/workloads/pods/user-namespaces/). The agent container runs as root, and a user namespace maps that root to an unprivileged UID on the node, so a container breakout does not land on the node as root.
+
+```yaml
+hostUsers: false                   # optional; omit to share the host user namespace
+```
+
+Omitting the field, or setting it to `true`, leaves the pod in the host user namespace — the Kubernetes default. A change to this value starts a rolling restart of the `StatefulSet`'s pods.
+
+User namespaces are stable as of Kubernetes v1.36, where the `UserNamespacesSupport` feature gate is locked on and ignored; they were on by default for several releases before that. What still gates the feature is the node. The pod must land on a Linux node meeting [the requirements](https://kubernetes.io/docs/concepts/workloads/pods/user-namespaces/#before-you-begin): kernel 6.3 or newer, a CRI runtime that supports user namespaces (containerd 2.0+ or CRI-O 1.25+), and idmap-capable filesystems both for the kubelet directory and for every volume the pod mounts. Where only some nodes in a cluster qualify, schedule the agent onto one that does.
 
 ### `podAnnotations`
 

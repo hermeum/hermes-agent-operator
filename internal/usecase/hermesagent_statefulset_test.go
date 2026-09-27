@@ -79,6 +79,15 @@ func TestDesiredSpecHash(t *testing.T) {
 		}
 	})
 
+	t.Run("changes when hostUsers changes", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+		ha.Spec.HostUsers = ptrBool(false)
+		if desiredSpecHash(buildStatefulSet(ha)) == h1 {
+			t.Error("expected different hash when hostUsers changes")
+		}
+	})
+
 	t.Run("changes when podAnnotations change", func(t *testing.T) {
 		ha := minimalHA()
 		h1 := desiredSpecHash(buildStatefulSet(ha))
@@ -94,6 +103,44 @@ func TestDesiredSpecHash(t *testing.T) {
 		ha.Spec.PodLabels = map[string]string{"example.com/internet-client": testTrue}
 		if desiredSpecHash(buildStatefulSet(ha)) == h1 {
 			t.Error("expected different hash when podLabels change")
+		}
+	})
+}
+
+func TestBuildStatefulSetHostUsers(t *testing.T) {
+	t.Run("unset leaves the pod in the host user namespace", func(t *testing.T) {
+		ha := minimalHA()
+		sts := buildStatefulSet(ha)
+		if got := sts.Spec.Template.Spec.HostUsers; got != nil {
+			t.Errorf("expected nil hostUsers, got %v", *got)
+		}
+	})
+
+	t.Run("false gives the pod its own user namespace", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.HostUsers = ptrBool(false)
+		sts := buildStatefulSet(ha)
+		got := sts.Spec.Template.Spec.HostUsers
+		if got == nil {
+			t.Fatal("expected hostUsers to be set")
+		}
+		if *got {
+			t.Error("hostUsers = true, want false")
+		}
+	})
+
+	// An explicit true is not the same as an unset field: it pins the pod to
+	// the host user namespace even if the cluster default ever changes.
+	t.Run("true is passed through rather than dropped", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.HostUsers = ptrBool(true)
+		sts := buildStatefulSet(ha)
+		got := sts.Spec.Template.Spec.HostUsers
+		if got == nil {
+			t.Fatal("expected hostUsers to be set")
+		}
+		if !*got {
+			t.Error("hostUsers = false, want true")
 		}
 	})
 }
