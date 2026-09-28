@@ -656,7 +656,6 @@ Add custom annotations to the agent's pod template. Changing any key/value trigg
 ```yaml
 podAnnotations:                      # optional
   rotatedAt: "2026-07-06T12:00:00Z"  # any change here triggers a rolling restart
-  prometheus.io/scrape: "true"       # also usable for ordinary pod annotations
 ```
 
 ### `podLabels`
