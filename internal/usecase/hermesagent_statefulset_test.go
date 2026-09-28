@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -916,6 +917,78 @@ func TestOperatorDotEnvWebhook(t *testing.T) {
 			t.Errorf("expected %q absent from hermes-agent container Env (injected via .env)", name)
 		}
 	}
+}
+
+// TestSearXNGVolumeOwnership reproduces the ownership warnings reported in
+// issue #98: kubelet creates emptyDir/PVC volumes as root:root, but the
+// upstream searxng image entrypoint requires them to be owned by
+// searxng:searxng (uid/gid 977) and cannot fix them itself because it runs
+// non-root. The operator therefore prepares both volumes in a root-owned
+// init container step.
+func TestSearXNGVolumeOwnership(t *testing.T) {
+	ha := minimalHA()
+	ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true}
+
+	ic := findInitContainer(buildStatefulSet(ha), "init-searxng-config")
+	if ic == nil {
+		t.Fatal("expected init-searxng-config init container")
+	}
+
+	t.Run("volumes are chowned to the searxng user", func(t *testing.T) {
+		want := `chown -R 977:977 /etc/searxng /var/cache/searxng`
+		if len(ic.Args) < 2 {
+			t.Fatalf("init-searxng-config args = %q, want a second element containing:\n%s", ic.Args, want)
+		}
+		if !strings.Contains(ic.Args[1], want) {
+			t.Errorf("init-searxng-config args =\n%s\nwant to contain:\n%s", ic.Args[1], want)
+		}
+	})
+
+	t.Run("chown step runs as root", func(t *testing.T) {
+		sc := ic.SecurityContext
+		if sc == nil {
+			t.Fatal("expected a security context on init-searxng-config")
+		}
+		if sc.RunAsUser == nil || *sc.RunAsUser != 0 {
+			t.Error("chown step must run as root (uid 0)")
+		}
+		if sc.RunAsGroup == nil || *sc.RunAsGroup != 0 {
+			t.Error("chown step must run as group 0")
+		}
+		if sc.RunAsNonRoot != nil && *sc.RunAsNonRoot {
+			t.Error("chown step must not set runAsNonRoot")
+		}
+		if sc.AllowPrivilegeEscalation == nil || *sc.AllowPrivilegeEscalation {
+			t.Error("chown step must not allow privilege escalation")
+		}
+		if sc.Capabilities == nil || !slices.Contains(sc.Capabilities.Drop, "ALL") {
+			t.Error("chown step must drop all capabilities except CHOWN")
+		}
+		if len(sc.Capabilities.Add) != 1 || sc.Capabilities.Add[0] != "CHOWN" {
+			t.Errorf("chown step capabilities.Add = %v, want [CHOWN]", sc.Capabilities.Add)
+		}
+	})
+
+	t.Run("searxng runtime still runs as uid/gid 977 non-root", func(t *testing.T) {
+		c := findContainer(buildStatefulSet(ha), "searxng")
+		if c == nil {
+			t.Fatal("expected searxng container")
+		}
+		sc := c.SecurityContext
+		if sc == nil || sc.RunAsUser == nil || *sc.RunAsUser != 977 {
+			t.Error("searxng container must keep running as uid 977")
+		}
+		if sc == nil || sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+			t.Error("searxng container must keep runAsNonRoot")
+		}
+	})
+
+	t.Run("no chown step when searxng is disabled", func(t *testing.T) {
+		ha := minimalHA()
+		if ic := findInitContainer(buildStatefulSet(ha), "init-searxng-config"); ic != nil {
+			t.Error("expected no init-searxng-config init container when searxng is disabled")
+		}
+	})
 }
 
 func TestOperatorDotEnvSidecars(t *testing.T) {

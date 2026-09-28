@@ -31,6 +31,10 @@ const (
 	annotationDesiredSpecHash = domain + "/desired-spec-hash"
 	// searxngURL is the in-pod URL the hermes-agent uses to reach the SearXNG sidecar.
 	searxngURL = "http://localhost:8080"
+	// searxngUID/searxngGID are the uid/gid of the searxng image user
+	// (upstream container/dist.dockerfile: COPY --chown=977:977).
+	searxngUID = int64(977)
+	searxngGID = int64(977)
 	// camofoxURL is the in-pod URL the hermes-agent uses to reach the Camofox sidecar.
 	camofoxURL = "http://localhost:9377"
 )
@@ -803,14 +807,39 @@ func findContainer(sts *appsv1.StatefulSet, name string) *corev1.Container {
 func buildSearXNGContainerSecurityContext() *corev1.SecurityContext {
 	ape := false
 	rot := true
-	uid := int64(977)
-	gid := int64(977)
+	uid := searxngUID
+	gid := searxngGID
 	return &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &ape,
 		RunAsNonRoot:             &rot,
 		RunAsUser:                &uid,
 		RunAsGroup:               &gid,
 		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+}
+
+// buildSearXNGChownSecurityContext returns the security context for the root
+// chown step of init-searxng-config. The upstream searxng entrypoint
+// requires its volumes to be owned by searxng:searxng and can only repair
+// ownership itself when running as root; because the runtime container is
+// hardened to run as non-root uid 977, the operator prepares the volumes
+// beforehand. Running as root is required for chown, so runAsNonRoot is not
+// set and the CHOWN capability is granted explicitly (all others dropped).
+func buildSearXNGChownSecurityContext() *corev1.SecurityContext {
+	ape := false
+	uid := int64(0)
+	gid := int64(0)
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &ape,
+		RunAsUser:                &uid,
+		RunAsGroup:               &gid,
+		Capabilities: &corev1.Capabilities{
+			Add:  []corev1.Capability{"CHOWN"},
 			Drop: []corev1.Capability{"ALL"},
 		},
 		SeccompProfile: &corev1.SeccompProfile{
@@ -845,18 +874,28 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 	}
 
 	// init container: copy config files from the read-only ConfigMap bootstrap volume into the
-	// writable emptyDir at /etc/searxng so SearXNG can write runtime files alongside them.
+	// writable emptyDir at /etc/searxng so SearXNG can write runtime files alongside them,
+	// then chown both SearXNG volumes to the searxng user. The upstream entrypoint requires
+	// searxng:searxng ownership and cannot repair it itself (it runs as non-root uid 977),
+	// while kubelet creates emptyDir/PVC volumes as root:root (#98). The copy runs as root
+	// (files land root-owned) so the chown must run after it to cover the copied files too;
+	// this mirrors upstream's FORCE_OWNERSHIP chown -R, which is skipped when the entrypoint
+	// runs as non-root. See buildSearXNGChownSecurityContext for the hardened root context.
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, corev1.Container{
 		Name:            "init-searxng-config",
 		Image:           sx.GetImage(),
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
-		Args:            []string{"cp -r /bootstrap-searxng/. /etc/searxng/"},
+		Args: []string{
+			"cp -r /bootstrap-searxng/. /etc/searxng/",
+			"chown -R 977:977 /etc/searxng /var/cache/searxng",
+		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: searxngBootstrapVolume, MountPath: searxngBootstrapMount, ReadOnly: true},
 			{Name: searxngConfigVolume, MountPath: searxngConfigMount},
+			{Name: searxngCacheVolume, MountPath: searxngCacheMount},
 		},
-		SecurityContext: buildSearXNGContainerSecurityContext(),
+		SecurityContext: buildSearXNGChownSecurityContext(),
 	})
 
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
