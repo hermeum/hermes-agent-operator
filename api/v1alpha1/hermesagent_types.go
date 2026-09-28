@@ -17,7 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"encoding/json"
 	"maps"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -27,6 +29,55 @@ import (
 )
 
 const defaultImageTag = "latest"
+
+// Default image repositories for the hermes-agent and sidecar containers.
+const (
+	defaultHermesImageRepo  = "nousresearch/hermes-agent"
+	defaultSearXNGImageRepo = "searxng/searxng"
+	defaultCamofoxImageRepo = "ghcr.io/jo-inc/camofox-browser"
+)
+
+// legacyImageShape decodes the deprecated object form of an image override
+// (e.g. `image: {repository: searxng/searxng, tag: latest}`).
+// Deprecated: the next API version requires image to be a plain string.
+type legacyImageShape struct {
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
+}
+
+// resolveImage returns a fully qualified image reference from an image
+// override field that holds either a plain string (a full reference,
+// including tag or digest pinning) or the legacy {repository, tag} object.
+// Nil, empty, or unparseable values fall back to the default repository and
+// tag so reconciliation stays deterministic.
+func resolveImage(raw *apiextensionsv1.JSON, defaultRepo string) string {
+	def := defaultRepo + ":" + defaultImageTag
+	if raw == nil || len(raw.Raw) == 0 {
+		return def
+	}
+
+	var ref string
+	if err := json.Unmarshal(raw.Raw, &ref); err == nil {
+		if strings.TrimSpace(ref) == "" {
+			return def
+		}
+		// String form is a full image reference (tag or digest); used verbatim.
+		return strings.TrimSpace(ref)
+	}
+
+	var legacy legacyImageShape
+	if err := json.Unmarshal(raw.Raw, &legacy); err != nil {
+		return def
+	}
+	repo, tag := defaultRepo, defaultImageTag
+	if legacy.Repository != "" {
+		repo = legacy.Repository
+	}
+	if legacy.Tag != "" {
+		tag = legacy.Tag
+	}
+	return repo + ":" + tag
+}
 
 // DefaultSnapshotRetention is the number of newest snapshots kept when
 // HermesSnapshot.Retention is unset.
@@ -373,17 +424,6 @@ type HermesNpmPackages struct {
 	Install []string `json:"install,omitempty"`
 }
 
-// HermesImage specifies the container image repository and tag.
-type HermesImage struct {
-	// repository is the image repository (e.g. "nousresearch/hermes-agent").
-	// Defaults to "nousresearch/hermes-agent".
-	// +optional
-	Repository string `json:"repository,omitempty"`
-	// tag is the image tag. Defaults to "latest".
-	// +optional
-	Tag string `json:"tag,omitempty"`
-}
-
 // HermesSecurity configures the security context for the pod and container.
 type HermesSecurity struct {
 	// rbac configures the ServiceAccount and Role used by the HermesAgent pod.
@@ -683,9 +723,14 @@ type HermesProfile struct {
 // Hermes defines the hermes-specific section of the spec.
 type Hermes struct {
 	// image overrides the container image used for the hermes-agent container
-	// and all init containers.
+	// and all init containers. Accepts either a full image reference string
+	// (e.g. "nousresearch/hermes-agent:v1.2.3" or a digest reference
+	// "nousresearch/hermes-agent@sha256:...") or, for backward compatibility,
+	// an object with repository and tag fields.
+	// The object form is deprecated; the next API version requires image to be
+	// a plain string.
 	// +optional
-	Image *HermesImage `json:"image,omitempty"`
+	Image *apiextensionsv1.JSON `json:"image,omitempty"`
 	// config holds the Hermes agent config.yml configuration.
 	// +optional
 	Config *HermesConfig `json:"config,omitempty"`
@@ -990,17 +1035,10 @@ func (h *Hermes) GetInitScripts() []HermesInitScript {
 }
 
 func (h *Hermes) GetImage() string {
-	repo := "nousresearch/hermes-agent"
-	tag := defaultImageTag
-	if h != nil && h.Image != nil {
-		if h.Image.Repository != "" {
-			repo = h.Image.Repository
-		}
-		if h.Image.Tag != "" {
-			tag = h.Image.Tag
-		}
+	if h == nil {
+		return defaultHermesImageRepo + ":" + defaultImageTag
 	}
-	return repo + ":" + tag
+	return resolveImage(h.Image, defaultHermesImageRepo)
 }
 
 // Networking defines network-related configuration.
@@ -1169,9 +1207,14 @@ type SearXNG struct {
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
 
-	// Image configures the SearXNG container image.
+	// Image configures the SearXNG container image. Accepts either a full
+	// image reference string (e.g. "searxng/searxng:latest" or a digest
+	// reference) or, for backward compatibility, an object with repository
+	// and tag fields.
+	// The object form is deprecated; the next API version requires image to be
+	// a plain string.
 	// +optional
-	Image *SearXNGImage `json:"image,omitempty"`
+	Image *apiextensionsv1.JSON `json:"image,omitempty"`
 
 	// Resources specifies compute resources for the SearXNG container.
 	// +optional
@@ -1234,16 +1277,6 @@ func (s *SearXNG) GetConfigFiles() map[string]string {
 	return files
 }
 
-// SearXNGImage specifies the SearXNG container image repository and tag.
-type SearXNGImage struct {
-	// repository is the image repository. Defaults to "searxng/searxng".
-	// +optional
-	Repository string `json:"repository,omitempty"`
-	// tag is the image tag. Defaults to "latest".
-	// +optional
-	Tag string `json:"tag,omitempty"`
-}
-
 // IsEnabled reports whether the SearXNG sidecar should be created.
 func (s *SearXNG) IsEnabled() bool {
 	return s != nil && s.Enabled
@@ -1251,17 +1284,7 @@ func (s *SearXNG) IsEnabled() bool {
 
 // GetImage returns the fully qualified SearXNG image reference.
 func (s *SearXNG) GetImage() string {
-	repo := "searxng/searxng"
-	tag := defaultImageTag
-	if s != nil && s.Image != nil {
-		if s.Image.Repository != "" {
-			repo = s.Image.Repository
-		}
-		if s.Image.Tag != "" {
-			tag = s.Image.Tag
-		}
-	}
-	return repo + ":" + tag
+	return resolveImage(s.Image, defaultSearXNGImageRepo)
 }
 
 // SearXNGPersistence configures a PersistentVolumeClaim for the SearXNG cache.
@@ -1310,9 +1333,14 @@ type Camofox struct {
 	// +kubebuilder:default=false
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
-	// Image configures the Camofox container image
+	// Image configures the Camofox container image. Accepts either a full
+	// image reference string (e.g. "ghcr.io/jo-inc/camofox-browser:latest"
+	// or a digest reference) or, for backward compatibility, an object with
+	// repository and tag fields.
+	// The object form is deprecated; the next API version requires image to be
+	// a plain string.
 	// +optional
-	Image CamofoxImageSpec `json:"image,omitempty"`
+	Image *apiextensionsv1.JSON `json:"image,omitempty"`
 	// Resources specifies compute resources for the Camofox container
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -1336,17 +1364,7 @@ func (c *Camofox) IsEnabled() bool {
 
 // GetImage returns the fully qualified Camofox image reference.
 func (c *Camofox) GetImage() string {
-	repo := "ghcr.io/jo-inc/camofox-browser"
-	tag := defaultImageTag
-	if c != nil {
-		if c.Image.Repository != "" {
-			repo = c.Image.Repository
-		}
-		if c.Image.Tag != "" {
-			tag = c.Image.Tag
-		}
-	}
-	return repo + ":" + tag
+	return resolveImage(c.Image, defaultCamofoxImageRepo)
 }
 
 // GetResources returns the Camofox container resource requirements.
@@ -1371,16 +1389,6 @@ func (c *Camofox) GetPersistence() *CamofoxPersistenceSpec {
 		return nil
 	}
 	return &c.Persistence
-}
-
-// CamofoxImageSpec specifies the Camofox container image repository and tag.
-type CamofoxImageSpec struct {
-	// repository is the image repository. Defaults to "ghcr.io/jo-inc/camofox-browser".
-	// +optional
-	Repository string `json:"repository,omitempty"`
-	// tag is the image tag. Defaults to "latest".
-	// +optional
-	Tag string `json:"tag,omitempty"`
 }
 
 // CamofoxPersistenceSpec configures a PersistentVolumeClaim for the Camofox data directory.

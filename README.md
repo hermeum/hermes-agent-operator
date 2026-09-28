@@ -82,6 +82,7 @@ Then run the `/hermes-agent-operator` skill to create a custom resource.
 - [`hermes.bundles`](#hermesbundles)
 - [`hermes.env` / `hermes.envFrom`](#hermesenv--hermesenvfrom)
 - [`hermes.resources`](#hermesresources)
+- [`hermes.image`](#hermesimage)
 - [`hermes.initChownData`](#hermesinit​chowndata)
 - [`hermes.initScripts`](#hermesinitscripts)
 - [`hermes.profiles`](#hermesprofiles)
@@ -415,6 +416,38 @@ hermes:
       memory: 1Gi
 ```
 
+### `hermes.image`
+
+Override the agent image used for the hermes-agent container and all init containers. Defaults to `nousresearch/hermes-agent:latest`.
+
+The image is a full image reference string, so it accepts a tag:
+
+```yaml
+hermes:
+  image: nousresearch/hermes-agent:v1.2.3    # optional; omit to use the default image
+```
+
+...or a digest, for an immutable reference:
+
+```yaml
+hermes:
+  image: nousresearch/hermes-agent@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+A reference without a tag or digest (e.g. `nousresearch/hermes-agent`) uses the `latest` tag per Kubernetes image semantics.
+
+> **Backward compatibility:** the deprecated object form is still accepted, but
+> the next API version will require `image` to be a plain string:
+>
+> ```yaml
+> hermes:
+>   image:
+>     repository: nousresearch/hermes-agent
+>     tag: latest
+> ```
+>
+> Prefer the string form; it also works with [kustomize image overrides](https://kubectl.docs.kubernetes.io/references/kustomize/kustomization/images/).
+
 ### `hermes.initChownData`
 
 Run an init container that sets `/opt/data` ownership to the hermes user (`10000:10000`). Useful when using an existing PVC whose data was written by a different user.
@@ -495,9 +528,7 @@ web:
 ```yaml
 searxng:
   enabled: true                    # defaults to false; omit the entire block to disable
-  image:                           # optional; omit to use the default image (searxng/searxng:latest)
-    repository: searxng/searxng
-    tag: latest
+  image: searxng/searxng:latest    # optional; omit to use the default image (searxng/searxng:latest)
   resources:                       # optional; omit to use no resource constraints
     limits:
       cpu: 500m
@@ -529,9 +560,7 @@ Optional sidecar for browser automation via [Camofox](https://github.com/jo-inc/
 ```yaml
 camofox:
   enabled: true                    # defaults to false; omit the entire block to disable
-  image:                           # optional; omit to use the default image (ghcr.io/jo-inc/camofox-browser:latest)
-    repository: ghcr.io/jo-inc/camofox-browser
-    tag: latest
+  image: ghcr.io/jo-inc/camofox-browser:latest    # optional; omit to use the default image
   resources:                       # optional; omit to use no resource constraints
     limits:
       cpu: "1"

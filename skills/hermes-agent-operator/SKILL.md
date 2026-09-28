@@ -87,7 +87,7 @@ Example manifests are available in the `examples/` directory alongside this skil
 |-------|----------|-------|
 | Agent name (`metadata.name`) | Yes | lowercase DNS label |
 | Namespace | No | default: `default` |
-| Image tag (`spec.hermes.image.tag`) | No | default: `latest` — pin to a specific release in production |
+| Image reference (`spec.hermes.image`) | No | string, default: `nousresearch/hermes-agent:latest`; accepts `:tag` or `@sha256:...` digest pinning |
 | Model provider | Yes | e.g. `anthropic`, `openai`, `ollama-cloud` |
 | Model name | Yes | e.g. `claude-sonnet-4-6`, `gpt-4o`, `kimi-k2.6` |
 | Model base URL | No | leave blank for provider default; required for `ollama`/`ollama-cloud` |

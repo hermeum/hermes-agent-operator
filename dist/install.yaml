@@ -226,16 +226,14 @@ spec:
                       type: object
                     type: array
                   image:
-                    description: Image configures the Camofox container image
-                    properties:
-                      repository:
-                        description: repository is the image repository. Defaults
-                          to "ghcr.io/jo-inc/camofox-browser".
-                        type: string
-                      tag:
-                        description: tag is the image tag. Defaults to "latest".
-                        type: string
-                    type: object
+                    description: |-
+                      Image configures the Camofox container image. Accepts either a full
+                      image reference string (e.g. "ghcr.io/jo-inc/camofox-browser:latest"
+                      or a digest reference) or, for backward compatibility, an object with
+                      repository and tag fields.
+                      The object form is deprecated; the next API version requires image to be
+                      a plain string.
+                    x-kubernetes-preserve-unknown-fields: true
                   persistence:
                     description: |-
                       Persistence configures persistent storage located at /root/.camofox.
@@ -2656,17 +2654,13 @@ spec:
                   image:
                     description: |-
                       image overrides the container image used for the hermes-agent container
-                      and all init containers.
-                    properties:
-                      repository:
-                        description: |-
-                          repository is the image repository (e.g. "nousresearch/hermes-agent").
-                          Defaults to "nousresearch/hermes-agent".
-                        type: string
-                      tag:
-                        description: tag is the image tag. Defaults to "latest".
-                        type: string
-                    type: object
+                      and all init containers. Accepts either a full image reference string
+                      (e.g. "nousresearch/hermes-agent:v1.2.3" or a digest reference
+                      "nousresearch/hermes-agent@sha256:...") or, for backward compatibility,
+                      an object with repository and tag fields.
+                      The object form is deprecated; the next API version requires image to be
+                      a plain string.
+                    x-kubernetes-preserve-unknown-fields: true
                   initChownData:
                     description: |-
                       initChownData runs an init container that chowns /opt/data to the hermes
@@ -5317,16 +5311,14 @@ spec:
                       type: object
                     type: array
                   image:
-                    description: Image configures the SearXNG container image.
-                    properties:
-                      repository:
-                        description: repository is the image repository. Defaults
-                          to "searxng/searxng".
-                        type: string
-                      tag:
-                        description: tag is the image tag. Defaults to "latest".
-                        type: string
-                    type: object
+                    description: |-
+                      Image configures the SearXNG container image. Accepts either a full
+                      image reference string (e.g. "searxng/searxng:latest" or a digest
+                      reference) or, for backward compatibility, an object with repository
+                      and tag fields.
+                      The object form is deprecated; the next API version requires image to be
+                      a plain string.
+                    x-kubernetes-preserve-unknown-fields: true
                   persistence:
                     description: |-
                       Persistence configures persistent storage located at /var/cache/searxng.
