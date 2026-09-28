@@ -881,14 +881,23 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 	// (files land root-owned) so the chown must run after it to cover the copied files too;
 	// this mirrors upstream's FORCE_OWNERSHIP chown -R, which is skipped when the entrypoint
 	// runs as non-root. See buildSearXNGChownSecurityContext for the hardened root context.
+	// Both steps share a single /bin/sh -ec script operand: with Command ["sh","-ec"] and
+	// multiple Args elements, only the first is the script — later elements become $0 and
+	// are never executed.
+	//
+	// The chown also covers persistence.existingClaim volumes; it re-runs on every pod
+	// start, which is cheap for the small config emptyDir but can take a while on a large
+	// existing claim — accepted because searxng refuses to start otherwise (see #98).
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, corev1.Container{
 		Name:            "init-searxng-config",
 		Image:           sx.GetImage(),
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
 		Args: []string{
-			"cp -r /bootstrap-searxng/. /etc/searxng/",
-			"chown -R 977:977 /etc/searxng /var/cache/searxng",
+			fmt.Sprintf(
+				"cp -r /bootstrap-searxng/. /etc/searxng/ && chown -R %d:%d /etc/searxng /var/cache/searxng",
+				searxngUID, searxngGID,
+			),
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: searxngBootstrapVolume, MountPath: searxngBootstrapMount, ReadOnly: true},

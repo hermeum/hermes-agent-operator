@@ -935,12 +935,18 @@ func TestSearXNGVolumeOwnership(t *testing.T) {
 	}
 
 	t.Run("volumes are chowned to the searxng user", func(t *testing.T) {
-		want := `chown -R 977:977 /etc/searxng /var/cache/searxng`
-		if len(ic.Args) < 2 {
-			t.Fatalf("init-searxng-config args = %q, want a second element containing:\n%s", ic.Args, want)
+		// The whole script must live in a single Args element: with Command
+		// ["/bin/sh","-ec"], only the first operand after -c is the script —
+		// additional Args elements become $0 and are never executed, which is
+		// how the chown originally went missing (#98).
+		if len(ic.Args) != 1 {
+			t.Fatalf("init-searxng-config args = %q, want exactly one script element", ic.Args)
 		}
-		if !strings.Contains(ic.Args[1], want) {
-			t.Errorf("init-searxng-config args =\n%s\nwant to contain:\n%s", ic.Args[1], want)
+		// Literal uid/gid on purpose: catches drift of the searxngUID/GID
+		// constants away from the 977 the upstream image actually uses.
+		want := `cp -r /bootstrap-searxng/. /etc/searxng/ && chown -R 977:977 /etc/searxng /var/cache/searxng`
+		if !strings.Contains(ic.Args[0], want) {
+			t.Errorf("init-searxng-config script =\n%s\nwant to contain:\n%s", ic.Args[0], want)
 		}
 	})
 
