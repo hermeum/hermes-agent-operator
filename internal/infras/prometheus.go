@@ -60,6 +60,13 @@ func (m *PrometheusTelemetry) Error(ctx context.Context, err error, msg string, 
 	log.FromContext(ctx).WithName(telemetryLoggerName).Error(err, msg, keysAndValues...)
 }
 
+// Warn emits a warning notice, such as deprecation messages. logr has no warn
+// level (only Info and Error); these notices are emitted at Info to avoid
+// miscasting them as errors.
+func (m *PrometheusTelemetry) Warn(ctx context.Context, msg string, keysAndValues ...any) {
+	log.FromContext(ctx).WithName(telemetryLoggerName).Info(msg, keysAndValues...)
+}
+
 func (m *PrometheusTelemetry) IncReconcile(_ context.Context, param usecase.IncReconcileParam) {
 	m.reconcileTotal.WithLabelValues(param.NamespacedName.Namespace, param.NamespacedName.Name, param.Result.String()).Inc()
 }

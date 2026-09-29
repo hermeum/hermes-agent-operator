@@ -437,7 +437,8 @@ hermes:
 A reference without a tag or digest (e.g. `nousresearch/hermes-agent`) uses the `latest` tag per Kubernetes image semantics.
 
 > **Backward compatibility:** the deprecated object form is still accepted, but
-> the next API version will require `image` to be a plain string:
+> the operator logs a warning on each reconciliation, and the next API version
+> will require `image` to be a plain string:
 >
 > ```yaml
 > hermes:

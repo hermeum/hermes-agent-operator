@@ -77,6 +77,52 @@ func TestDigestPinnedImageInPod(t *testing.T) {
 	t.Errorf("hermes-agent container not found in %+v", sts.Spec.Template.Spec.Containers)
 }
 
+func TestUsesLegacyImageForm(t *testing.T) {
+	t.Run("false when unset", func(t *testing.T) {
+		if minimalHA().UsesLegacyImageForm() {
+			t.Error("UsesLegacyImageForm() = true, want false")
+		}
+	})
+
+	t.Run("false when string form", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Image: imageJSON(`"nousresearch/hermes-agent:v2"`)}
+		ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true, Image: imageJSON(`"searxng/searxng:latest"`)}
+		ha.Spec.Camofox = &agentsv1alpha1.Camofox{Enabled: true, Image: imageJSON(`"camofox:latest"`)}
+		if ha.UsesLegacyImageForm() {
+			t.Error("UsesLegacyImageForm() = true, want false")
+		}
+	})
+
+	t.Run("true when object form", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Image: imageJSON(`{"repository":"my/agent","tag":"v2"}`)}
+		if !ha.UsesLegacyImageForm() {
+			t.Error("UsesLegacyImageForm() = false, want true")
+		}
+	})
+
+	t.Run("true when sidecar object form", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true, Image: imageJSON(`{"tag":"v3"}`)}
+		if !ha.UsesLegacyImageForm() {
+			t.Error("UsesLegacyImageForm() = false, want true")
+		}
+		ha = minimalHA()
+		ha.Spec.Camofox = &agentsv1alpha1.Camofox{Enabled: true, Image: imageJSON(`{"repository":"camofox"}`)}
+		if !ha.UsesLegacyImageForm() {
+			t.Error("UsesLegacyImageForm() = false, want true")
+		}
+	})
+
+	t.Run("false on nil receiver", func(t *testing.T) {
+		var ha *agentsv1alpha1.HermesAgent
+		if ha.UsesLegacyImageForm() {
+			t.Error("UsesLegacyImageForm() = true, want false")
+		}
+	})
+}
+
 func TestDesiredSpecHash(t *testing.T) {
 	t.Run("stable for identical spec", func(t *testing.T) {
 		ha := minimalHA()

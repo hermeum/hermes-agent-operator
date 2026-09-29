@@ -45,6 +45,37 @@ type legacyImageShape struct {
 	Tag        string `json:"tag"`
 }
 
+// usesLegacyImageForm reports whether the image override uses the deprecated
+// {repository, tag} object form. Nil, empty, string, and other non-object
+// values are not the legacy form.
+func usesLegacyImageForm(raw *apiextensionsv1.JSON) bool {
+	if raw == nil || len(raw.Raw) == 0 {
+		return false
+	}
+	var obj map[string]any
+	return json.Unmarshal(raw.Raw, &obj) == nil
+}
+
+// UsesLegacyImageForm reports whether any image override in the spec uses the
+// deprecated {repository, tag} object form. Admins should migrate such specs
+// to a plain string image reference before the next API version, which
+// requires the string form.
+func (h *HermesAgent) UsesLegacyImageForm() bool {
+	if h == nil {
+		return false
+	}
+	if h.Spec.Hermes != nil && usesLegacyImageForm(h.Spec.Hermes.Image) {
+		return true
+	}
+	if h.Spec.SearXNG != nil && usesLegacyImageForm(h.Spec.SearXNG.Image) {
+		return true
+	}
+	if h.Spec.Camofox != nil && usesLegacyImageForm(h.Spec.Camofox.Image) {
+		return true
+	}
+	return false
+}
+
 // resolveImage returns a fully qualified image reference from an image
 // override field that holds either a plain string (a full reference,
 // including tag or digest pinning) or the legacy {repository, tag} object.

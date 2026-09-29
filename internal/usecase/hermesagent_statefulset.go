@@ -49,6 +49,11 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
 
+	if ha.UsesLegacyImageForm() {
+		u.tel.Warn(ctx, "Image override uses the deprecated object form; set a plain string image reference (required in the next API version)",
+			"HermesAgent", ha.Name, "Namespace", ha.Namespace)
+	}
+
 	sts, err := u.kube.GetStatefulSet(ctx, GetStatefulSetParam{
 		NamespacedName: nsName,
 	})

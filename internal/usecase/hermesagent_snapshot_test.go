@@ -25,6 +25,7 @@ type silentTelemetry struct{}
 
 func (silentTelemetry) Debug(context.Context, string, ...any)           {}
 func (silentTelemetry) Info(context.Context, string, ...any)            {}
+func (silentTelemetry) Warn(context.Context, string, ...any)            {}
 func (silentTelemetry) Error(context.Context, error, string, ...any)    {}
 func (silentTelemetry) IncReconcile(context.Context, IncReconcileParam) {}
 func (silentTelemetry) ObserveReconcileDuration(context.Context, ObserveReconcileDurationParam) {

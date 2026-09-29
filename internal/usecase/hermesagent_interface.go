@@ -28,6 +28,7 @@ type Telemetry interface {
 	// Logging
 	Debug(ctx context.Context, msg string, keysAndValues ...any)
 	Info(ctx context.Context, msg string, keysAndValues ...any)
+	Warn(ctx context.Context, msg string, keysAndValues ...any)
 	Error(ctx context.Context, err error, msg string, keysAndValues ...any)
 
 	// Metrics
