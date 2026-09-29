@@ -241,19 +241,30 @@ hermes:
 
 #### `dotEnv`
 
-Generate a `$HERMES_HOME/.env` file from a Kubernetes ConfigMap and/or Secret. Each key in the referenced object(s) becomes a `KEY=VALUE` line in the file. Useful for tools that read `.env` files at startup.
+Generate a `$HERMES_HOME/.env` file from Kubernetes ConfigMaps and/or Secrets. Each key in the referenced object(s) becomes a `KEY=VALUE` line in the file. Useful for tools that read `.env` files at startup.
 
-At least one of `configMapRef`/`secretRef` must be set; both may be set at once. If a key exists in both, the Secret's value wins.
+At least one of `configMapRefs`/`secretRefs` must be set; both may be set at once, and each list may contain multiple entries (up to 64 per list).
 
 ```yaml
 hermes:
   workspace:
     dotEnv:                        # optional; omit if no .env file is needed
-      configMapRef:
-        name: my-env-configmap     # non-secret values
-      secretRef:
-        name: my-env-secret        # secret values; overrides configMap on key collision
+      configMapRefs:               # non-secret values
+        - name: my-env-configmap
+        - name: my-other-configmap
+      secretRefs:                  # secret values
+        - name: my-env-secret
+        - name: my-api-keys
 ```
+
+**Precedence on key collision** (last-wins):
+
+1. `configMapRefs` entries, in list order
+2. `secretRefs` entries, in list order
+
+Secrets override ConfigMaps, and later entries override earlier ones.
+
+> **Note:** The singular `configMapRef`/`secretRef` forms are still accepted for compatibility but are deprecated; they will be removed in the v1 type. They take the lowest precedence: ConfigMap first, then Secret, then the plural lists above.
 
 ### `hermes.packages`
 
