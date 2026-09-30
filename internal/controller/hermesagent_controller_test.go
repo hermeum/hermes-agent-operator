@@ -186,6 +186,16 @@ var _ = Describe("Validating a profile distribution", func() {
 		Expect(err).To(MatchError(ContainSubstring("should match")))
 	})
 
+	It("rejects git credentials with no Secret name", func() {
+		err := create("dist-empty-secret", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source:         "https://git.example.com/team/bot.git",
+				GitCredentials: &agentsv1alpha1.HermesGitCredentials{},
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("secretRef.name is required")))
+	})
+
 	It("requires a source", func() {
 		err := create("dist-no-source", agentsv1alpha1.HermesProfile{
 			Distribution: &agentsv1alpha1.HermesProfileDistribution{},
