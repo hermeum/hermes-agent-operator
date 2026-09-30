@@ -54,6 +54,7 @@ type IncNotFoundParam struct {
 type Kubernetes interface {
 	GetHermesAgent(ctx context.Context, param GetHermesAgentParam) (*agentsv1alpha1.HermesAgent, error)
 	UpdateHermesAgentStatus(ctx context.Context, param UpdateHermesAgentStatusParam) error
+	RecordEvent(param RecordEventParam)
 
 	GetPod(ctx context.Context, param GetPodParam) (*corev1.Pod, error)
 	DeletePod(ctx context.Context, param DeletePodParam) error
@@ -118,6 +119,28 @@ type GetHermesAgentParam struct {
 
 type UpdateHermesAgentStatusParam struct {
 	HermesAgent *agentsv1alpha1.HermesAgent
+}
+
+// `EventType` classifies an `Event` as routine or as something that went wrong.
+type EventType string
+
+const (
+	EventTypeNormal  EventType = "Normal"
+	EventTypeWarning EventType = "Warning"
+)
+
+type RecordEventParam struct {
+	// HermesAgent is the object the `Event` is recorded against.
+	HermesAgent *agentsv1alpha1.HermesAgent
+	// Type is Normal or Warning.
+	Type EventType
+	// Reason is a short, CamelCase code (e.g. "ResumedCronJob").
+	Reason string
+	// Action is the operation that produced the `Event` (e.g. "Resume"), which
+	// the Kubernetes events API records alongside the reason.
+	Action string
+	// Message describes the `Event` in a full sentence.
+	Message string
 }
 
 type GetPodParam struct {
