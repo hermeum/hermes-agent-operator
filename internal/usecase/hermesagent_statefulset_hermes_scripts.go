@@ -565,6 +565,93 @@ echo "Profile %s ready"
 	return b.String()
 }
 
+// `buildResumeCronsScript` resumes the distribution cron jobs that the profile
+// allowlists, and pauses the ones it resumed before but no longer names.  It
+// keeps a manifest of those names, because the allowlist is the desired
+// state.  Jobs declared in crons belong to that step, so it skips them.  The
+// script gets each name as a single-quoted shell word.  The CRD forbids a line
+// break in a name, because the script reads the lists line by line.
+func buildResumeCronsScript(profile string, names []string, crons []agentsv1alpha1.HermesCron) string {
+	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + profile
+	declared := make([]string, 0, len(crons))
+	for _, c := range crons {
+		declared = append(declared, c.Name)
+	}
+
+	return fmt.Sprintf(`set -eu
+MANIFEST="%s/resumed-crons"
+mkdir -p "%s"
+
+%s
+DESIRED=$(printf '%%s\n' %s)
+DECLARED=$(printf '%%s\n' %s)
+
+# in_list LIST NAME succeeds when NAME is a line of LIST.
+in_list() {
+  case "
+$1
+" in
+    *"
+$2
+"*) return 0 ;;
+  esac
+  return 1
+}
+
+# Pause jobs this profile resumed before but no longer allowlists.  A job
+# whose pause fails stays in the manifest, so the next start tries again.
+RETRY=
+if [ -f "$MANIFEST" ]; then
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    in_list "$DESIRED" "$name" && continue
+    in_list "$DECLARED" "$name" && continue
+    id=$(get_job_id "$name")
+    [ -z "$id" ] && continue
+    if hermes cron pause -p %q "$id"; then
+      printf '%%s\n' "Paused cron job $name"
+    else
+      printf '%%s\n' "Could not pause cron job $name; will retry at the next start"
+      RETRY="$RETRY
+$name"
+    fi
+  done < "$MANIFEST"
+fi
+
+# Resume the allowlisted jobs; a distribution ships its jobs paused.
+printf '%%s\n' "$DESIRED" | while IFS= read -r name; do
+  [ -z "$name" ] && continue
+  if in_list "$DECLARED" "$name"; then
+    printf '%%s\n' "Cron job $name is declared in crons; skipping"
+    continue
+  fi
+  id=$(get_job_id "$name")
+  if [ -z "$id" ]; then
+    printf '%%s\n' "No cron job named $name in profile %s; skipping"
+    continue
+  fi
+  if hermes cron resume -p %q "$id"; then
+    printf '%%s\n' "Resumed cron job $name"
+  else
+    printf '%%s\n' "Could not resume cron job $name"
+  fi
+done
+
+printf '%%s\n' "$DESIRED" "$RETRY" > "$MANIFEST"
+`, manifestDir, manifestDir, buildGetJobIDFunction(profile),
+		shellWords(names), shellWords(declared), profile, profile, profile)
+}
+
+// `shellWords` renders values as single-quoted shell words, so the shell
+// neither expands a value nor ends its quoting early.
+func shellWords(values []string) string {
+	words := make([]string, len(values))
+	for i, v := range values {
+		words[i] = "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+	}
+	return strings.Join(words, " ")
+}
+
 // combineInitSteps joins step scripts into a single init script. Each step is
 // wrapped in a subshell so steps that exit early (e.g. "packages up-to-date,
 // exit 0") cannot abort the remaining steps, and a banner echoes the step
@@ -600,10 +687,11 @@ if not os.path.exists(p):
     sys.exit(0)
 with open(p) as f:
     data = json.load(f)
-for j in data.get("jobs", []):
-    if j.get("name") == sys.argv[1]:
-        print(j.get("id", ""))
-        break
+ids = [j.get("id", "") for j in data.get("jobs", []) if j.get("name") == sys.argv[1]]
+if len(ids) > 1:
+    print(f"Using the first of {len(ids)} cron jobs named {sys.argv[1]}", file=sys.stderr)
+if ids:
+    print(ids[0])
 PY
 }
 `, cronJobsPath(profile))

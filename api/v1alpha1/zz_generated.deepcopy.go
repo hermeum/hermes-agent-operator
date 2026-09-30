@@ -800,6 +800,11 @@ func (in *HermesProfileDistribution) DeepCopyInto(out *HermesProfileDistribution
 		*out = new(bool)
 		**out = **in
 	}
+	if in.ResumeCrons != nil {
+		in, out := &in.ResumeCrons, &out.ResumeCrons
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.GitCredentials != nil {
 		in, out := &in.GitCredentials, &out.GitCredentials
 		*out = new(HermesGitCredentials)

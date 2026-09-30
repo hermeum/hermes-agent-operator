@@ -3198,6 +3198,18 @@ spec:
                               maxLength: 255
                               pattern: ^[A-Za-z0-9._/][A-Za-z0-9._/-]*$
                               type: string
+                            resumeCrons:
+                              description: |-
+                                `resumeCrons` lists the shipped cron jobs to resume.  They arrive paused.
+                                The list is the desired state, so removing a name pauses its job again at
+                                the next `Pod` start.  It does not affect jobs declared in `crons`.
+                              items:
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[^\n\r]+$
+                                type: string
+                              maxItems: 64
+                              type: array
                             source:
                               description: |-
                                 source is the distribution repository.  It is a git URL
