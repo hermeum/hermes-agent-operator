@@ -40,6 +40,7 @@ type fakeSnapshotKube struct {
 	deleted   []types.NamespacedName
 	statuses  []*agentsv1alpha1.HermesAgent
 	createErr error
+	events    []RecordEventParam
 }
 
 func (f *fakeSnapshotKube) GetHermesAgent(ctx context.Context, param GetHermesAgentParam) (*agentsv1alpha1.HermesAgent, error) {
@@ -48,6 +49,9 @@ func (f *fakeSnapshotKube) GetHermesAgent(ctx context.Context, param GetHermesAg
 func (f *fakeSnapshotKube) UpdateHermesAgentStatus(ctx context.Context, param UpdateHermesAgentStatusParam) error {
 	f.statuses = append(f.statuses, param.HermesAgent)
 	return nil
+}
+func (f *fakeSnapshotKube) RecordEvent(param RecordEventParam) {
+	f.events = append(f.events, param)
 }
 func (f *fakeSnapshotKube) GetPod(ctx context.Context, param GetPodParam) (*corev1.Pod, error) {
 	return nil, nil

@@ -648,6 +648,15 @@ The `Secret` is mounted only into that profile's init container (not the agent c
 
 `resumeCrons` is desired state: removing a name pauses its job again at the next `Pod` start. A resumed job stays resumed after an update (only new jobs arrive paused). Jobs declared in `crons` are unaffected.
 
+Each change to the allowlist records a `ResumedCronJob` or `PausedCronJob` `Event`, and `status.profiles` reports what the operator applied to each profile:
+
+```sh
+kubectl describe hermesagent my-agent
+kubectl get hermesagent my-agent -o jsonpath='{.status.profiles}'
+```
+
+`status.profiles` reports the operator's declaration, not what the agent sees. For the agent's view, run `hermes -p researcher cron list`.
+
 [↑ Back to Configuration](#configuration)
 
 ### `searxng`
