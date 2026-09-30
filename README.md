@@ -576,6 +576,8 @@ hermes:
         ref: v1.2.0                                   # optional; pin to a tag, branch, or commit SHA
         updateOnStart: true                           # optional; defaults to true, ignored when ref is set
         forceConfig: false                            # optional; let an update overwrite config.yaml, ignored when ref is set
+        resumeCrons:                                  # optional; shipped cron jobs to resume
+          - daily-digest
       workspace:
         dotEnv:                                       # supply the env vars the distribution requires
           secretRef:
@@ -630,7 +632,30 @@ The operator mounts the `Secret` only into the init container of that profile, n
 
 > **Note:** Distributions must be reachable over HTTPS (port 443). The [default `NetworkPolicy`](#securitynetworkpolicy) allows this. Git over SSH (port 22) needs an `additionalEgress` rule.
 >
-> Cron jobs from a distribution arrive **paused**, by design. Review them with `hermes -p <profile> cron list` before you resume them. The default profile cannot come from a distribution, because the Hermes CLI does not install one over `~/.hermes`. For the default profile, use [`hermes.config.configMapRef`](#configmapref).
+> The default profile cannot come from a distribution, because the Hermes CLI does not install one over `~/.hermes`. For the default profile, use [`hermes.config.configMapRef`](#configmapref).
+
+**Cron jobs.** The cron jobs of a distribution arrive **paused**, so an install never schedules work that you did not review. Review the jobs, then allowlist the ones to run:
+
+```sh
+kubectl exec my-agent-0 -- hermes -p researcher cron list
+```
+
+```yaml
+hermes:
+  profiles:
+    researcher:
+      distribution:
+        source: https://github.com/you/research-bot
+        resumeCrons:
+          - daily-digest
+          - arxiv-sweep
+```
+
+`resumeCrons` is the desired state, not a one-time action. If you remove a name, the job pauses again at the next `Pod` start. There is no wildcard, because the jobs arrive paused so that you review each one. If a name matches no job, the init container logs it and continues. Thus a distribution can rename or remove a job without stopping the agent. Jobs declared in `crons` start active, and this field does not affect them.
+
+A resumed job stays resumed after an update. `hermes profile update` merges `cron/jobs.json` by job id and keeps the paused state of each job. Only new jobs in a new revision arrive paused.
+
+> **Note:** hermes-agent `v2026.9.24` added paused installs and the merge by job id. In `v2026.9.21` and earlier, an update replaces all of `cron/jobs.json`, and each job keeps the state that its author committed. `resumeCrons` still gets the correct result, because it runs again at each `Pod` start. But on an older image, a job that you paused manually becomes active again at the next update.
 
 ### `searxng`
 

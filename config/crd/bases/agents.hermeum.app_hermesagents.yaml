@@ -3195,6 +3195,27 @@ spec:
                               maxLength: 255
                               pattern: ^[A-Za-z0-9._/][A-Za-z0-9._/-]*$
                               type: string
+                            resumeCrons:
+                              description: |-
+                                `resumeCrons` names the cron jobs of the distribution to resume.  The
+                                jobs of a distribution arrive paused, so that no job runs before review.
+                                A job named here resumes.
+
+                                The list is the desired state.  If you remove a name, that job pauses
+                                again at the next `Pod` start.  This field does not affect jobs that the
+                                distribution does not ship, or jobs declared in crons.  The names come
+                                from `cron/jobs.json` in the distribution, and `hermes -p <profile> cron
+                                list` shows them.
+
+                                A name cannot contain a line break.  The init script gets the list as a
+                                quoted heredoc, and a line break could end the list early.
+                              items:
+                                maxLength: 253
+                                minLength: 1
+                                pattern: ^[^\n\r]+$
+                                type: string
+                              maxItems: 64
+                              type: array
                             source:
                               description: |-
                                 source is the distribution repository.  It is a git URL

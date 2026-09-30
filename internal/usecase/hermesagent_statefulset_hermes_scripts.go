@@ -565,6 +565,63 @@ echo "Profile %s ready"
 	return b.String()
 }
 
+// `buildResumeCronsScript` resumes the distribution cron jobs that the profile
+// allowlists.  It pauses the jobs that the allowlist no longer names.
+//
+// The jobs of a distribution arrive paused, so that an install never schedules
+// work without review.  Thus the allowlist is the desired state, not a one-time
+// action.  The operator records the names that it resumed.  If a name is
+// removed from the allowlist, the operator pauses that job again.
+//
+// The names go to the shell in a quoted heredoc, not as command arguments, so
+// the shell reads them as data.  The CRD forbids a line break in a name,
+// because a line break could end the heredoc early.  Both operations are
+// idempotent.  If a name matches no job, the script logs it and continues,
+// because a distribution can rename or remove a job in any revision.
+func buildResumeCronsScript(profile string, names []string) string {
+	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + profile
+
+	return fmt.Sprintf(`set -eu
+MANIFEST="%s/resumed-crons"
+mkdir -p "%s"
+
+%s
+DESIRED=$(cat <<'RESUME_EOF'
+%s
+RESUME_EOF
+)
+
+# Pause jobs this profile resumed before but no longer allowlists.
+if [ -f "$MANIFEST" ]; then
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    printf '%%s\n' "$DESIRED" | grep -Fxq -- "$name" && continue
+    id=$(get_job_id "$name")
+    [ -z "$id" ] && continue
+    hermes cron pause -p %q "$id" || true
+    echo "Paused cron job $name"
+  done < "$MANIFEST"
+fi
+
+# Resume the allowlisted jobs; a distribution ships its jobs paused.
+printf '%%s\n' "$DESIRED" | while IFS= read -r name; do
+  [ -z "$name" ] && continue
+  id=$(get_job_id "$name")
+  if [ -z "$id" ]; then
+    echo "No cron job named $name in profile %s; skipping"
+    continue
+  fi
+  hermes cron resume -p %q "$id" || true
+  echo "Resumed cron job $name"
+done
+
+cat > "$MANIFEST" << 'RESUME_EOF'
+%s
+RESUME_EOF
+`, manifestDir, manifestDir, buildGetJobIDFunction(profile),
+		strings.Join(names, "\n"), profile, profile, profile, strings.Join(names, "\n"))
+}
+
 // combineInitSteps joins step scripts into a single init script. Each step is
 // wrapped in a subshell so steps that exit early (e.g. "packages up-to-date,
 // exit 0") cannot abort the remaining steps, and a banner echoes the step
