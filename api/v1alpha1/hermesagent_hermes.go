@@ -731,6 +731,51 @@ type HermesProfileDistribution struct {
 	// which always resets `config.yaml`.
 	// +optional
 	ForceConfig bool `json:"forceConfig,omitempty"`
+	// gitCredentials supplies HTTPS credentials for a private repository on
+	// any host, pinned or not.  Use it rather than putting GITHUB_TOKEN or
+	// GH_TOKEN in the agent's environment: the `Secret` is mounted only into
+	// this profile's init container, so the running agent cannot read the
+	// token, and it also covers the operator's own clone for a pinned ref.
+	// +optional
+	GitCredentials *HermesGitCredentials `json:"gitCredentials,omitempty"`
+}
+
+// `HermesGitCredentials` points at a `Secret` that holds HTTPS credentials for
+// a private distribution repository.  The operator mounts the `Secret` only
+// into the init container of that profile, so the running agent cannot read
+// it.  Kubernetes keeps `Secret` volumes in tmpfs, so the credentials are not
+// written to the disk of the node.
+// +kubebuilder:validation:XValidation:rule="has(self.secretRef.name) && self.secretRef.name.size() > 0",message="secretRef.name is required"
+type HermesGitCredentials struct {
+	// `secretRef` names a `Secret` in the agent's namespace.  The name is
+	// required.  `LocalObjectReference` makes it optional, but with an empty
+	// name the API server would reject the `Pod` later.
+	// +kubebuilder:validation:Required
+	SecretRef corev1.LocalObjectReference `json:"secretRef"`
+	// key is the `Secret` key holding the credentials, in git-credential-store
+	// format: one entry per line, as "https://<user>:<token>@<host>".  git uses
+	// the first entry for a host, so repositories on one host that need
+	// different tokens need different keys.  Defaults to ".git-credentials".
+	// +kubebuilder:default=".git-credentials"
+	// +kubebuilder:validation:Pattern=`^[-._a-zA-Z0-9]+$`
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// `GetKey` returns the `Secret` key holding the git credentials.
+func (c *HermesGitCredentials) GetKey() string {
+	if c == nil || c.Key == "" {
+		return ".git-credentials"
+	}
+	return c.Key
+}
+
+// `GetGitCredentials` returns the credentials for a private repository, if any.
+func (d *HermesProfileDistribution) GetGitCredentials() *HermesGitCredentials {
+	if d == nil {
+		return nil
+	}
+	return d.GitCredentials
 }
 
 // `GetSource` returns the distribution's source repository.

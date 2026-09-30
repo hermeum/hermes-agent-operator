@@ -2098,7 +2098,7 @@ func TestBuildProfileDistributionScript(t *testing.T) {
 	const source = "github.com/you/research-bot"
 
 	t.Run("unpinned installs from the URL and re-pulls on start", func(t *testing.T) {
-		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{Source: source})
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{Source: source}, "")
 		if !strings.Contains(got, `SOURCE="github.com/you/research-bot"`) {
 			t.Errorf("expected the source, got:\n%s", got)
 		}
@@ -2129,7 +2129,7 @@ func TestBuildProfileDistributionScript(t *testing.T) {
 	})
 
 	t.Run("the installed profile must still exist to skip the install", func(t *testing.T) {
-		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{Source: source})
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{Source: source}, "")
 		if !strings.Contains(got, `PROFILE_DIR="$HERMES_HOME/profiles/coder"`) {
 			t.Errorf("expected the profile directory, got:\n%s", got)
 		}
@@ -2142,7 +2142,7 @@ func TestBuildProfileDistributionScript(t *testing.T) {
 		no := false
 		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{
 			Source: source, UpdateOnStart: &no,
-		})
+		}, "")
 		if strings.Contains(got, "hermes profile update") {
 			t.Errorf("expected no update, got:\n%s", got)
 		}
@@ -2154,7 +2154,7 @@ func TestBuildProfileDistributionScript(t *testing.T) {
 	t.Run("forceConfig reaches the update", func(t *testing.T) {
 		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{
 			Source: source, ForceConfig: true,
-		})
+		}, "")
 		if !strings.Contains(got, `hermes profile update "coder" --force-config --yes`) {
 			t.Errorf("expected --force-config, got:\n%s", got)
 		}
@@ -2163,7 +2163,7 @@ func TestBuildProfileDistributionScript(t *testing.T) {
 	t.Run("pinned clones at the ref and installs from the checkout", func(t *testing.T) {
 		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{
 			Source: source, Ref: "v1.2.0",
-		})
+		}, "")
 		if !strings.Contains(got, `REF="v1.2.0"`) {
 			t.Errorf("expected the ref, got:\n%s", got)
 		}
@@ -2208,7 +2208,7 @@ func TestBuildProfileDistributionScript(t *testing.T) {
 	t.Run("the manifest records the source and the ref", func(t *testing.T) {
 		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{
 			Source: source, Ref: "v1.2.0",
-		})
+		}, "")
 		if !strings.Contains(got, "DESIRED=\"$SOURCE\t$REF\"") {
 			t.Errorf("expected source and ref in the manifest value, got:\n%s", got)
 		}
@@ -2221,7 +2221,7 @@ func TestBuildProfileDistributionScript(t *testing.T) {
 	})
 
 	t.Run("a failure is reported as a termination message", func(t *testing.T) {
-		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{Source: source})
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{Source: source}, "")
 		if !strings.Contains(got, "> /dev/termination-log") {
 			t.Errorf("expected a curated termination message, got:\n%s", got)
 		}
@@ -2256,6 +2256,103 @@ func TestGitCloneURL(t *testing.T) {
 				t.Errorf("gitCloneURL(%q) = %q, want %q", tt.source, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildProfileDistributionScriptGitCredentials(t *testing.T) {
+	dist := &agentsv1alpha1.HermesProfileDistribution{Source: "https://git.example.com/team/bot.git"}
+
+	t.Run("no credentials leaves git configuration alone", func(t *testing.T) {
+		got := buildProfileDistributionScript("coder", dist, "")
+		if strings.Contains(got, "GIT_CONFIG") {
+			t.Errorf("expected no git configuration without credentials, got:\n%s", got)
+		}
+	})
+
+	t.Run("credentials are configured through the environment", func(t *testing.T) {
+		got := buildProfileDistributionScript("coder", dist, "/hermes-git-credentials-coder/.git-credentials")
+		if !strings.Contains(got, `CREDENTIALS="/hermes-git-credentials-coder/.git-credentials"`) {
+			t.Errorf("expected the mounted credential store, got:\n%s", got)
+		}
+		if !strings.Contains(got, "export GIT_CONFIG_KEY_0=credential.helper") ||
+			!strings.Contains(got, `export GIT_CONFIG_VALUE_0="store --file=$CREDENTIALS"`) {
+			t.Errorf("expected the credential helper in the environment, got:\n%s", got)
+		}
+		// A missing key is named, rather than surfacing as an auth failure.
+		if !strings.Contains(got, `has no key .git-credentials`) {
+			t.Errorf("expected a pre-flight check naming the key, got:\n%s", got)
+		}
+		// The token must not reach a config file on a writable volume.
+		if strings.Contains(got, "git config") || strings.Contains(got, ".gitconfig") {
+			t.Errorf("expected no git config file to be written, got:\n%s", got)
+		}
+	})
+}
+
+func TestBuildStatefulSetProfileDistributionGitCredentials(t *testing.T) {
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Profiles: map[string]agentsv1alpha1.HermesProfile{
+			"researcher": {Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source: "https://git.example.com/team/bot.git",
+				GitCredentials: &agentsv1alpha1.HermesGitCredentials{
+					SecretRef: corev1.LocalObjectReference{Name: "bot-git-credentials"},
+				},
+			}},
+		},
+	}
+
+	sts := buildStatefulSet(ha, testConfigHash)
+	const volumeName = "hermes-git-credentials-researcher"
+
+	var volume *corev1.Volume
+	for i, v := range sts.Spec.Template.Spec.Volumes {
+		if v.Name == volumeName {
+			volume = &sts.Spec.Template.Spec.Volumes[i]
+		}
+	}
+	if volume == nil {
+		t.Fatalf("expected a %s volume", volumeName)
+	}
+	if volume.Secret == nil || volume.Secret.SecretName != "bot-git-credentials" {
+		t.Errorf("expected the credentials Secret as the volume source, got %+v", volume.VolumeSource)
+	}
+
+	// Mounted read-only into that profile's init container...
+	init := findInitContainer(sts, "init-profile-researcher")
+	var mounted bool
+	for _, m := range init.VolumeMounts {
+		if m.Name == volumeName {
+			mounted = true
+			if !m.ReadOnly {
+				t.Error("expected the credentials mount to be read-only")
+			}
+			if !strings.Contains(init.Args[0], m.MountPath+"/.git-credentials") {
+				t.Errorf("expected the script to use %s, got:\n%s", m.MountPath, init.Args[0])
+			}
+		}
+	}
+	if !mounted {
+		t.Error("expected the credentials mounted into init-profile-researcher")
+	}
+
+	// ...and nowhere else, so the running agent cannot read the token.
+	for _, c := range sts.Spec.Template.Spec.Containers {
+		for _, m := range c.VolumeMounts {
+			if m.Name == volumeName {
+				t.Errorf("credentials must not be mounted into container %s", c.Name)
+			}
+		}
+	}
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
+		if c.Name == "init-profile-researcher" {
+			continue
+		}
+		for _, m := range c.VolumeMounts {
+			if m.Name == volumeName {
+				t.Errorf("credentials must not be mounted into init container %s", c.Name)
+			}
+		}
 	}
 }
 
