@@ -1777,6 +1777,38 @@ func TestBuildProfileCreationScript(t *testing.T) {
 	}
 }
 
+func TestBuildStatefulSetInitContainerTerminationMessagePolicy(t *testing.T) {
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		InitChownData: true,
+		InitScripts:   []agentsv1alpha1.HermesInitScript{{Name: "init-extra", Script: "true"}},
+		Profiles:      map[string]agentsv1alpha1.HermesProfile{"coder": {}},
+	}
+	ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true}
+	// A user-supplied init container is passed through untouched.
+	ha.Spec.InitContainers = []corev1.Container{{Name: "init-user", Image: "busybox"}}
+
+	sts := buildStatefulSet(ha, resolvedConfigDocuments{})
+	var managed int
+	for _, c := range sts.Spec.Template.Spec.InitContainers {
+		if c.Name == "init-user" {
+			if c.TerminationMessagePolicy != "" {
+				t.Errorf("user init container must be passed through untouched, got policy %q", c.TerminationMessagePolicy)
+			}
+			continue
+		}
+		managed++
+		if c.TerminationMessagePolicy != corev1.TerminationMessageFallbackToLogsOnError {
+			t.Errorf("init container %s: policy = %q, want FallbackToLogsOnError", c.Name, c.TerminationMessagePolicy)
+		}
+	}
+	// init-chown-data, init-hermes, init-profile-coder, init-extra and
+	// init-searxng-config.
+	if managed < 5 {
+		t.Errorf("expected at least 5 managed init containers, got %d", managed)
+	}
+}
+
 func TestCombineInitSteps(t *testing.T) {
 	got := combineInitSteps("step one", "step two")
 	if !strings.Contains(got, "==> Step 1/2") || !strings.Contains(got, "==> Step 2/2") {
