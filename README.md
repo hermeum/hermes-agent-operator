@@ -795,6 +795,22 @@ They aren't. The operator only manages what is explicitly declared in the `Herme
 
 Only the `HERMES_HOME` path (`/opt/data`) is persisted across pod restarts. Anything that needs to survive a restart must be placed under `HERMES_HOME`. The operator sets `HOME=/opt/data/home` so tools that respect `$HOME` will write there automatically.
 
+**Q: The agent is stuck in `Init`. How do I find out why?**
+
+Check `status.conditions` first. When an init container fails, the operator sets an `InitFailed` condition naming the container and the detail Kubernetes reported for it, which is the tail of that container's log when the step wrote no message of its own:
+
+```sh
+kubectl get hermesagent my-agent -o jsonpath='{.status.conditions[?(@.type=="InitFailed")]}'
+```
+
+`status.reason` carries the same short code (`Error`, `ImagePullBackOff`, `CrashLoopBackOff`) in preference to the `PodInitializing` a `Pod` reports while its init containers are still being worked through. For the full log of the failing step, use the container name from the condition:
+
+```sh
+kubectl logs my-agent-0 -c init-hermes
+```
+
+The condition clears on its own once no init container reports a failure.
+
 **Q: Why does the Hermes container run as root?**
 
 The official Hermes image uses [s6-overlay](https://github.com/just-containers/s6-overlay), which requires the process to start as root for service supervision setup. Once initialisation is complete, s6-overlay drops privileges and runs the agent as the `hermes` user (`10000:10000`).

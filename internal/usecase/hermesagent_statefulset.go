@@ -121,7 +121,9 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	ha.Status.ManagedResources.StatefulSet = ha.Name
 	phase, pod := u.deriveStatus(ctx, ha)
-	ha.Status.Phase, ha.Status.Reason = phase, firstPodFailure(pod).GetReason()
+	initFailure := initContainerFailure(pod)
+	ha.Status.Phase, ha.Status.Reason = phase, podStatusReason(pod, initFailure)
+	u.applyInitFailedCondition(ctx, ha, initFailure)
 	// The StatefulSet loop runs after every other resource loop, so reaching
 	// this point means all managed resources reconciled. Workload readiness
 	// itself is tracked by status.phase, not by this condition.
