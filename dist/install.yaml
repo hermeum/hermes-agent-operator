@@ -2368,9 +2368,33 @@ spec:
                             minimum: 1
                             type: integer
                         type: object
+                      configMapRef:
+                        description: |-
+                          `configMapRef` reads the Hermes agent `config.yml` from a key of a
+                          `ConfigMap` in the same namespace, instead of holding it inline in raw.  The
+                          referenced document is treated exactly as raw is: the operator applies
+                          the same defaults to it and copies the result into its own bootstrap
+                          `ConfigMap`, so a change to the referenced `ConfigMap` rolls the agent.
+                          Reconciliation fails while the `ConfigMap` or the key is missing, and fails
+                          when raw is set as well: raw is free-form, so the API server cannot
+                          reject the pair at admission time.
+                        properties:
+                          key:
+                            default: config.yaml
+                            description: key is the `ConfigMap` key holding the document.  Defaults
+                              to "config.yaml".
+                            type: string
+                          name:
+                            description: name is the `ConfigMap` name.
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
                       raw:
-                        description: raw holds the verbatim Hermes agent config.yml
-                          as free-form YAML/JSON.
+                        description: |-
+                          raw holds the verbatim Hermes agent config.yml as free-form YAML/JSON.
+                          Mutually exclusive with configMapRef.
                         x-kubernetes-preserve-unknown-fields: true
                       webhook:
                         description: webhook configures the webhook ingress.
@@ -2977,9 +3001,29 @@ spec:
                         config:
                           description: config holds the raw config.yaml for this profile.
                           properties:
+                            configMapRef:
+                              description: |-
+                                `configMapRef` reads the profile config from a key of a `ConfigMap` in the
+                                same namespace, instead of holding it inline in raw.  See
+                                HermesConfig.configMapRef, including why setting both fails at
+                                reconcile time rather than at admission time.
+                              properties:
+                                key:
+                                  default: config.yaml
+                                  description: key is the `ConfigMap` key holding
+                                    the document.  Defaults to "config.yaml".
+                                  type: string
+                                name:
+                                  description: name is the `ConfigMap` name.
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - name
+                              type: object
                             raw:
-                              description: raw is the profile config as a JSON-serialized
-                                object.
+                              description: |-
+                                raw is the profile config as a JSON-serialized object.
+                                Mutually exclusive with configMapRef.
                               x-kubernetes-preserve-unknown-fields: true
                           type: object
                         crons:

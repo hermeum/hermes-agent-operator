@@ -21,6 +21,7 @@ import (
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"hermeum/hermes-agent-operator/internal/infras"
 	"hermeum/hermes-agent-operator/internal/usecase"
+	"slices"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +30,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // HermesAgentReconciler reconciles a HermesAgent object
@@ -65,11 +68,35 @@ func (r *HermesAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return result, nil
 }
 
+// agentsReferencingConfigMap maps a `ConfigMap` to every HermesAgent in its
+// namespace that reads a config document from it, so that editing the
+// `ConfigMap` reconciles those agents instead of leaving them on a stale
+// config
+// until the next resync.
+func (r *HermesAgentReconciler) agentsReferencingConfigMap(ctx context.Context, obj client.Object) []reconcile.Request {
+	var agents agentsv1alpha1.HermesAgentList
+	if err := r.List(ctx, &agents, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for i := range agents.Items {
+		agent := &agents.Items[i]
+		if slices.Contains(agent.GetConfigSourceConfigMapNames(), obj.GetName()) {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: client.ObjectKeyFromObject(agent),
+			})
+		}
+	}
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *HermesAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&agentsv1alpha1.HermesAgent{}).
 		Owns(&corev1.ConfigMap{}).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.agentsReferencingConfigMap)).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&rbacv1.Role{}).

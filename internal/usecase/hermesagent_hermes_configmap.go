@@ -1,8 +1,10 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"maps"
@@ -32,7 +34,12 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	desired, err := buildHermesConfigMap(ha)
+	refs, err := u.resolveConfigDocuments(ctx, ha)
+	if err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+
+	desired, err := buildHermesConfigMap(ha, refs)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
@@ -66,11 +73,102 @@ func configMapDataEqual(a, b *corev1.ConfigMap) bool {
 	return maps.Equal(a.Data, b.Data)
 }
 
+// `resolvedConfigDocuments` holds the config documents read from the
+// `ConfigMap` objects the spec references, converted to JSON so they flow
+// through the same defaulting as an inline raw config.
+type resolvedConfigDocuments struct {
+	// Default is the default profile's document, nil when the default profile
+	// declares its config inline or declares none.
+	Default []byte
+	// Profiles holds each named profile's document, keyed by profile name.
+	Profiles map[string][]byte
+}
+
+// `resolveConfigDocuments` reads every `config.configMapRef` the spec declares.
+// A `ConfigMap` or key that does not exist fails the reconcile: the agent's
+// config
+// is the user's declared intent, and quietly starting the agent without it
+// would be worse than waiting for the `ConfigMap` to appear.
+func (u *HermesAgentUseCase) resolveConfigDocuments(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (resolvedConfigDocuments, error) {
+	var out resolvedConfigDocuments
+
+	if ref := ha.GetHermes().GetConfigMapRef(); ref != nil {
+		if ha.GetHermes().GetConfig() != nil {
+			return out, errors.New("hermes.config: raw and configMapRef are mutually exclusive")
+		}
+		doc, err := u.readConfigDocument(ctx, ha.Namespace, ref)
+		if err != nil {
+			return out, fmt.Errorf("resolving hermes.config.configMapRef: %w", err)
+		}
+		out.Default = doc
+	}
+
+	for _, name := range sortedProfileNames(ha.GetHermes().GetProfiles()) {
+		cfg := ha.GetHermes().GetProfiles()[name].Config
+		ref := cfg.GetConfigMapRef()
+		if ref == nil {
+			continue
+		}
+		if cfg.GetRaw() != nil {
+			return out, fmt.Errorf("profile %q config: raw and configMapRef are mutually exclusive", name)
+		}
+		doc, err := u.readConfigDocument(ctx, ha.Namespace, ref)
+		if err != nil {
+			return out, fmt.Errorf("resolving profile %q config.configMapRef: %w", name, err)
+		}
+		if out.Profiles == nil {
+			out.Profiles = map[string][]byte{}
+		}
+		out.Profiles[name] = doc
+	}
+
+	return out, nil
+}
+
+// `readConfigDocument` reads one referenced key and converts the YAML document
+// it holds to JSON.
+func (u *HermesAgentUseCase) readConfigDocument(ctx context.Context, namespace string, ref *agentsv1alpha1.HermesConfigMapKeyRef) ([]byte, error) {
+	cm, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{
+		NamespacedName: types.NamespacedName{Name: ref.Name, Namespace: namespace},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if cm == nil {
+		return nil, fmt.Errorf("ConfigMap %q not found", ref.Name)
+	}
+	doc, ok := cm.Data[ref.GetKey()]
+	if !ok {
+		return nil, fmt.Errorf("ConfigMap %q has no key %q", ref.Name, ref.GetKey())
+	}
+	j, err := sigsyaml.YAMLToJSON([]byte(doc))
+	if err != nil {
+		return nil, fmt.Errorf("parsing key %q of ConfigMap %q: %w", ref.GetKey(), ref.Name, err)
+	}
+	// A document holding nothing but whitespace or comments is a valid
+	// `config.yaml` with every setting defaulted, but it parses to JSON null,
+	// which the defaulting cannot merge into.
+	if isJSONNull(j) {
+		return []byte("{}"), nil
+	}
+	return j, nil
+}
+
+// isJSONNull reports whether a parsed document is the JSON null literal.
+func isJSONNull(document []byte) bool {
+	return string(bytes.TrimSpace(document)) == "null"
+}
+
 // applySearXNGConfigDefaults applies default values to the SearXNG config if they are not set by the user.
 func applySearXNGConfigDefaults(raw []byte) ([]byte, error) {
 	cfg := map[string]any{}
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshaling config: %w", err)
+	}
+	if cfg == nil {
+		// Unmarshaling JSON null sets the map to nil, which every assignment
+		// below would panic on.
+		cfg = map[string]any{}
 	}
 
 	web, _ := cfg["web"].(map[string]any)
@@ -96,6 +194,11 @@ func applyMultiplexProfilesDefault(raw []byte) ([]byte, error) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshaling config: %w", err)
 	}
+	if cfg == nil {
+		// Unmarshaling JSON null sets the map to nil, which every assignment
+		// below would panic on.
+		cfg = map[string]any{}
+	}
 
 	gateway, _ := cfg["gateway"].(map[string]any)
 	if gateway == nil {
@@ -120,6 +223,11 @@ func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshaling config: %w", err)
 	}
+	if cfg == nil {
+		// Unmarshaling JSON null sets the map to nil, which every assignment
+		// below would panic on.
+		cfg = map[string]any{}
+	}
 
 	browser, _ := cfg["browser"].(map[string]any)
 	if browser == nil {
@@ -142,15 +250,20 @@ func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
 	return out, nil
 }
 
-func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, error) {
+func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent, refs resolvedConfigDocuments) (*corev1.ConfigMap, error) {
 	data := map[string]string{}
 
-	// Collect default profile raw config; SearXNG and Camofox defaults only apply when
-	// the user has provided a config, but multiplex_profiles must also be set when
-	// profiles exist even if no explicit config was given.
-	var defaultRaw []byte
-	if hc := ha.GetHermes().GetConfig(); hc != nil {
-		defaultRaw = hc.Raw
+	// Collect the default profile's config, from `configMapRef` or raw; SearXNG
+	// and Camofox defaults only apply when the user has provided a config, but
+	// multiplex_profiles must also be set when profiles exist even if no
+	// explicit config was given.
+	defaultRaw := refs.Default
+	if defaultRaw == nil {
+		if hc := ha.GetHermes().GetConfig(); hc != nil {
+			defaultRaw = hc.Raw
+		}
+	}
+	if defaultRaw != nil {
 		if ha.GetSearXNG().IsEnabled() {
 			var err error
 			defaultRaw, err = applySearXNGConfigDefaults(defaultRaw)
@@ -195,8 +308,14 @@ func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, er
 	}
 
 	for name, profile := range ha.GetHermes().GetProfiles() {
-		if raw := profile.Config.GetRaw(); raw != nil {
-			yamlBytes, err := sigsyaml.JSONToYAML(raw.Raw)
+		profileRaw := refs.Profiles[name]
+		if profileRaw == nil {
+			if raw := profile.Config.GetRaw(); raw != nil {
+				profileRaw = raw.Raw
+			}
+		}
+		if profileRaw != nil {
+			yamlBytes, err := sigsyaml.JSONToYAML(profileRaw)
 			if err != nil {
 				return nil, err
 			}
