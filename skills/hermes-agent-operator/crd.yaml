@@ -2995,6 +2995,8 @@ spec:
                           description: |-
                             clone copies config.yaml, .env, SOUL.md, and skills from the default profile
                             at creation time (--clone flag). Source is always the default profile.
+                            Cannot be combined with distribution.  A distribution brings its own
+                            state.
                           type: boolean
                         config:
                           description: config holds the raw config.yaml for this profile.
@@ -3121,6 +3123,68 @@ spec:
                             - schedule
                             type: object
                           type: array
+                        distribution:
+                          description: |-
+                            distribution installs this profile from a profile distribution
+                            repository instead of creating an empty one.
+                          properties:
+                            forceConfig:
+                              description: |-
+                                `forceConfig` lets an update overwrite the profile's `config.yaml`
+                                (--force-config).  By default an update keeps `config.yaml`, so an
+                                operator-managed config or a value changed in place stays.  Ignored when
+                                ref is set: a pinned profile never updates, and a new ref reinstalls,
+                                which always resets `config.yaml`.
+                              type: boolean
+                            ref:
+                              description: |-
+                                ref pins the distribution to a git tag, branch, or commit SHA.  The
+                                operator clones source at ref and installs from that checkout.  It
+                                installs again only when source or ref changes, so a `Pod` restart never
+                                pulls a newer revision.  Tags and branches always work.  A commit SHA
+                                works only if the host lets git fetch it directly.  A branch is
+                                resolved once, at install, and stays at that commit until source or ref
+                                changes; the init container log records which commit it was.
+
+                                Omit ref to follow the repository's default branch, as the Hermes CLI
+                                does on its own.  Pinning to a tag or a commit SHA is recommended: the
+                                revision you run is named in the custom resource, each change to it is
+                                reviewable, and a bot such as Renovate can propose those changes for
+                                you.
+                              maxLength: 255
+                              pattern: ^[A-Za-z0-9._/][A-Za-z0-9._/-]*$
+                              type: string
+                            source:
+                              description: |-
+                                source is the distribution repository.  It is a git URL
+                                ("https://github.com/you/research-bot", "github.com/you/research-bot",
+                                "https://git.example.com/team/bot.git"), or an absolute path in the
+                                container to a directory that holds a distribution.yaml.  A bare
+                                "owner/repo" is not a git URL: the Hermes CLI reads it as a local path.
+
+                                The pattern rejects characters that a git URL or a path does not need.
+                                Thus the value cannot escape the shell quoting in the init script.  The
+                                first character cannot be one that git reads as the start of an option.
+                              maxLength: 2048
+                              minLength: 1
+                              pattern: ^[A-Za-z0-9._/][A-Za-z0-9._:/@+-]*$
+                              type: string
+                            updateOnStart:
+                              description: |-
+                                `updateOnStart` pulls the distribution again (hermes profile update) at
+                                each `Pod` start when the profile is already installed.  This is how an
+                                unpinned profile gets new revisions.  Defaults to true.  Ignored when ref
+                                is set, because the pin sets the version.
+                              type: boolean
+                          required:
+                          - source
+                          type: object
+                          x-kubernetes-validations:
+                          - message: ref is only supported for a git URL source
+                            rule: '!has(self.ref) || self.source.startsWith(''https://'')
+                              || self.source.startsWith(''http://'') || self.source.startsWith(''ssh://'')
+                              || self.source.startsWith(''git://'') || self.source.startsWith(''git@'')
+                              || self.source.startsWith(''github.com/'') || self.source.endsWith(''.git'')'
                         plugins:
                           description: plugins to install in this profile.
                           items:
@@ -3291,6 +3355,9 @@ spec:
                               type: object
                           type: object
                       type: object
+                      x-kubernetes-validations:
+                      - message: clone cannot be combined with distribution
+                        rule: '!has(self.distribution) || !has(self.clone) || !self.clone'
                     description: |-
                       profiles is a map of named Hermes profiles to create and configure.
                       Each profile is set up via its own init-profile-<name> init container,

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -354,6 +355,11 @@ echo "Generated .env for profile %s"
 // buildProfilesCleanupScript removes named profiles no longer desired and
 // rewrites the profiles manifest. It runs inside the consolidated init-hermes
 // container; profile creation happens in the per-profile init containers.
+//
+// Deleting a profile also removes the operator's manifests for it.  The
+// manifests are outside the profile directory, so otherwise they stay after
+// the profile is gone.  If the same profile key is added again, the stale
+// manifest names the desired source, and the install does not run.
 func buildProfilesCleanupScript(profiles map[string]agentsv1alpha1.HermesProfile) string {
 	names := make([]string, 0, len(profiles))
 	for name := range profiles {
@@ -372,7 +378,10 @@ if [ -f "$PROFILES_MANIFEST" ]; then
     [ -z "$pname" ] && continue
     case "$pname" in
       %s) ;;
-      *) hermes profile delete "$pname" || true ;;
+      *)
+        hermes profile delete "$pname" || true
+        rm -rf "$HERMES_HOME/.hermes-agent-operator/profiles/$pname"
+        ;;
     esac
   done < "$PROFILES_MANIFEST"
 fi
@@ -387,14 +396,151 @@ PROFILES_EOF
 // first step of the profile's own init container, after the default profile
 // has been fully configured (so --clone copies complete state).
 func buildProfileCreationScript(name string, clone bool) string {
+	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + name
 	cmd := fmt.Sprintf("hermes profile create %q --no-alias", name)
 	if clone {
 		cmd += " --clone"
 	}
+	// A profile that no longer comes from a distribution drops the operator's
+	// distribution manifest and checkout.  Otherwise, adding the same
+	// distribution back later would match the stale manifest and skip the
+	// install.
 	return fmt.Sprintf(`set -eu
 %s || true
+rm -rf "%s/distribution" "%s/src"
 echo "Profile %s ready"
-`, cmd, name)
+`, cmd, manifestDir, manifestDir, name)
+}
+
+// `gitHubShorthand` matches the one shorthand source the Hermes CLI accepts.
+// It mirrors `_GITHUB_SHORTHAND_RE` in `hermes_cli/profile_distribution.py`,
+// which `_looks_like_git_url` and `_git_clone` use, so re-check those when the
+// CLI changes.  Do not make it broader: the CLI treats any other source
+// without a scheme as a local directory, and expanding one here would let a
+// pinned profile install from somewhere an unpinned one cannot.
+var gitHubShorthand = regexp.MustCompile(`^github\.com/[\w.-]+/[\w.-]+/?$`)
+
+// `gitCloneURL` returns the URL to clone a distribution source from.  The CLI
+// expands a `github.com/owner/repo` shorthand to https:// before it clones.
+// git reads the shorthand as a local path, so the operator must also expand it
+// when it clones a pinned ref.  Other sources do not change.
+func gitCloneURL(source string) string {
+	if gitHubShorthand.MatchString(source) {
+		return "https://" + strings.TrimRight(source, "/")
+	}
+	return source
+}
+
+// `buildProfileDistributionScript` installs a named profile from a profile
+// distribution.  It replaces `buildProfileCreationScript` as the first step of
+// the init container for that profile.  `hermes profile install` creates the
+// profile, so no separate create step is necessary.
+//
+// The operator records the installed source and ref in its own manifest.  It
+// compares them at each start, so it installs once per change and not once per
+// restart:
+//
+//   - The operator clones a pinned distribution at its ref into a checkout on
+//     the data volume, and installs from that checkout.  This is necessary
+//     because the Hermes CLI always clones the default branch.  The operator
+//     keeps the checkout, so the `distribution.yaml` of the profile points at
+//     the pinned content.  Thus a manual `hermes profile update` in the `Pod`
+//     applies the pin again, and does not move the profile to the default
+//     branch.
+//   - The operator installs an unpinned distribution directly from its URL, so
+//     the profile records that URL.  At each start, `hermes profile update`
+//     pulls it again, unless `updateOnStart` is false.
+//
+// `--force` installs again over an existing profile.  Upstream keeps user data
+// (memories, sessions, `auth.json`, and `.env`) in both cases.  It resets
+// `config.yaml` from the distribution, which is correct when the source or
+// ref changes.
+func buildProfileDistributionScript(name string, dist *agentsv1alpha1.HermesProfileDistribution) string {
+	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + name
+
+	// The source and ref go to the shell as variables.  The CRD patterns for
+	// both fields reject each character that could end a double-quoted
+	// string, so neither value can escape its quoting.
+	var b strings.Builder
+	fmt.Fprintf(&b, `set -eu
+SOURCE=%q
+CLONE_URL=%q
+REF=%q
+MANIFEST="%s/distribution"
+STAGED="%s/src"
+PROFILE_DIR="$HERMES_HOME/profiles/%s"
+# A tab keeps the pair unambiguous: neither a ref nor a usable git URL holds one.
+DESIRED="$SOURCE	$REF"
+mkdir -p "%s"
+
+# Write the cause to the termination message, which the operator shows on
+# the InitFailed condition.
+fail() {
+  printf '%%s\n' "$*" > /dev/termination-log 2>/dev/null || true
+  echo "$*" >&2
+  exit 1
+}
+
+# The profile's own distribution.yaml is checked too, because someone can
+# delete the profile by hand inside the Pod and leave the manifest behind.
+if [ -f "$MANIFEST" ] && [ "$(cat "$MANIFEST")" = "$DESIRED" ] && [ -f "$PROFILE_DIR/distribution.yaml" ]; then
+`, dist.GetSource(), gitCloneURL(dist.GetSource()), dist.GetRef(), manifestDir, manifestDir, name, manifestDir)
+
+	switch {
+	case dist.ShouldUpdateOnStart():
+		forceConfig := ""
+		if dist.ShouldForceConfig() {
+			forceConfig = " --force-config"
+		}
+		// The profile is already installed and works, so a failed update
+		// (the remote is down, or a new revision needs a newer Hermes) keeps
+		// the installed revision rather than stopping the agent.
+		fmt.Fprintf(&b, `  hermes profile update %q%s --yes \
+    || echo "Profile %s: hermes profile update failed, so the profile stays at its installed revision. The output above says why." >&2
+`, name, forceConfig, name)
+	default:
+		fmt.Fprintf(&b, "  echo \"Profile %s left at its installed revision\"\n", name)
+	}
+
+	b.WriteString("else\n")
+
+	if dist.IsPinned() {
+		// --branch accepts a tag or a branch name.  A commit SHA needs an
+		// explicit fetch, which works only if the host allows it.
+		//
+		// A branch resolves to a commit once, at install, so the log records
+		// that commit before .git goes away.
+		fmt.Fprintf(&b, `  export GIT_TERMINAL_PROMPT=0
+  rm -rf "$STAGED"
+  if ! git clone --depth 1 --branch "$REF" "$CLONE_URL" "$STAGED"; then
+    rm -rf "$STAGED"
+    mkdir -p "$STAGED"
+    git -C "$STAGED" init -q
+    git -C "$STAGED" remote add origin "$CLONE_URL"
+    git -C "$STAGED" fetch -q --depth 1 origin "$REF" \
+      || fail "Profile %s: could not fetch ref $REF from $SOURCE. Check that the ref exists, that the repository is reachable from the cluster, and that the operator has credentials for a private repository."
+    git -C "$STAGED" checkout -q FETCH_HEAD
+  fi
+  echo "Profile %s: $REF is commit $(git -C "$STAGED" rev-parse HEAD)"
+  rm -rf "$STAGED/.git"
+  hermes profile install "$STAGED" --name %q --force --yes \
+    || fail "Profile %s: hermes profile install failed for $SOURCE at $REF. The output above says why; a Hermes version requirement or an unschedulable shipped cron job are the usual causes."
+`, name, name, name, name)
+	} else {
+		// The profile now records the URL, so a checkout from an earlier pin
+		// is no longer used.
+		fmt.Fprintf(&b, `  hermes profile install "$SOURCE" --name %q --force --yes \
+    || fail "Profile %s: hermes profile install failed for $SOURCE. The output above says why; a Hermes version requirement or an unschedulable shipped cron job are the usual causes."
+  rm -rf "$STAGED"
+`, name, name)
+	}
+
+	fmt.Fprintf(&b, `  printf '%%s' "$DESIRED" > "$MANIFEST"
+fi
+echo "Profile %s ready"
+`, name)
+
+	return b.String()
 }
 
 // combineInitSteps joins step scripts into a single init script. Each step is

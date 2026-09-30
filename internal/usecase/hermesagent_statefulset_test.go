@@ -1772,6 +1772,12 @@ func TestBuildProfilesCleanupScript(t *testing.T) {
 	if strings.Contains(got, "profile create") {
 		t.Errorf("cleanup script must not create profiles, got:\n%s", got)
 	}
+	// The operator's manifests are outside the profile directory, so deleting
+	// the profile must remove them too.  Otherwise a re-added profile key finds
+	// a `distribution` manifest with no profile.
+	if !strings.Contains(got, `rm -rf "$HERMES_HOME/.hermes-agent-operator/profiles/$pname"`) {
+		t.Errorf("expected the profile's manifests removed with it, got:\n%s", got)
+	}
 	if !strings.Contains(got, "a\nb") {
 		t.Errorf("expected manifest with sorted names a\\nb, got:\n%s", got)
 	}
@@ -1781,6 +1787,11 @@ func TestBuildProfileCreationScript(t *testing.T) {
 	got := buildProfileCreationScript("coder", true)
 	if !strings.Contains(got, `hermes profile create "coder" --no-alias --clone || true`) {
 		t.Errorf("expected create with clone, got:\n%s", got)
+	}
+	// Dropping `distribution` from a profile drops the operator's state for it,
+	// so adding the same distribution back installs it again.
+	if !strings.Contains(got, `rm -rf "$HERMES_HOME/.hermes-agent-operator/profiles/coder/distribution" "$HERMES_HOME/.hermes-agent-operator/profiles/coder/src"`) {
+		t.Errorf("expected the distribution manifest and checkout removed, got:\n%s", got)
 	}
 	got2 := buildProfileCreationScript("writer", false)
 	if !strings.Contains(got2, `hermes profile create "writer" --no-alias || true`) {
@@ -1820,6 +1831,213 @@ func TestBuildStatefulSetInitContainerTerminationMessagePolicy(t *testing.T) {
 	// init-searxng-config.
 	if managed < 5 {
 		t.Errorf("expected at least 5 managed init containers, got %d", managed)
+	}
+}
+
+func TestBuildProfileDistributionScript(t *testing.T) {
+	const source = "github.com/you/research-bot"
+
+	t.Run("unpinned installs from the URL and re-pulls on start", func(t *testing.T) {
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{Source: source})
+		if !strings.Contains(got, `SOURCE="github.com/you/research-bot"`) {
+			t.Errorf("expected the source, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes profile install "$SOURCE" --name "coder" --force --yes`) {
+			t.Errorf("expected an install from the URL, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes profile update "coder" --yes`) {
+			t.Errorf("expected an update on start, got:\n%s", got)
+		}
+		// The profile comes from the `distribution`, never from profile create.
+		if strings.Contains(got, "hermes profile create") {
+			t.Errorf("a distribution profile must not be created separately, got:\n%s", got)
+		}
+		// The operator installs an unpinned `distribution` from its URL.  Thus
+		// the profile records the URL, and a manual update can pull it again.
+		if strings.Contains(got, "git clone") {
+			t.Errorf("an unpinned distribution must not be cloned by the operator, got:\n%s", got)
+		}
+		// A failed update keeps the installed revision rather than stopping
+		// an agent that already works.
+		if !strings.Contains(got, `|| echo "Profile coder: hermes profile update failed, so the profile stays at its installed revision.`) {
+			t.Errorf("expected a failed update to be reported and skipped, got:\n%s", got)
+		}
+		// A checkout from an earlier pin is no longer used.
+		if !strings.Contains(got, "  rm -rf \"$STAGED\"\n  printf '%s' \"$DESIRED\"") {
+			t.Errorf("expected the staged checkout removed after an unpinned install, got:\n%s", got)
+		}
+	})
+
+	t.Run("the installed profile must still exist to skip the install", func(t *testing.T) {
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{Source: source})
+		if !strings.Contains(got, `PROFILE_DIR="$HERMES_HOME/profiles/coder"`) {
+			t.Errorf("expected the profile directory, got:\n%s", got)
+		}
+		if !strings.Contains(got, `[ "$(cat "$MANIFEST")" = "$DESIRED" ] && [ -f "$PROFILE_DIR/distribution.yaml" ]`) {
+			t.Errorf("expected the manifest match to check the profile, got:\n%s", got)
+		}
+	})
+
+	t.Run("updateOnStart false leaves the installed revision alone", func(t *testing.T) {
+		no := false
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{
+			Source: source, UpdateOnStart: &no,
+		})
+		if strings.Contains(got, "hermes profile update") {
+			t.Errorf("expected no update, got:\n%s", got)
+		}
+		if !strings.Contains(got, "left at its installed revision") {
+			t.Errorf("expected the no-op branch to say so, got:\n%s", got)
+		}
+	})
+
+	t.Run("forceConfig reaches the update", func(t *testing.T) {
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{
+			Source: source, ForceConfig: true,
+		})
+		if !strings.Contains(got, `hermes profile update "coder" --force-config --yes`) {
+			t.Errorf("expected --force-config, got:\n%s", got)
+		}
+	})
+
+	t.Run("pinned clones at the ref and installs from the checkout", func(t *testing.T) {
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{
+			Source: source, Ref: "v1.2.0",
+		})
+		if !strings.Contains(got, `REF="v1.2.0"`) {
+			t.Errorf("expected the ref, got:\n%s", got)
+		}
+		if !strings.Contains(got, `git clone --depth 1 --branch "$REF" "$CLONE_URL" "$STAGED"`) {
+			t.Errorf("expected a clone at the ref, got:\n%s", got)
+		}
+		// git would read the shorthand the CLI accepts as a local path.
+		if !strings.Contains(got, `CLONE_URL="https://github.com/you/research-bot"`) {
+			t.Errorf("expected the shorthand expanded for the clone, got:\n%s", got)
+		}
+		// The manifest still records what the custom resource declared.
+		if !strings.Contains(got, `SOURCE="github.com/you/research-bot"`) {
+			t.Errorf("expected the declared source recorded, got:\n%s", got)
+		}
+		// A commit SHA is not a valid --branch argument.
+		if !strings.Contains(got, `git -C "$STAGED" fetch -q --depth 1 origin "$REF"`) {
+			t.Errorf("expected the explicit fetch fallback, got:\n%s", got)
+		}
+		// The checkout is not a git repository once installed, matching what
+		// the Hermes CLI does with its own clones.
+		if !strings.Contains(got, `rm -rf "$STAGED/.git"`) {
+			t.Errorf("expected .git to be removed, got:\n%s", got)
+		}
+		// A branch resolves once, so the log keeps the commit it resolved to.
+		revParse := strings.Index(got, `git -C "$STAGED" rev-parse HEAD`)
+		if revParse < 0 || revParse > strings.Index(got, `rm -rf "$STAGED/.git"`) {
+			t.Errorf("expected the resolved commit logged before .git is removed, got:\n%s", got)
+		}
+		// git must fail on a missing credential instead of asking for one.
+		if !strings.Contains(got, "export GIT_TERMINAL_PROMPT=0") {
+			t.Errorf("expected git prompts disabled, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes profile install "$STAGED" --name "coder" --force --yes`) {
+			t.Errorf("expected an install from the checkout, got:\n%s", got)
+		}
+		// The pin is the version: a restart must not pull a newer revision.
+		if strings.Contains(got, "hermes profile update") {
+			t.Errorf("a pinned distribution must not update on start, got:\n%s", got)
+		}
+	})
+
+	t.Run("the manifest records the source and the ref", func(t *testing.T) {
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{
+			Source: source, Ref: "v1.2.0",
+		})
+		if !strings.Contains(got, "DESIRED=\"$SOURCE\t$REF\"") {
+			t.Errorf("expected source and ref in the manifest value, got:\n%s", got)
+		}
+		if !strings.Contains(got, `printf '%s' "$DESIRED" > "$MANIFEST"`) {
+			t.Errorf("expected the manifest to be written after installing, got:\n%s", got)
+		}
+		if !strings.Contains(got, "profiles/coder/distribution") {
+			t.Errorf("expected a per-profile manifest path, got:\n%s", got)
+		}
+	})
+
+	t.Run("a failure is reported as a termination message", func(t *testing.T) {
+		got := buildProfileDistributionScript("coder", &agentsv1alpha1.HermesProfileDistribution{Source: source})
+		if !strings.Contains(got, "> /dev/termination-log") {
+			t.Errorf("expected a curated termination message, got:\n%s", got)
+		}
+		if !strings.Contains(got, "exit 1") {
+			t.Errorf("expected a failure to abort the init container, got:\n%s", got)
+		}
+	})
+}
+
+func TestGitCloneURL(t *testing.T) {
+	tests := []struct {
+		source string
+		want   string
+	}{
+		// The one shorthand the Hermes CLI accepts, which git would otherwise
+		// read as a local path.
+		{"github.com/you/research-bot", "https://github.com/you/research-bot"},
+		{"github.com/you/research-bot/", "https://github.com/you/research-bot"},
+		// Other sources do not change, including a source without a scheme on
+		// another host.  The CLI reads that as a local directory.  If the
+		// operator expanded it, a pinned profile could install from a location
+		// that an unpinned profile cannot.
+		{"gitlab.com/team/research-bot", "gitlab.com/team/research-bot"},
+		{"https://github.com/you/research-bot", "https://github.com/you/research-bot"},
+		{"https://git.example.com/team/bot.git", "https://git.example.com/team/bot.git"},
+		{"git@github.com:you/research-bot.git", "git@github.com:you/research-bot.git"},
+		{"/srv/profiles/research-bot", "/srv/profiles/research-bot"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			if got := gitCloneURL(tt.source); got != tt.want {
+				t.Errorf("gitCloneURL(%q) = %q, want %q", tt.source, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildStatefulSetProfileDistribution(t *testing.T) {
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Profiles: map[string]agentsv1alpha1.HermesProfile{
+			"researcher": {
+				Distribution: &agentsv1alpha1.HermesProfileDistribution{
+					Source: "github.com/you/research-bot",
+					Ref:    "v1.2.0",
+				},
+				Config: &agentsv1alpha1.HermesProfileConfig{Raw: imageJSON(`{"model":"opus"}`)},
+				Skills: []agentsv1alpha1.HermesSkill{{Identifier: "owner/skills/review", Name: "review"}},
+			},
+			"plain": {},
+		},
+	}
+
+	sts := buildStatefulSet(ha, testConfigHash)
+
+	script := findInitContainer(sts, "init-profile-researcher").Args[0]
+	if !strings.Contains(script, `hermes profile install "$STAGED" --name "researcher"`) {
+		t.Errorf("expected the distribution install, got:\n%s", script)
+	}
+	if strings.Contains(script, "hermes profile create") {
+		t.Errorf("expected no profile creation for a distribution, got:\n%s", script)
+	}
+	// The operator's own declarations are layered on top of the `distribution`,
+	// so they run after the install.
+	installIdx := strings.Index(script, "hermes profile install")
+	configIdx := strings.Index(script, "/bootstrap/profile.researcher.config.yaml")
+	skillsIdx := strings.Index(script, "hermes skills install")
+	if configIdx < installIdx || skillsIdx < installIdx {
+		t.Errorf("expected config (%d) and skills (%d) after the install (%d):\n%s",
+			configIdx, skillsIdx, installIdx, script)
+	}
+
+	// A profile without a `distribution` is created as before.
+	plain := findInitContainer(sts, "init-profile-plain").Args[0]
+	if !strings.Contains(plain, `hermes profile create "plain" --no-alias`) {
+		t.Errorf("expected plain profile creation, got:\n%s", plain)
 	}
 }
 

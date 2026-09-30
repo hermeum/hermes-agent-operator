@@ -671,12 +671,117 @@ func (c *HermesProfileConfig) HasDocument() bool {
 	return c.GetRaw() != nil || c.GetConfigMapRef() != nil
 }
 
+// `HermesProfileDistribution` installs a profile from a Hermes profile
+// distribution.  A distribution is a git repository that holds a complete
+// agent: a `distribution.yaml` manifest, `SOUL.md`, `config.yaml`, `mcp.json`,
+// skills, and cron jobs.
+//
+// The operator installs the distribution in place of an empty profile, then
+// applies whatever the profile declares on top of it.  A declared config or
+// workspace file replaces the distribution's copy.  Declared plugins, skills,
+// bundles, and crons are installed next to the ones the distribution ships.
+// Anything left undeclared keeps what the distribution ships, including its
+// `config.yaml`.
+//
+// Only named profiles can come from a distribution.  The Hermes CLI does not
+// install one over the default profile.
+// +kubebuilder:validation:XValidation:rule="!has(self.ref) || self.source.startsWith('https://') || self.source.startsWith('http://') || self.source.startsWith('ssh://') || self.source.startsWith('git://') || self.source.startsWith('git@') || self.source.startsWith('github.com/') || self.source.endsWith('.git')",message="ref is only supported for a git URL source"
+type HermesProfileDistribution struct {
+	// source is the distribution repository.  It is a git URL
+	// ("https://github.com/you/research-bot", "github.com/you/research-bot",
+	// "https://git.example.com/team/bot.git"), or an absolute path in the
+	// container to a directory that holds a distribution.yaml.  A bare
+	// "owner/repo" is not a git URL: the Hermes CLI reads it as a local path.
+	//
+	// The pattern rejects characters that a git URL or a path does not need.
+	// Thus the value cannot escape the shell quoting in the init script.  The
+	// first character cannot be one that git reads as the start of an option.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/][A-Za-z0-9._:/@+-]*$`
+	Source string `json:"source"`
+	// ref pins the distribution to a git tag, branch, or commit SHA.  The
+	// operator clones source at ref and installs from that checkout.  It
+	// installs again only when source or ref changes, so a `Pod` restart never
+	// pulls a newer revision.  Tags and branches always work.  A commit SHA
+	// works only if the host lets git fetch it directly.  A branch is
+	// resolved once, at install, and stays at that commit until source or ref
+	// changes; the init container log records which commit it was.
+	//
+	// Omit ref to follow the repository's default branch, as the Hermes CLI
+	// does on its own.  Pinning to a tag or a commit SHA is recommended: the
+	// revision you run is named in the custom resource, each change to it is
+	// reviewable, and a bot such as Renovate can propose those changes for
+	// you.
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/][A-Za-z0-9._/-]*$`
+	Ref string `json:"ref,omitempty"`
+	// `updateOnStart` pulls the distribution again (hermes profile update) at
+	// each `Pod` start when the profile is already installed.  This is how an
+	// unpinned profile gets new revisions.  Defaults to true.  Ignored when ref
+	// is set, because the pin sets the version.
+	// +optional
+	UpdateOnStart *bool `json:"updateOnStart,omitempty"`
+	// `forceConfig` lets an update overwrite the profile's `config.yaml`
+	// (--force-config).  By default an update keeps `config.yaml`, so an
+	// operator-managed config or a value changed in place stays.  Ignored when
+	// ref is set: a pinned profile never updates, and a new ref reinstalls,
+	// which always resets `config.yaml`.
+	// +optional
+	ForceConfig bool `json:"forceConfig,omitempty"`
+}
+
+// `GetSource` returns the distribution's source repository.
+func (d *HermesProfileDistribution) GetSource() string {
+	if d == nil {
+		return ""
+	}
+	return d.Source
+}
+
+// `GetRef` returns the git ref the distribution is pinned to, or "" when it
+// tracks the default branch.
+func (d *HermesProfileDistribution) GetRef() string {
+	if d == nil {
+		return ""
+	}
+	return d.Ref
+}
+
+// `IsPinned` reports whether the distribution is pinned to a git ref.
+func (d *HermesProfileDistribution) IsPinned() bool {
+	return d.GetRef() != ""
+}
+
+// `ShouldUpdateOnStart` reports whether an already-installed distribution is
+// re-pulled on `Pod` start.  A pinned distribution never is.
+func (d *HermesProfileDistribution) ShouldUpdateOnStart() bool {
+	if d == nil || d.IsPinned() {
+		return false
+	}
+	return d.UpdateOnStart == nil || *d.UpdateOnStart
+}
+
+// `ShouldForceConfig` reports whether an update may overwrite config.yaml.
+func (d *HermesProfileDistribution) ShouldForceConfig() bool {
+	return d != nil && d.ForceConfig
+}
+
 // HermesProfile defines a named Hermes profile to create and configure.
+// +kubebuilder:validation:XValidation:rule="!has(self.distribution) || !has(self.clone) || !self.clone",message="clone cannot be combined with distribution"
 type HermesProfile struct {
 	// clone copies config.yaml, .env, SOUL.md, and skills from the default profile
 	// at creation time (--clone flag). Source is always the default profile.
+	// Cannot be combined with distribution.  A distribution brings its own
+	// state.
 	// +optional
 	Clone bool `json:"clone,omitempty"`
+	// distribution installs this profile from a profile distribution
+	// repository instead of creating an empty one.
+	// +optional
+	Distribution *HermesProfileDistribution `json:"distribution,omitempty"`
 	// config holds the raw config.yaml for this profile.
 	// +optional
 	Config *HermesProfileConfig `json:"config,omitempty"`

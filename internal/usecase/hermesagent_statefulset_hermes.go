@@ -394,7 +394,13 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		var steps []string
 		var profileMounts []corev1.VolumeMount
 
-		steps = append(steps, buildProfileCreationScript(name, profile.Clone))
+		// A distribution creates the profile itself.  Otherwise the operator
+		// creates an empty profile, or clones the default profile.
+		if profile.Distribution != nil {
+			steps = append(steps, buildProfileDistributionScript(name, profile.Distribution))
+		} else {
+			steps = append(steps, buildProfileCreationScript(name, profile.Clone))
+		}
 
 		if profile.Config.HasDocument() {
 			steps = append(steps, buildConfigScript(name))
