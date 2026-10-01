@@ -773,6 +773,10 @@ Only the `HERMES_HOME` path (`/opt/data`) is persisted across pod restarts. Anyt
 
 The official Hermes image uses [s6-overlay](https://github.com/just-containers/s6-overlay), which requires the process to start as root for service supervision setup. Once initialisation is complete, s6-overlay drops privileges and runs the agent as the `hermes` user (`10000:10000`).
 
+## Community
+
+Join our [Discord](https://discord.gg/zZSUqa2egD) to ask questions and share feedback.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md).
