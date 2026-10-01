@@ -111,7 +111,8 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	}
 
 	ha.Status.ManagedResources.StatefulSet = ha.Name
-	ha.Status.Phase, ha.Status.Reason = u.deriveStatus(ctx, ha)
+	phase, pod := u.deriveStatus(ctx, ha)
+	ha.Status.Phase, ha.Status.Reason = phase, firstPodFailure(pod).GetReason()
 	// The StatefulSet loop runs after every other resource loop, so reaching
 	// this point means all managed resources reconciled. Workload readiness
 	// itself is tracked by status.phase, not by this condition.
@@ -128,72 +129,25 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	return ctrl.Result{}, nil
 }
 
-func (u *HermesAgentUseCase) deriveStatus(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (agentsv1alpha1.HermesAgentPhase, string) {
+// `deriveStatus` reports the agent's phase along with the `Pod` it was derived
+// from, so that a caller needing more than the phase reads one `Pod` rather
+// than fetching it again.  The `Pod` is nil when the agent is suspended, when
+// it cannot be read, and before it exists.
+func (u *HermesAgentUseCase) deriveStatus(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (agentsv1alpha1.HermesAgentPhase, *corev1.Pod) {
 	if ha.IsSuspended() {
-		return agentsv1alpha1.PhaseSuspended, ""
+		return agentsv1alpha1.PhaseSuspended, nil
 	}
 	pod, err := u.kube.GetPod(ctx, GetPodParam{
 		NamespacedName: types.NamespacedName{Name: ha.Name + "-0", Namespace: ha.Namespace},
 	})
 	if err != nil {
-		return agentsv1alpha1.PhaseUnknown, ""
+		return agentsv1alpha1.PhaseUnknown, nil
 	}
 	if pod == nil {
-		return agentsv1alpha1.PhasePending, ""
+		return agentsv1alpha1.PhasePending, nil
 	}
 
-	return hermesAgentPhase(pod), hermesAgentReason(pod)
-}
-
-func hermesAgentPhase(pod *corev1.Pod) agentsv1alpha1.HermesAgentPhase {
-	switch pod.Status.Phase {
-	case corev1.PodPending:
-		return agentsv1alpha1.PhasePending
-	case corev1.PodRunning:
-		return agentsv1alpha1.PhaseRunning
-	case corev1.PodSucceeded:
-		return agentsv1alpha1.PhaseSucceeded
-	case corev1.PodFailed:
-		return agentsv1alpha1.PhaseFailed
-	default:
-		return agentsv1alpha1.PhaseUnknown
-	}
-}
-
-func hermesAgentReason(pod *corev1.Pod) string {
-	if pod.Status.Phase == corev1.PodPending {
-		for _, c := range pod.Status.Conditions {
-			if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Reason != "" {
-				return c.Reason
-			}
-		}
-		for _, cs := range pod.Status.InitContainerStatuses {
-			if w := cs.State.Waiting; w != nil && w.Reason != "" {
-				return w.Reason
-			}
-		}
-		return ""
-	}
-
-	for _, cs := range pod.Status.InitContainerStatuses {
-		if t := cs.State.Terminated; t != nil && t.ExitCode != 0 && t.Reason != "" {
-			return t.Reason
-		}
-		if w := cs.State.Waiting; w != nil && w.Reason != "" {
-			return w.Reason
-		}
-	}
-
-	for _, cs := range pod.Status.ContainerStatuses {
-		if w := cs.State.Waiting; w != nil && w.Reason != "" {
-			return w.Reason
-		}
-		if t := cs.LastTerminationState.Terminated; t != nil && t.ExitCode != 0 && t.Reason != "" {
-			return t.Reason
-		}
-	}
-
-	return pod.Status.Reason
+	return hermesAgentPhase(pod), pod
 }
 
 func configMapDataHash(data map[string]string) string {
