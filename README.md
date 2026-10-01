@@ -775,7 +775,7 @@ The official Hermes image uses [s6-overlay](https://github.com/just-containers/s
 
 ## Community
 
-Join our Discord to ask questions and share feedback: https://discord.gg/zZSUqa2egD
+Join our [Discord](https://discord.gg/zZSUqa2egD) to ask questions and share feedback.
 
 ## Contributing
 
