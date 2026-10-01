@@ -270,13 +270,23 @@ func TestReconcileSnapshot_DisabledIsNoOp(t *testing.T) {
 	}
 }
 
+// notDueYet returns a lastScheduleTime whose next run is in the future for
+// every schedule and every wall clock, which is what a test means when it says
+// the schedule is not due.  `cron.Schedule.Next` returns a time strictly after
+// the one it is given, so anchoring to now is enough.  Anchoring to an hour
+// ago is not: the next run of a daily 03:00 schedule is 03:00 today, which is
+// in the past from 03:00 onwards, and the reconciler then takes a snapshot.
+func notDueYet() *metav1.Time {
+	return &metav1.Time{Time: time.Now()}
+}
+
 func TestReconcileSnapshot_WaitsForNextRun(t *testing.T) {
 	ctx := context.Background()
 	kube := &fakeSnapshotKube{pvc: boundPVC("hermes-data-test-0")}
 	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
 
 	ha := snapshotHA(nil, "0 3 * * *")
-	ha.Status.Snapshot.LastScheduleTime = &metav1.Time{Time: time.Now().Add(-time.Hour)}
+	ha.Status.Snapshot.LastScheduleTime = notDueYet()
 	result, err := uc.reconcileSnapshot(ctx, ha)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -477,8 +487,8 @@ func TestReconcileSnapshot_RetentionKeepsNewest(t *testing.T) {
 	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
 
 	ha := snapshotHA(&retention, "0 3 * * *")
-	// Schedule far in the future so only retention runs.
-	ha.Status.Snapshot.LastScheduleTime = &metav1.Time{Time: time.Now().Add(-time.Hour)}
+	// Not due, so only retention runs.
+	ha.Status.Snapshot.LastScheduleTime = notDueYet()
 	if _, err := uc.reconcileSnapshot(ctx, ha); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -507,8 +517,8 @@ func TestReconcileSnapshot_RetentionNeverDeletesRestoreSource(t *testing.T) {
 	// The restore source is the oldest snapshot, already outside the
 	// retention window: retention must skip it.
 	ha.Spec.Hermes.Storage.Persistence.ExistingSnapshot = ptrString(retentionExpiredSnapshot)
-	// Schedule far in the future so only retention runs.
-	ha.Status.Snapshot.LastScheduleTime = &metav1.Time{Time: time.Now().Add(-time.Hour)}
+	// Not due, so only retention runs.
+	ha.Status.Snapshot.LastScheduleTime = notDueYet()
 	if _, err := uc.reconcileSnapshot(ctx, ha); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
