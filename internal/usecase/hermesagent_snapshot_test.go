@@ -275,8 +275,12 @@ func TestReconcileSnapshot_WaitsForNextRun(t *testing.T) {
 	kube := &fakeSnapshotKube{pvc: boundPVC("hermes-data-test-0")}
 	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
 
-	ha := snapshotHA(nil, "0 3 * * *")
-	ha.Status.Snapshot.LastScheduleTime = &metav1.Time{Time: time.Now().Add(-time.Hour)}
+	// Build a schedule that fires ~2 hours from now and set LastScheduleTime
+	// to now: the next run is always in the future regardless of wall-clock
+	// time, so the reconciler must wait instead of taking a catch-up snapshot.
+	next := time.Now().Add(2 * time.Hour)
+	ha := snapshotHA(nil, fmt.Sprintf("%d %d * * *", next.Minute(), next.Hour()))
+	ha.Status.Snapshot.LastScheduleTime = &metav1.Time{Time: time.Now()}
 	result, err := uc.reconcileSnapshot(ctx, ha)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
