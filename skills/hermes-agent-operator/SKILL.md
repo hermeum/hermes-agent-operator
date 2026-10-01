@@ -166,6 +166,12 @@ spec:
         schedule: "0 9 * * *"    # standard cron or shorthand like "every 30m"
         prompt: |
           Summarize overnight alerts and post a digest.
+        monitorScript: source.sh # optional; monitor mode script run each tick before the agent
+        monitorURL: https://example.com/status  # optional; monitor mode URL (instead of monitorScript)
+        model: gpt-5             # optional; pin the job to a specific inference model
+        provider: openrouter     # optional; inference provider paired with model
+        reasoningEffort: high    # optional; none, minimal, low, medium, high, xhigh, max, ultra
+        continuity: false        # optional; inject previous output into each run's prompt
 ```
 
 **SearXNG sidecar:**

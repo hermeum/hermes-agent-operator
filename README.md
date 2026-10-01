@@ -379,6 +379,12 @@ hermes:
       script: standup.sh           # optional; path under ~/.hermes/scripts/
       noAgent: false               # optional; true to run script and deliver stdout directly, skipping the LLM
       workdir: /home/hermes        # optional; absolute working directory for the job
+      monitorScript: source.sh     # optional; monitor mode: script under ~/.hermes/scripts/ run each tick BEFORE the agent; unchanged output suppresses the agent run (mutually exclusive with monitorURL)
+      monitorURL: https://example.com/status  # optional; monitor mode: http(s) URL fetched each tick instead of a script (mutually exclusive with monitorScript)
+      model: gpt-5                 # optional; pin this job to a specific inference model
+      provider: openrouter         # optional; inference provider paired with model (e.g. 'openrouter', 'nous')
+      reasoningEffort: high        # optional; none, minimal, low, medium, high, xhigh, max, or ultra
+      continuity: false            # optional; true to inject the job's previous output into each run's prompt
       profile: default             # optional; Hermes profile name to run under
 ```
 

@@ -1555,6 +1555,24 @@ func buildCronsScript(profile string, crons []agentsv1alpha1.HermesCron) string 
 		if c.Workdir != "" {
 			fmt.Fprintf(&cmd, " --workdir %q", c.Workdir)
 		}
+		if c.MonitorScript != "" {
+			fmt.Fprintf(&cmd, " --monitor-script %q", c.MonitorScript)
+		}
+		if c.MonitorURL != "" {
+			fmt.Fprintf(&cmd, " --monitor-url %q", c.MonitorURL)
+		}
+		if c.Model != "" {
+			fmt.Fprintf(&cmd, " --model %q", c.Model)
+		}
+		if c.Provider != "" {
+			fmt.Fprintf(&cmd, " --provider %q", c.Provider)
+		}
+		if c.ReasoningEffort != "" {
+			fmt.Fprintf(&cmd, " --reasoning-effort %q", c.ReasoningEffort)
+		}
+		if c.Continuity {
+			cmd.WriteString(" --continuity")
+		}
 		if c.Profile != "" {
 			fmt.Fprintf(&cmd, " --profile %q", c.Profile)
 		}

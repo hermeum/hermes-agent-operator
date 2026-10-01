@@ -863,20 +863,45 @@ func TestBuildCronsScript(t *testing.T) {
 	t.Run("all options", func(t *testing.T) {
 		got := buildCronsScript(hermesDefaultProfile, []agentsv1alpha1.HermesCron{
 			{
-				Name:     "full",
-				Schedule: "every 2h",
-				Prompt:   "do thing",
-				Deliver:  "telegram",
-				Repeat:   ptrInt(3),
-				Skills:   []string{"alpha", "beta"},
-				Script:   "myscript.sh",
-				NoAgent:  true,
-				Workdir:  "/opt/data",
-				Profile:  "default",
+				Name:            "full",
+				Schedule:        "every 2h",
+				Prompt:          "do thing",
+				Deliver:         "telegram",
+				Repeat:          ptrInt(3),
+				Skills:          []string{"alpha", "beta"},
+				Script:          "myscript.sh",
+				NoAgent:         true,
+				Workdir:         "/opt/data",
+				MonitorScript:   "source.sh",
+				MonitorURL:      "https://example.com/status",
+				Model:           "gpt-5",
+				Provider:        "openrouter",
+				ReasoningEffort: "high",
+				Continuity:      true,
+				Profile:         "default",
 			},
 		})
 
-		wantCmd := `hermes cron create -p "default" --name "full" --deliver "telegram" --repeat 3 --skill "alpha" --skill "beta" --script "myscript.sh" --no-agent --workdir "/opt/data" --profile "default" "every 2h" "do thing"`
+		wantCmd := `hermes cron create -p "default" --name "full" --deliver "telegram" --repeat 3 --skill "alpha" --skill "beta" --script "myscript.sh" --no-agent --workdir "/opt/data" --monitor-script "source.sh" --monitor-url "https://example.com/status" --model "gpt-5" --provider "openrouter" --reasoning-effort "high" --continuity --profile "default" "every 2h" "do thing"`
+		if !strings.Contains(got, wantCmd) {
+			t.Errorf("expected:\n%s\n\nin script:\n%s", wantCmd, got)
+		}
+	})
+
+	t.Run("new params only", func(t *testing.T) {
+		got := buildCronsScript(hermesDefaultProfile, []agentsv1alpha1.HermesCron{
+			{
+				Name:            "new",
+				Schedule:        "0 9 * * *",
+				MonitorURL:      "https://example.com",
+				Model:           "claude-opus-4-5",
+				Provider:        "nous",
+				ReasoningEffort: "low",
+				Continuity:      true,
+			},
+		})
+
+		wantCmd := `hermes cron create -p "default" --name "new" --monitor-url "https://example.com" --model "claude-opus-4-5" --provider "nous" --reasoning-effort "low" --continuity "0 9 * * *"`
 		if !strings.Contains(got, wantCmd) {
 			t.Errorf("expected:\n%s\n\nin script:\n%s", wantCmd, got)
 		}

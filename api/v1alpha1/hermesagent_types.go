@@ -401,6 +401,38 @@ type HermesCron struct {
 	// workdir is the absolute path for the job to run from.
 	// +optional
 	Workdir string `json:"workdir,omitempty"`
+	// monitorScript is the monitor mode: path to a cheap source script under
+	// ~/.hermes/scripts/ that runs each tick BEFORE the agent. Unchanged output
+	// (exact-bytes hash) suppresses the agent run entirely; changed output injects
+	// a MONITOR CHANGE DETECTED diff into the prompt. Script output must be stable
+	// (no timestamps). Mutually exclusive with monitorURL; incompatible with noAgent.
+	// +optional
+	MonitorScript string `json:"monitorScript,omitempty"`
+	// monitorURL is the monitor mode: http(s) URL fetched with a bounded GET each
+	// tick instead of a script. Same hash-suppression semantics as monitorScript.
+	// Mutually exclusive with monitorScript; incompatible with noAgent.
+	// +optional
+	MonitorURL string `json:"monitorURL,omitempty"`
+	// model pins this job to a specific inference model. Omit to follow
+	// cron.model / model.default from hermes config.yaml.
+	// +optional
+	Model string `json:"model,omitempty"`
+	// provider is the inference provider paired with model (e.g. 'openrouter', 'nous').
+	// +optional
+	Provider string `json:"provider,omitempty"`
+	// reasoningEffort pins this job's reasoning (thinking) effort. Overrides
+	// agent.reasoning_effort and agent.reasoning_overrides for this job;
+	// unsupported levels are clamped by the provider at request time. Omit to
+	// follow hermes config.
+	// +kubebuilder:validation:Enum="none";"minimal";"low";"medium";"high";"xhigh";"max";"ultra"
+	// +optional
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	// continuity injects the job's own previous output into each run's prompt,
+	// so it can dedupe against what was already reported and continue where the
+	// last run left off (scouts, monitors, incremental digests). First run is
+	// unchanged.
+	// +optional
+	Continuity bool `json:"continuity,omitempty"`
 	// profile is the hermes profile name to run the job under.
 	// +optional
 	Profile string `json:"profile,omitempty"`
