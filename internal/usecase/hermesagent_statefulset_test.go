@@ -17,6 +17,9 @@ import (
 
 const (
 	testTrue = "true"
+	// testPriorityClass is an arbitrary existing PriorityClass name used to
+	// exercise `spec.priorityClassName`.
+	testPriorityClass = "system-cluster-critical"
 	// consolidatedInitContainerName is the name of the operator-managed init
 	// container that configures the default profile.
 	consolidatedInitContainerName = "init-hermes"
@@ -210,6 +213,15 @@ func TestDesiredSpecHash(t *testing.T) {
 			t.Error("expected different hash when runtimeClassName changes")
 		}
 	})
+
+	t.Run("changes when priorityClassName changes", func(t *testing.T) {
+		ha := minimalHA()
+		h1 := desiredSpecHash(buildStatefulSet(ha))
+		ha.Spec.PriorityClassName = testPriorityClass
+		if desiredSpecHash(buildStatefulSet(ha)) == h1 {
+			t.Error("expected different hash when priorityClassName changes")
+		}
+	})
 }
 
 func TestBuildStatefulSetHostUsers(t *testing.T) {
@@ -366,6 +378,25 @@ func TestBuildStatefulSetRuntimeClassName(t *testing.T) {
 		}
 		if *got != "kata-qemu-runtime-rs" {
 			t.Errorf("runtimeClassName = %q, want %q", *got, "kata-qemu-runtime-rs")
+		}
+	})
+}
+
+func TestBuildStatefulSetPriorityClassName(t *testing.T) {
+	t.Run("empty when unset", func(t *testing.T) {
+		ha := minimalHA()
+		sts := buildStatefulSet(ha)
+		if got := sts.Spec.Template.Spec.PriorityClassName; got != "" {
+			t.Errorf("expected empty priorityClassName, got %q", got)
+		}
+	})
+
+	t.Run("set is passed through to the pod spec", func(t *testing.T) {
+		ha := minimalHA()
+		ha.Spec.PriorityClassName = testPriorityClass
+		sts := buildStatefulSet(ha)
+		if got := sts.Spec.Template.Spec.PriorityClassName; got != testPriorityClass {
+			t.Errorf("priorityClassName = %q, want %q", got, testPriorityClass)
 		}
 	})
 }

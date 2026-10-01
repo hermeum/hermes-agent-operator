@@ -5124,6 +5124,15 @@ spec:
                   `StatefulSet` pod selector.  A change to any key starts a rolling
                   restart of the pods.
                 type: object
+              priorityClassName:
+                description: |-
+                  PriorityClassName sets the PriorityClass name for the Hermes agent pod.
+                  The named PriorityClass must already exist in the cluster.  Omit this
+                  field to use the cluster's globalDefault PriorityClass, if one is
+                  configured.
+                maxLength: 253
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
               runtimeClassName:
                 description: |-
                   RuntimeClassName sets the RuntimeClass name for the Hermes agent pod.

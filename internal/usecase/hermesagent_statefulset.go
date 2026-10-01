@@ -262,12 +262,13 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 					},
 				},
 				Spec: corev1.PodSpec{
-					HostUsers:          ha.GetHostUsers(),
-					ServiceAccountName: ha.GetServiceAccountName(),
-					RuntimeClassName:   ha.GetRuntimeClassName(),
+					HostUsers:         ha.GetHostUsers(),
+					PriorityClassName: ha.GetPriorityClassName(),
+					RuntimeClassName:  ha.GetRuntimeClassName(),
 					SecurityContext: &corev1.PodSecurityContext{
 						SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 					},
+					ServiceAccountName: ha.GetServiceAccountName(),
 				},
 			},
 		},
