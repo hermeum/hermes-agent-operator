@@ -2391,9 +2391,35 @@ spec:
                       description: HermesCron defines a scheduled job managed via
                         hermes cron.
                       properties:
+                        continuity:
+                          description: |-
+                            continuity injects the job's own previous output into each run's prompt,
+                            so it can dedupe against what was already reported and continue where the
+                            last run left off (scouts, monitors, incremental digests). First run is
+                            unchanged.
+                          type: boolean
                         deliver:
                           description: 'deliver is the delivery target: origin, local,
                             telegram, discord, signal, or platform:chat_id.'
+                          type: string
+                        model:
+                          description: |-
+                            model pins this job to a specific inference model. Omit to follow
+                            cron.model / model.default from hermes config.yaml.
+                          type: string
+                        monitorScript:
+                          description: |-
+                            monitorScript is the monitor mode: path to a cheap source script under
+                            ~/.hermes/scripts/ that runs each tick BEFORE the agent. Unchanged output
+                            (exact-bytes hash) suppresses the agent run entirely; changed output injects
+                            a MONITOR CHANGE DETECTED diff into the prompt. Script output must be stable
+                            (no timestamps). Mutually exclusive with monitorURL; incompatible with noAgent.
+                          type: string
+                        monitorURL:
+                          description: |-
+                            monitorURL is the monitor mode: http(s) URL fetched with a bounded GET each
+                            tick instead of a script. Same hash-suppression semantics as monitorScript.
+                            Mutually exclusive with monitorScript; incompatible with noAgent.
                           type: string
                         name:
                           description: name is the human-friendly job name and the
@@ -2410,6 +2436,26 @@ spec:
                         prompt:
                           description: prompt is an optional self-contained prompt
                             or task instruction.
+                          type: string
+                        provider:
+                          description: provider is the inference provider paired with
+                            model (e.g. 'openrouter', 'nous').
+                          type: string
+                        reasoningEffort:
+                          description: |-
+                            reasoningEffort pins this job's reasoning (thinking) effort. Overrides
+                            agent.reasoning_effort and agent.reasoning_overrides for this job;
+                            unsupported levels are clamped by the provider at request time. Omit to
+                            follow hermes config.
+                          enum:
+                          - none
+                          - minimal
+                          - low
+                          - medium
+                          - high
+                          - xhigh
+                          - max
+                          - ultra
                           type: string
                         repeat:
                           description: repeat is the optional repeat count.
@@ -2934,9 +2980,35 @@ spec:
                             description: HermesCron defines a scheduled job managed
                               via hermes cron.
                             properties:
+                              continuity:
+                                description: |-
+                                  continuity injects the job's own previous output into each run's prompt,
+                                  so it can dedupe against what was already reported and continue where the
+                                  last run left off (scouts, monitors, incremental digests). First run is
+                                  unchanged.
+                                type: boolean
                               deliver:
                                 description: 'deliver is the delivery target: origin,
                                   local, telegram, discord, signal, or platform:chat_id.'
+                                type: string
+                              model:
+                                description: |-
+                                  model pins this job to a specific inference model. Omit to follow
+                                  cron.model / model.default from hermes config.yaml.
+                                type: string
+                              monitorScript:
+                                description: |-
+                                  monitorScript is the monitor mode: path to a cheap source script under
+                                  ~/.hermes/scripts/ that runs each tick BEFORE the agent. Unchanged output
+                                  (exact-bytes hash) suppresses the agent run entirely; changed output injects
+                                  a MONITOR CHANGE DETECTED diff into the prompt. Script output must be stable
+                                  (no timestamps). Mutually exclusive with monitorURL; incompatible with noAgent.
+                                type: string
+                              monitorURL:
+                                description: |-
+                                  monitorURL is the monitor mode: http(s) URL fetched with a bounded GET each
+                                  tick instead of a script. Same hash-suppression semantics as monitorScript.
+                                  Mutually exclusive with monitorScript; incompatible with noAgent.
                                 type: string
                               name:
                                 description: name is the human-friendly job name and
@@ -2953,6 +3025,26 @@ spec:
                               prompt:
                                 description: prompt is an optional self-contained
                                   prompt or task instruction.
+                                type: string
+                              provider:
+                                description: provider is the inference provider paired
+                                  with model (e.g. 'openrouter', 'nous').
+                                type: string
+                              reasoningEffort:
+                                description: |-
+                                  reasoningEffort pins this job's reasoning (thinking) effort. Overrides
+                                  agent.reasoning_effort and agent.reasoning_overrides for this job;
+                                  unsupported levels are clamped by the provider at request time. Omit to
+                                  follow hermes config.
+                                enum:
+                                - none
+                                - minimal
+                                - low
+                                - medium
+                                - high
+                                - xhigh
+                                - max
+                                - ultra
                                 type: string
                               repeat:
                                 description: repeat is the optional repeat count.
