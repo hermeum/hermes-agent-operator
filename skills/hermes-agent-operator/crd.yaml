@@ -3399,6 +3399,121 @@ spec:
                         - message: schedule is required when snapshot is enabled
                           rule: has(self.schedule) || !has(self.enabled) || !self.enabled
                     type: object
+                  terminal:
+                    description: terminal configures the backend that runs the agent's
+                      shell commands.
+                    properties:
+                      kubernetes:
+                        description: |-
+                          kubernetes runs each shell command in a session pod created through the
+                          Kubernetes API, instead of inside the hermes-agent container.
+                        properties:
+                          enabled:
+                            default: true
+                            description: enabled selects the kubernetes terminal backend.
+                            type: boolean
+                          execContainerName:
+                            default: workspace
+                            description: |-
+                              execContainerName is the container in podSpec that commands exec into.
+                              It selects a container, it does not create one.
+                            type: string
+                          namespace:
+                            description: |-
+                              namespace is where session pods are created. Empty means the agent's own
+                              namespace, resolved by the agent from its projected ServiceAccount.
+
+                              A namespace other than the agent's is not managed by the operator: the
+                              Role, RoleBinding and NetworkPolicy below are always created in the
+                              agent's namespace, so cross-namespace RBAC and isolation are yours to
+                              apply.
+                            type: string
+                          networkPolicy:
+                            description: |-
+                              networkPolicy isolates the session pods. They are created by the agent,
+                              not the operator, so the instance NetworkPolicy under security does not
+                              select them.
+                            properties:
+                              allowInternet:
+                                default: true
+                                description: |-
+                                  allowInternet adds egress to everything outside excludedEgressCIDRs, so
+                                  sessions can reach package registries and git forges.
+                                type: boolean
+                              enabled:
+                                default: true
+                                description: |-
+                                  enabled creates a default-deny NetworkPolicy selecting the session pods,
+                                  with egress to cluster DNS.
+                                type: boolean
+                              excludedEgressCIDRs:
+                                description: |-
+                                  excludedEgressCIDRs are the ranges allowInternet must not open. Defaults
+                                  to RFC1918 and link-local, which on most clusters covers the service and
+                                  pod networks. Add your node, API server or service ranges if they sit on
+                                  publicly routable addresses.
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          ownedSelector:
+                            additionalProperties:
+                              type: string
+                            description: |-
+                              ownedSelector are the labels marking a pod as this backend's. Empty means
+                              the agent's default, {app.kubernetes.io/managed-by: hermes-agent}.
+
+                              The session-pod NetworkPolicy selects on these labels, so overriding them
+                              moves both together.
+                            type: object
+                          ownerReference:
+                            default: auto
+                            description: |-
+                              ownerReference stamps the agent's own pod as the session pod's owner, so
+                              session pods are garbage-collected when the agent pod is deleted.
+                              "off" leaves them bounded only by podSpec.activeDeadlineSeconds.
+                            enum:
+                            - auto
+                            - "off"
+                            type: string
+                          podMetadata:
+                            description: |-
+                              podMetadata is the verbatim metadata of the session pod (labels,
+                              annotations). The agent always owns name and namespace, and appends its
+                              own ownerReference.
+                            x-kubernetes-preserve-unknown-fields: true
+                          podSpec:
+                            description: |-
+                              podSpec is the verbatim PodSpec of the session pod. Left unset, the agent
+                              applies its own documented default (an ephemeral ubuntu pod). A non-empty
+                              value replaces that default wholesale — it is not merged.
+
+                              Free-form because it is a PodSpec the agent posts as written; re-typing it
+                              here would only drift from the agent's schema.
+                            x-kubernetes-preserve-unknown-fields: true
+                          rbac:
+                            default: true
+                            description: |-
+                              rbac grants the agent's ServiceAccount the pod and pod/exec permissions
+                              the backend needs, in the agent's namespace. Disable it to bind your own
+                              Role — without those verbs every command fails.
+                            type: boolean
+                          readyTimeoutSeconds:
+                            description: |-
+                              readyTimeoutSeconds is how long the agent waits for a session pod to
+                              become Ready. Raise it for slow image pulls or sandboxed runtimes.
+                            format: int32
+                            minimum: 1
+                            type: integer
+                          trustedSandbox:
+                            description: |-
+                              trustedSandbox treats the session pod as a disposable boundary and skips
+                              the dangerous-command approval layer. Set it false when podSpec grants
+                              access to node-owned state (hostPath, hostNetwork/hostPID/hostIPC, or a
+                              privileged container) and you want approvals back in the loop.
+                            type: boolean
+                        type: object
+                    type: object
                   workspace:
                     description: workspace defines files to seed in the agent's home
                       directory.
@@ -7420,6 +7535,11 @@ spec:
                     type: string
                   serviceAccount:
                     description: serviceAccount is the name of the managed ServiceAccount.
+                    type: string
+                  sessionPodNetworkPolicy:
+                    description: |-
+                      sessionPodNetworkPolicy is the name of the NetworkPolicy isolating the
+                      terminal backend's session pods.
                     type: string
                   statefulSet:
                     description: statefulSet is the name of the managed StatefulSet.

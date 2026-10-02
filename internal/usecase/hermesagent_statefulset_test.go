@@ -962,17 +962,6 @@ func findInitContainer(sts *appsv1.StatefulSet, name string) *corev1.Container {
 	return nil
 }
 
-// findHermesContainer returns a pointer to the hermes-agent container in the
-// StatefulSet, or nil if none exists.
-func findHermesContainer(sts *appsv1.StatefulSet) *corev1.Container {
-	for i := range sts.Spec.Template.Spec.Containers {
-		if sts.Spec.Template.Spec.Containers[i].Name == hermesContainerName {
-			return &sts.Spec.Template.Spec.Containers[i]
-		}
-	}
-	return nil
-}
-
 // hasEnvVar reports whether the given env var name is present in the slice.
 func hasEnvVar(envs []corev1.EnvVar, name string) bool {
 	for _, e := range envs {

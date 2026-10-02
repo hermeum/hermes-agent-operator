@@ -1,0 +1,101 @@
+# Runs the agent's shell commands in a session pod instead of inside the
+# hermes-agent container, so a command cannot read the agent's ServiceAccount
+# token or its filesystem.
+#
+# The operator does three things the agent cannot do for itself: it grants the
+# ServiceAccount the pod and pod/exec permissions, injects the agent's pod
+# identity so session pods are garbage-collected with it, and isolates the
+# session pods with their own NetworkPolicy.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kubernetes-terminal
+stringData:
+  ANTHROPIC_API_KEY: ""
+---
+apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: kubernetes-terminal
+spec:
+  hermes:
+    config:
+      raw:
+        model:
+          provider: anthropic
+          default: claude-sonnet-4-6
+    terminal:
+      kubernetes:
+        enabled: true
+        # Left unset, session pods land in this HermesAgent's own namespace.
+        # Run the agent in a namespace with nothing else in it: `create pods`
+        # is a powerful verb, and the namespace is the containment that matters.
+        # namespace: ""
+
+        # Unset means the agent's own default: an ephemeral ubuntu pod with an
+        # emptyDir workspace. A non-empty podSpec replaces that default whole —
+        # it is not merged — and must keep the pieces the backend depends on:
+        # a container named execContainerName, a command that keeps it running,
+        # a workingDir (which is the session's cwd), writable volumes at that
+        # workingDir and /tmp, shareProcessNamespace so background commands are
+        # reaped, and automountServiceAccountToken: false.
+        podSpec:
+          containers:
+            - name: workspace
+              image: ubuntu:26.04
+              command: [sleep, infinity]
+              workingDir: /workspace
+              volumeMounts:
+                - name: workspace
+                  mountPath: /workspace
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+          volumes:
+            - name: workspace
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}
+          shareProcessNamespace: true
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 1
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          # Bounds a session pod whose agent died without an ownerReference.
+          activeDeadlineSeconds: 14400
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+
+        # Raise it for slow image pulls or a sandboxed runtime (kata).
+        readyTimeoutSeconds: 120
+
+        # The session pod is the boundary, so dangerous-command approvals are
+        # skipped. Set false if podSpec reaches node-owned state (hostPath,
+        # hostNetwork/hostPID/hostIPC, privileged) and you want approvals back.
+        trustedSandbox: true
+
+        networkPolicy:
+          enabled: true
+          # Sessions usually need pip, npm and git. Everything inside
+          # excludedEgressCIDRs stays closed — add your node, API server or
+          # service ranges if they sit on publicly routable addresses.
+          #
+          # To reach a cluster-internal service, apply your own NetworkPolicy
+          # selecting the same labels: policies are additive, so its egress
+          # rules join the ones below.
+          allowInternet: true
+    workspace:
+      dotEnv:
+        secretRef:
+          name: kubernetes-terminal

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -142,6 +143,98 @@ func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
 	return out, nil
 }
 
+// terminalBackendKubernetes is both the backend's name and the key of its
+// settings block in the agent's config.
+const terminalBackendKubernetes = "kubernetes"
+
+// applyTerminalKubernetesConfig injects the `kubernetes` terminal backend and
+// its settings into the Hermes config. Every key is written only when absent,
+// so an explicit hermes.config.raw always wins.
+//
+// Key names are the agent's own (snake_case), not the CRD's.
+func applyTerminalKubernetesConfig(raw []byte, k *agentsv1alpha1.HermesTerminalKubernetes) ([]byte, error) {
+	cfg := map[string]any{}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("unmarshaling config: %w", err)
+	}
+
+	terminal, _ := cfg["terminal"].(map[string]any)
+	if terminal == nil {
+		terminal = map[string]any{}
+		cfg["terminal"] = terminal
+	}
+	if _, ok := terminal["backend"]; !ok {
+		terminal["backend"] = terminalBackendKubernetes
+	}
+
+	kube, _ := terminal[terminalBackendKubernetes].(map[string]any)
+	if kube == nil {
+		kube = map[string]any{}
+		terminal[terminalBackendKubernetes] = kube
+	}
+
+	setIfAbsent := func(key string, value any) {
+		if _, ok := kube[key]; !ok {
+			kube[key] = value
+		}
+	}
+
+	if k.Namespace != "" {
+		setIfAbsent("namespace", k.Namespace)
+	}
+	setIfAbsent("exec_container_name", k.GetExecContainerName())
+	// Always resolved rather than left to the agent's own default: the session
+	// pod NetworkPolicy selects on these labels, and the two must not drift.
+	setIfAbsent("owned_selector", toAnyMap(k.GetOwnedSelector()))
+	if k.ReadyTimeoutSeconds != nil {
+		setIfAbsent("ready_timeout_seconds", *k.ReadyTimeoutSeconds)
+	}
+	if k.OwnerReference != "" {
+		setIfAbsent("owner_reference", k.OwnerReference)
+	}
+	if k.TrustedSandbox != nil {
+		setIfAbsent("trusted_sandbox", *k.TrustedSandbox)
+	}
+	if err := setIfAbsentJSON(kube, "metadata", k.PodMetadata); err != nil {
+		return nil, fmt.Errorf("terminal.kubernetes.podMetadata: %w", err)
+	}
+	if err := setIfAbsentJSON(kube, "spec", k.PodSpec); err != nil {
+		return nil, fmt.Errorf("terminal.kubernetes.podSpec: %w", err)
+	}
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling config: %w", err)
+	}
+	return out, nil
+}
+
+// setIfAbsentJSON decodes a free-form CRD field into the config under key,
+// leaving an existing key untouched. A nil or empty value writes nothing, so
+// the agent applies its own default.
+func setIfAbsentJSON(dst map[string]any, key string, value *apiextensionsv1.JSON) error {
+	if value == nil || len(value.Raw) == 0 {
+		return nil
+	}
+	if _, ok := dst[key]; ok {
+		return nil
+	}
+	var decoded any
+	if err := json.Unmarshal(value.Raw, &decoded); err != nil {
+		return fmt.Errorf("unmarshaling: %w", err)
+	}
+	dst[key] = decoded
+	return nil
+}
+
+func toAnyMap(in map[string]string) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, error) {
 	data := map[string]string{}
 
@@ -174,6 +267,19 @@ func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent) (*corev1.ConfigMap, er
 		}
 		var err error
 		defaultRaw, err = applyMultiplexProfilesDefault(defaultRaw)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// The terminal backend is configured from its own spec block, so it applies
+	// whether or not the user wrote a hermes.config.raw at all.
+	if k := ha.GetHermes().GetTerminal().GetKubernetes(); k.IsEnabled() {
+		if defaultRaw == nil {
+			defaultRaw = []byte("{}")
+		}
+		var err error
+		defaultRaw, err = applyTerminalKubernetesConfig(defaultRaw, k)
 		if err != nil {
 			return nil, err
 		}

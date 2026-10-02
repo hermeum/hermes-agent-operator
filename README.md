@@ -76,6 +76,7 @@ Then run the `/hermes-agent-operator` skill to create a custom resource.
 - [`hermes.storage`](#hermesstorage)
 - [`hermes.workspace`](#hermesworkspace)
 - [`hermes.packages`](#hermespackages)
+- [`hermes.terminal`](#hermesterminal)
 - [`hermes.plugins`](#hermesplugins)
 - [`hermes.skills`](#hermesskills)
 - [`hermes.crons`](#hermescrons)
@@ -337,6 +338,78 @@ hermes:
       home/.bashrc: |
         export PATH="$HERMES_HOME/.npm-packages/bin:$PATH"
 ```
+
+### `hermes.terminal`
+
+Runs each agent shell command in a **session pod** created through the Kubernetes
+API, instead of inside the hermes-agent container. A command can then no longer
+read the agent's ServiceAccount token or its filesystem.
+
+The session pod is an execution boundary, not a secrets boundary: registered
+credential files and skills are still synced into it, because skills need them.
+It is also not a per-user boundary — one agent uses one session pod for every
+conversation it serves.
+
+```yaml
+hermes:
+  terminal:
+    kubernetes:
+      enabled: true                # optional; defaults to true when the block is present
+      namespace: ""                # optional; empty means this HermesAgent's own namespace
+      podSpec: {}                  # optional; empty means the agent's default ephemeral pod
+      podMetadata: {}              # optional; labels and annotations for the session pod
+      execContainerName: workspace # optional; the container in podSpec commands exec into
+      ownedSelector: {}            # optional; empty means {app.kubernetes.io/managed-by: hermes-agent}
+      readyTimeoutSeconds: 120     # optional; raise it for slow image pulls
+      ownerReference: auto         # optional; auto | off
+      trustedSandbox: true         # optional; false puts approvals back in the loop
+      rbac: true                   # optional; grants pods + pods/exec to the ServiceAccount
+      networkPolicy:
+        enabled: true              # optional; default-deny plus DNS for the session pods
+        allowInternet: true        # optional; egress outside excludedEgressCIDRs
+        excludedEgressCIDRs: []    # optional; defaults to RFC1918 plus link-local
+```
+
+There is deliberately no `additionalEgress` here, unlike under
+`security.networkPolicy`. NetworkPolicies are additive: to let a session reach a
+cluster-internal service, apply your own NetworkPolicy selecting the same
+`ownedSelector` labels and its egress rules join these. Embedding a second copy
+of the egress-rule schema would cost ~28 KB on a CRD already close to the
+256 KiB ceiling that `kubectl apply` puts on its last-applied-configuration
+annotation.
+
+Enabling the backend makes the operator do three things the agent cannot do for
+itself:
+
+| | Why |
+|---|---|
+| Adds `pods` (create/get/delete) and `pods/exec` (get/create) to the managed Role | Without both exec verbs the agent starts healthy and every command then fails with a 403 |
+| Injects `HERMES_POD_NAME` / `HERMES_POD_UID` from the downward API | The ownerReference that garbage-collects session pods when the agent pod is deleted |
+| Creates a `<name>-session-pods` NetworkPolicy | Session pods are created by the agent, so `security.networkPolicy` does not select them; without one a session reaches the API server and every ClusterIP Service |
+
+`podSpec` is the agent's own PodSpec, passed through verbatim. Left empty, the
+agent applies its documented default; a non-empty value **replaces** that default
+entirely rather than merging with it, and must keep what the backend depends on:
+a container named `execContainerName`, a command that keeps it running, a
+`workingDir` (which is the session's cwd), writable volumes at that `workingDir`
+and `/tmp`, `shareProcessNamespace: true`, and `automountServiceAccountToken: false`.
+
+Everything here is also expressible through `hermes.config.raw`, and a key set
+there always wins over the generated one.
+
+Full example: [`kubernetes_terminal.yaml`](skills/hermes-agent-operator/examples/kubernetes_terminal.yaml).
+
+Two things the operator deliberately leaves to you:
+
+- **A session-pod namespace other than the agent's.** The Role, RoleBinding and
+  NetworkPolicy are always created in the agent's namespace, so a different
+  `namespace` needs its own RBAC and isolation applied by hand — the operator
+  skips the NetworkPolicy entirely rather than create one where it isolates
+  nothing.
+- **Confining session pods on OpenShift.** SCC admission evaluates the identity
+  that *creates* the pod, always the agent's ServiceAccount, so session pods
+  inherit the agent's SCC. Give them their own namespace with Pod Security
+  Admission enforcing `restricted` if you need them genuinely confined.
 
 ### `hermes.plugins`
 

@@ -233,6 +233,7 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 	sts = buildHermesContainer(ha, sts)
 	sts = buildSearXNGContainer(ha, sts)
 	sts = buildCamofoxContainer(ha, sts)
+	sts = buildTerminalKubernetesEnv(ha, sts)
 
 	// additional user-provided init containers run after the operator-managed ones.
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, ha.GetInitContainers()...)
@@ -755,9 +756,46 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	return sts
 }
 
-func findContainer(sts *appsv1.StatefulSet, name string) *corev1.Container {
+// buildTerminalKubernetesEnv injects the agent's own pod identity through the
+// downward API, so the `kubernetes` terminal backend can stamp an ownerReference
+// on the session pods it creates and they are garbage-collected with the agent.
+//
+// The agent can also resolve its identity by looking itself up on the pod
+// hostname, but only with `get pods` granted and an extra API call per start;
+// the downward API is free and works even when RBAC is managed elsewhere.
+func buildTerminalKubernetesEnv(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
+	if !ha.GetHermes().GetTerminal().GetKubernetes().IsEnabled() {
+		return sts
+	}
+
+	sts = sts.DeepCopy()
+	c := findHermesContainer(sts)
+	if c == nil {
+		return sts
+	}
+	c.Env = append(c.Env,
+		corev1.EnvVar{
+			Name: "HERMES_POD_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		},
+		corev1.EnvVar{
+			Name: "HERMES_POD_UID",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.uid"},
+			},
+		},
+	)
+	return sts
+}
+
+// findHermesContainer returns the agent container in sts, or nil. Only the
+// hermes-agent container is ever looked up: the sidecars are appended by their
+// own builders, which hold the container they just created.
+func findHermesContainer(sts *appsv1.StatefulSet) *corev1.Container {
 	for i := range sts.Spec.Template.Spec.Containers {
-		if sts.Spec.Template.Spec.Containers[i].Name == name {
+		if sts.Spec.Template.Spec.Containers[i].Name == hermesContainerName {
 			return &sts.Spec.Template.Spec.Containers[i]
 		}
 	}
@@ -831,7 +869,7 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 	)
 
 	// Inject SEARXNG_URL into the hermes-agent container env so that the web_search tool can find it.
-	if c := findContainer(sts, hermesContainerName); c != nil {
+	if c := findHermesContainer(sts); c != nil {
 		c.Env = append(c.Env, corev1.EnvVar{Name: "SEARXNG_URL", Value: searxngURL})
 	}
 
@@ -970,7 +1008,7 @@ func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 	)
 
 	// Inject CAMOFOX_URL into the hermes-agent container env so that the browser tool can find it.
-	if c := findContainer(sts, hermesContainerName); c != nil {
+	if c := findHermesContainer(sts); c != nil {
 		c.Env = append(c.Env, corev1.EnvVar{Name: "CAMOFOX_URL", Value: camofoxURL})
 	}
 

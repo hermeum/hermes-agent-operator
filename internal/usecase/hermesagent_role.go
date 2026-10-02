@@ -31,7 +31,7 @@ func (u *HermesAgentUseCase) reconcileRole(ctx context.Context, ha *agentsv1alph
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	rules := ha.GetSecurity().GetRBAC().GetAdditionalRules()
+	rules := append(sessionPodRules(ha), ha.GetSecurity().GetRBAC().GetAdditionalRules()...)
 	saName := ha.GetServiceAccountName()
 
 	if len(rules) == 0 || saName == "" {
@@ -150,6 +150,37 @@ func buildRoleBinding(ha *agentsv1alpha1.HermesAgent, saName string) *rbacv1.Rol
 			APIGroup: rbacv1.GroupName,
 			Kind:     "Role",
 			Name:     ha.Name,
+		},
+	}
+}
+
+// sessionPodRules are the permissions the Hermes `kubernetes` terminal backend
+// needs on the agent's own ServiceAccount to drive session pods.
+//
+// The operator's ClusterRole holds these same verbs: Kubernetes refuses to let
+// a controller grant a permission it does not itself hold, so a Role built from
+// these rules is only creatable because cmd/main.go's RBAC markers include them.
+func sessionPodRules(ha *agentsv1alpha1.HermesAgent) []agentsv1alpha1.RBACRule {
+	if !ha.GetHermes().GetTerminal().GetKubernetes().ShouldManageRBAC() {
+		return nil
+	}
+	return []agentsv1alpha1.RBACRule{
+		{
+			// `get` also resolves the agent's own pod for the ownerReference
+			// that garbage-collects session pods, and reads pod status while
+			// waiting for readiness.
+			APIGroups: []string{""},
+			Resources: []string{"pods"},
+			Verbs:     []string{"create", "get", "delete"},
+		},
+		{
+			// Both verbs. The client opens exec as a websocket-upgrading GET,
+			// which the API server refuses with 403 unless `create` is granted
+			// too — `get` alone yields a healthy startup on which every command
+			// then fails.
+			APIGroups: []string{""},
+			Resources: []string{"pods/exec"},
+			Verbs:     []string{"get", "create"},
 		},
 	}
 }
