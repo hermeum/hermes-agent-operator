@@ -2,12 +2,16 @@
 
 ## Project Structure
 
+### Kubebuilder Layout
+
 **Single-group layout (default):**
 ```
 cmd/main.go                    Manager entry (registers controllers/webhooks)
 api/<version>/*_types.go       CRD schemas (+kubebuilder markers)
 api/<version>/zz_generated.*   Auto-generated (DO NOT EDIT)
-internal/controller/*          Reconciliation logic
+internal/controller/*          Thin wiring (implements Reconciler, delegates to usecase)
+internal/usecase/*             Reconciliation logic (one file per owned resource)
+internal/infras/*              Interface adapters (Kubernetes API, Prometheus, PostHog)
 internal/webhook/*             Validation/defaulting (if present)
 config/crd/bases/*             Generated CRDs (DO NOT EDIT)
 config/rbac/role.yaml          Generated RBAC (DO NOT EDIT)
@@ -33,6 +37,28 @@ Multi-group layout organizes APIs by group name (e.g., `batch`, `apps`). Check t
 5. Update import paths in all files
 6. Fix `path` in `PROJECT` file for each resource
 7. Update test suite CRD paths (add one more `..` to relative paths)
+
+### Clean Architecture
+
+**Layering:** `controller → usecase → infras`. Dependencies point inward. `internal/usecase/` owns the reconciliation logic for all resources the controller manages and never imports controller-runtime clients or `internal/infras` packages directly.
+
+**Decouple external access via interfaces:** every access to an external resource — Kubernetes API, metrics, heartbeat — goes through narrow interfaces **defined in the consumer package** (`internal/usecase/`), not by the provider:
+
+- `Kubernetes`, `Telemetry` — `internal/usecase/hermesagent_interface.go`
+- `HeartbeatSender` (with `NoopHeartbeat` fallback) — `internal/usecase/heartbeat_interface.go`
+
+Concrete adapters live in `internal/infras/` (`kubernetes.go`, `prometheus.go`, `posthog.go`) and are injected via constructors (`NewHermesAgentUseCase(kube, tel)`).
+
+**To add a new external resource access:**
+1. Define the method on the consumer-side interface in `internal/usecase/*_interface.go`
+2. Give it a single `XxxParam` struct (param structs over long argument lists)
+3. Implement it in `internal/infras/`
+
+**One file per owned resource:** each managed resource gets its own `hermesagent_<resource>.go` in `internal/usecase/` (e.g. `hermesagent_statefulset.go`, `hermesagent_service.go`), orchestrated by `hermesagent.go`.
+
+**Noop implementations:** optional/out-of-band dependencies get a no-op implementation (e.g. `NoopHeartbeat`) so their failures never affect reconciliation.
+
+**Testing:** usecase tests use hand-written in-package fakes implementing the interfaces (`silentTelemetry`, `fake*Kube`) — no envtest needed. Controller-level tests cover the wiring.
 
 ## Critical Rules
 
@@ -204,8 +230,9 @@ kubectl logs -n <project>-system deployment/<project>-controller-manager -c mana
 
 **Implementation rules:**
 - **Idempotent reconciliation**: Safe to run multiple times
-- **Re-fetch before updates**: `r.Get(ctx, req.NamespacedName, obj)` before `r.Update` to avoid conflicts
-- **Structured logging**: `log := log.FromContext(ctx); log.Info("msg", "key", val)`
+- **Thin controllers**: Controllers only wire the Reconciler and call the usecase; reconciliation logic lives in `internal/usecase/`
+- **Re-fetch before updates**: Access the API through the usecase interfaces (e.g. `u.kube.GetHermesAgent(...)` before a status update) to avoid conflicts
+- **Structured logging**: Emit via the `Telemetry` interface (`tel.Info(ctx, "msg", "key", val)`), not `log.FromContext` directly
 - **Owner references**: Enable automatic garbage collection (`SetControllerReference`)
 - **Watch secondary resources**: Use `.Owns()` or `.Watches()`, not just `RequeueAfter`
 - **Finalizers**: Clean up external resources (buckets, VMs, DNS entries)
