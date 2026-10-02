@@ -155,6 +155,31 @@ func TestResolveConfigDocuments(t *testing.T) {
 		})
 	}
 
+	t.Run("every field that sets both is named in one error", func(t *testing.T) {
+		ha := haWithConfigRef("agent-config", "")
+		ha.Spec.Hermes.Config.Raw = imageJSON(`{"model":"inline"}`)
+		ha.Spec.Hermes.Profiles = map[string]agentsv1alpha1.HermesProfile{
+			"writer": {Config: &agentsv1alpha1.HermesProfileConfig{
+				Raw:          imageJSON(`{"model":"inline"}`),
+				ConfigMapRef: &agentsv1alpha1.HermesConfigMapKeyRef{Name: "agent-config"},
+			}},
+			"coder": {Config: &agentsv1alpha1.HermesProfileConfig{
+				Raw:          imageJSON(`{"model":"inline"}`),
+				ConfigMapRef: &agentsv1alpha1.HermesConfigMapKeyRef{Name: "agent-config"},
+			}},
+		}
+
+		_, err := uc.resolveConfigDocuments(ctx, ha)
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		// One round trip corrects all three, in name order.
+		want := `both are set in hermes.config, profile "coder" config, profile "writer" config`
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("expected %q, got %v", want, err)
+		}
+	})
+
 	t.Run("raw and configMapRef together fail for the default profile", func(t *testing.T) {
 		ha := haWithConfigRef("agent-config", "")
 		ha.Spec.Hermes.Config.Raw = imageJSON(`{"model":"inline"}`)

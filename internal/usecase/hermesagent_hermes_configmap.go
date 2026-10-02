@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
 	"strconv"
@@ -93,13 +92,36 @@ type resolvedConfigDocuments struct {
 // config
 // is the user's declared intent, and quietly starting the agent without it
 // would be worse than waiting for the `ConfigMap` to appear.
+// `validateConfigSources` reports every config that sets both `raw` and
+// `configMapRef`.  One pass names them all, so a spec with several invalid
+// fields takes one round trip to correct instead of one per field.
+func validateConfigSources(ha *agentsv1alpha1.HermesAgent) error {
+	var both []string
+	if h := ha.GetHermes(); h.GetConfigMapRef() != nil && h.GetConfig() != nil {
+		both = append(both, "hermes.config")
+	}
+	profiles := ha.GetHermes().GetProfiles()
+	for _, name := range ha.GetHermes().GetSortedProfileNames() {
+		cfg := profiles[name].Config
+		if cfg.GetConfigMapRef() != nil && cfg.GetRaw() != nil {
+			both = append(both, fmt.Sprintf("profile %q config", name))
+		}
+	}
+	if len(both) > 0 {
+		return fmt.Errorf("raw and configMapRef are mutually exclusive, and both are set in %s",
+			strings.Join(both, ", "))
+	}
+	return nil
+}
+
 func (u *HermesAgentUseCase) resolveConfigDocuments(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (resolvedConfigDocuments, error) {
 	var out resolvedConfigDocuments
 
+	if err := validateConfigSources(ha); err != nil {
+		return out, err
+	}
+
 	if ref := ha.GetHermes().GetConfigMapRef(); ref != nil {
-		if ha.GetHermes().GetConfig() != nil {
-			return out, errors.New("hermes.config: raw and configMapRef are mutually exclusive")
-		}
 		doc, err := u.readConfigDocument(ctx, ha.Namespace, ref)
 		if err != nil {
 			return out, fmt.Errorf("resolving hermes.config.configMapRef: %w", err)
@@ -108,13 +130,9 @@ func (u *HermesAgentUseCase) resolveConfigDocuments(ctx context.Context, ha *age
 	}
 
 	for _, name := range ha.GetHermes().GetSortedProfileNames() {
-		cfg := ha.GetHermes().GetProfiles()[name].Config
-		ref := cfg.GetConfigMapRef()
+		ref := ha.GetHermes().GetProfiles()[name].Config.GetConfigMapRef()
 		if ref == nil {
 			continue
-		}
-		if cfg.GetRaw() != nil {
-			return out, fmt.Errorf("profile %q config: raw and configMapRef are mutually exclusive", name)
 		}
 		doc, err := u.readConfigDocument(ctx, ha.Namespace, ref)
 		if err != nil {
