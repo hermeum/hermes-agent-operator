@@ -66,6 +66,23 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	}
 
 	desired := buildStatefulSet(ha)
+
+	// Fold the CA cert into the pod template so a rotated CA rolls the pod
+	// (buildStatefulSet is pure and can't read Secret contents). The single-pod
+	// rolling update moves the agent trust and iron-proxy signing CA together.
+	if ha.GetEgress().IsEnabled() {
+		caHash, err := u.egressCACertHash(ctx, ha)
+		if err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+		if caHash != "" {
+			if desired.Spec.Template.Annotations == nil {
+				desired.Spec.Template.Annotations = map[string]string{}
+			}
+			desired.Spec.Template.Annotations[domain+"/egress-ca-hash"] = caHash
+		}
+	}
+
 	hash := desiredSpecHash(desired)
 	if desired.Annotations == nil {
 		desired.Annotations = map[string]string{}
@@ -148,6 +165,23 @@ func (u *HermesAgentUseCase) deriveStatus(ctx context.Context, ha *agentsv1alpha
 	}
 
 	return hermesAgentPhase(pod), pod
+}
+
+// egressCACertHash hashes the egress CA cert (or "" if the Secret isn't present
+// yet) to stamp on the pod template so CA rotation triggers a rolling restart.
+func (u *HermesAgentUseCase) egressCACertHash(ctx context.Context, ha *agentsv1alpha1.HermesAgent) (string, error) {
+	secretName, certKey, _ := ha.GetEgressCASource()
+	secret, err := u.kube.GetSecret(ctx, GetSecretParam{
+		NamespacedName: types.NamespacedName{Name: secretName, Namespace: ha.Namespace},
+	})
+	if err != nil {
+		return "", err
+	}
+	if secret == nil {
+		return "", nil
+	}
+	h := sha256.Sum256(secret.Data[certKey])
+	return fmt.Sprintf("%x", h[:])[:16], nil
 }
 
 func configMapDataHash(data map[string]string) string {
@@ -233,6 +267,7 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
 	sts = buildHermesContainer(ha, sts)
 	sts = buildSearXNGContainer(ha, sts)
 	sts = buildCamofoxContainer(ha, sts)
+	sts = buildEgressContainer(ha, sts)
 
 	// additional user-provided init containers run after the operator-managed ones.
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, ha.GetInitContainers()...)
@@ -1009,6 +1044,151 @@ func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		})
 	}
+
+	return sts
+}
+
+// buildEgressContainerSecurityContext returns a hardened security context for
+// the iron-proxy container. The tunnel listener binds a high (non-privileged)
+// port, so no NET_BIND_SERVICE capability is granted.
+func buildEgressContainerSecurityContext() *corev1.SecurityContext {
+	ape := false
+	rot := true
+	uid := int64(65532)
+	gid := int64(65532)
+	rofs := true
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &ape,
+		RunAsNonRoot:             &rot,
+		RunAsUser:                &uid,
+		RunAsGroup:               &gid,
+		ReadOnlyRootFilesystem:   &rofs,
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+}
+
+// buildEgressContainer injects the iron-proxy egress credential-injection
+// sidecar. The agent routes all outbound HTTP(S) through it via
+// HTTPS_PROXY/HTTP_PROXY and trusts iron-proxy's MITM CA via the standard
+// CA-bundle env vars, while cluster-internal traffic (MCP, DB, sidecars) is
+// exempted through NO_PROXY.
+//
+// Real credentials are read into the sidecar's own env from the user's Secret
+// (one env var per inject rule) and iron-proxy injects them per matching host,
+// so the credentials live only in the sidecar. The operator does NOT strip
+// pre-existing credential env from the agent container: agent credentials
+// arrive via envFrom / spec.hermes.env which the operator cannot inspect
+// granularly. The security win is that the injected credentials are never
+// present in the agent container, not that all agent env is scrubbed.
+func buildEgressContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSet) *appsv1.StatefulSet {
+	sts = sts.DeepCopy()
+
+	eg := ha.GetEgress()
+	if !eg.IsEnabled() {
+		return sts
+	}
+
+	const (
+		egressContainerName = "iron-proxy"
+		egressConfigVolume  = "egress-config"
+		egressConfigMount   = egressCAMountDir // /etc/iron-proxy
+		egressCAVolume      = "egress-ca"
+		// agentCAMount is where the CA cert is mounted read-only in the agent
+		// container so its HTTP clients trust iron-proxy's MITM certs.
+		agentCAVolume = "egress-agent-ca"
+		agentCADir    = "/etc/hermes-egress"
+	)
+	agentCAPath := agentCADir + "/" + egressCACertKey
+
+	// Mounted file names stay ca.crt/ca.key (constant proxy.yaml + trust paths);
+	// only the source Secret and its data keys (the SubPath) vary.
+	caSecretName, caCertKey, caKeyKey := ha.GetEgressCASource()
+
+	proxyURL := fmt.Sprintf("http://localhost:%d", agentsv1alpha1.DefaultEgressTunnelPort)
+
+	// Wire the agent container: proxy env + CA trust env + CA mount.
+	if c := findContainer(sts, hermesContainerName); c != nil {
+		c.Env = append(c.Env,
+			corev1.EnvVar{Name: "HTTPS_PROXY", Value: proxyURL},
+			corev1.EnvVar{Name: "HTTP_PROXY", Value: proxyURL},
+			// Cluster-internal traffic (in-pod sidecars, MCP servers, DB, the
+			// kube API) must bypass the proxy.
+			corev1.EnvVar{Name: "NO_PROXY", Value: "localhost,127.0.0.1,.svc,.cluster.local"},
+			// Trust iron-proxy's MITM CA across the common client stacks.
+			corev1.EnvVar{Name: "SSL_CERT_FILE", Value: agentCAPath},
+			corev1.EnvVar{Name: "REQUESTS_CA_BUNDLE", Value: agentCAPath},
+			corev1.EnvVar{Name: "NODE_EXTRA_CA_CERTS", Value: agentCAPath},
+			corev1.EnvVar{Name: "GIT_SSL_CAINFO", Value: agentCAPath},
+		)
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      agentCAVolume,
+			MountPath: agentCADir,
+			ReadOnly:  true,
+		})
+	}
+
+	// One sidecar env var per inject rule, sourced from the user's Secret. The
+	// env var name matches source.var in the rendered proxy.yaml.
+	env := make([]corev1.EnvVar, 0, len(eg.GetInject()))
+	for i := range eg.GetInject() {
+		valueFrom := eg.GetInject()[i].ValueFrom
+		env = append(env, corev1.EnvVar{
+			Name:      egressCredEnvVar(i),
+			ValueFrom: &valueFrom,
+		})
+	}
+
+	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
+		Name:            egressContainerName,
+		Image:           eg.GetImage(),
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Args:            []string{"-config", egressConfigMount + "/" + egressProxyConfigKey},
+		Env:             env,
+		Ports: []corev1.ContainerPort{
+			{Name: "tunnel", ContainerPort: agentsv1alpha1.DefaultEgressTunnelPort, Protocol: corev1.ProtocolTCP},
+		},
+		Resources:       eg.GetResources(),
+		SecurityContext: buildEgressContainerSecurityContext(),
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: egressConfigVolume, MountPath: egressConfigMount + "/" + egressProxyConfigKey, SubPath: egressProxyConfigKey, ReadOnly: true},
+			{Name: egressCAVolume, MountPath: egressConfigMount + "/" + egressCACertKey, SubPath: caCertKey, ReadOnly: true},
+			{Name: egressCAVolume, MountPath: egressConfigMount + "/" + egressCAKeyKey, SubPath: caKeyKey, ReadOnly: true},
+		},
+	})
+
+	defaultMode := int32(0o444)
+	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes,
+		corev1.Volume{
+			Name: egressConfigVolume,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: ha.GetEgressConfigName()},
+				},
+			},
+		},
+		corev1.Volume{
+			Name: egressCAVolume,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: caSecretName},
+			},
+		},
+		corev1.Volume{
+			// Agent-side: only the CA cert (never the key) is exposed to the agent.
+			Name: agentCAVolume,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  caSecretName,
+					Items:       []corev1.KeyToPath{{Key: caCertKey, Path: egressCACertKey}},
+					DefaultMode: &defaultMode,
+				},
+			},
+		},
+	)
 
 	return sts
 }

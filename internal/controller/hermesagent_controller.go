@@ -27,8 +27,11 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // HermesAgentReconciler reconciles a HermesAgent object
@@ -78,6 +81,28 @@ func (r *HermesAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&networkingv1.Ingress{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Owns(&corev1.Secret{}).
+		// A user-supplied egress CA (spec.egress.ca.secretRef) is not Owned, so
+		// watch Secrets to catch its rotation and re-reconcile the referencing agent.
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.hermesAgentsForCASecret)).
 		Named("hermesagent").
 		Complete(r)
+}
+
+// hermesAgentsForCASecret enqueues HermesAgents in the Secret's namespace that
+// reference it as their egress CA (spec.egress.ca.secretRef).
+func (r *HermesAgentReconciler) hermesAgentsForCASecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list agentsv1alpha1.HermesAgentList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range list.Items {
+		ha := &list.Items[i]
+		if ha.GetEgress().GetCASecretRefName() == obj.GetName() {
+			reqs = append(reqs, reconcile.Request{
+				NamespacedName: types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name},
+			})
+		}
+	}
+	return reqs
 }

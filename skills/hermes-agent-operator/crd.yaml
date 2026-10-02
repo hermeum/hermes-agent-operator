@@ -317,6 +317,280 @@ spec:
                         type: object
                     type: object
                 type: object
+              egress:
+                description: Egress configures an optional iron-proxy egress credential-injection
+                  sidecar.
+                properties:
+                  allowedHosts:
+                    description: |-
+                      AllowedHosts is the egress allowlist. Requests to any host not in this
+                      list are rejected with a 403. Hosts injected via Inject are always
+                      allowed and need not be repeated here.
+                    items:
+                      type: string
+                    type: array
+                  ca:
+                    description: |-
+                      CA selects the iron-proxy MITM CA. Omitted: the operator generates and
+                      preserves a self-signed CA. Set CA.SecretRef to bring your own.
+                    properties:
+                      secretRef:
+                        description: |-
+                          SecretRef points at an existing kubernetes.io/tls Secret in the agent's
+                          namespace (keys tls.crt/tls.key) holding a CA cert + key — the shape a
+                          cert-manager Certificate with isCA: true produces. The operator uses it
+                          verbatim (never creates, owns, or deletes it) and rolls the pod when it
+                          changes so rotation takes effect. Omit for the operator-managed CA.
+                        properties:
+                          name:
+                            description: Name of the Secret in the HermesAgent's namespace.
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    type: object
+                  enabled:
+                    description: Enabled turns on the iron-proxy egress sidecar.
+                    type: boolean
+                  image:
+                    description: Image configures the iron-proxy container image.
+                    properties:
+                      repository:
+                        description: repository is the image repository. Defaults
+                          to "docker.io/ironsh/iron-proxy".
+                        type: string
+                      tag:
+                        description: tag is the image tag. Defaults to a pinned iron-proxy
+                          version.
+                        type: string
+                    type: object
+                  inject:
+                    description: |-
+                      Inject configures per-host credential injection. Each rule reads a real
+                      secret from a Kubernetes Secret (via ValueFrom) into the sidecar's own
+                      environment and injects it as a header on requests to the matching host.
+                      The agent sends no credential of its own.
+                    items:
+                      description: EgressInject configures credential injection for
+                        a single destination host.
+                      properties:
+                        formatter:
+                          description: |-
+                            Formatter is the Go template applied to the credential before it is
+                            written to the header. The secret value is available as {{ .Value }}.
+                            Defaults to "Bearer {{ .Value }}".
+                          type: string
+                        header:
+                          description: |-
+                            Header is the request header the credential is injected into.
+                            Defaults to "Authorization".
+                          type: string
+                        host:
+                          description: |-
+                            Host is the destination host the credential is injected for
+                            (e.g. "api.example.com"). Wildcards (e.g. "*.example.com") follow
+                            iron-proxy's allowlist matching.
+                          type: string
+                        valueFrom:
+                          description: |-
+                            ValueFrom sources the real credential (e.g. a secretKeyRef into the
+                            user's existing Secret). The operator derives a deterministic env var
+                            name for the sidecar and wires this source to it.
+                          properties:
+                            configMapKeyRef:
+                              description: Selects a key of a ConfigMap.
+                              properties:
+                                key:
+                                  description: The key to select.
+                                  type: string
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                                optional:
+                                  description: Specify whether the ConfigMap or its
+                                    key must be defined
+                                  type: boolean
+                              required:
+                              - key
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            fieldRef:
+                              description: |-
+                                Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
+                                spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                              properties:
+                                apiVersion:
+                                  description: Version of the schema the FieldPath
+                                    is written in terms of, defaults to "v1".
+                                  type: string
+                                fieldPath:
+                                  description: Path of the field to select in the
+                                    specified API version.
+                                  type: string
+                              required:
+                              - fieldPath
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            fileKeyRef:
+                              description: |-
+                                FileKeyRef selects a key of the env file.
+                                Requires the EnvFiles feature gate to be enabled.
+                              properties:
+                                key:
+                                  description: |-
+                                    The key within the env file. An invalid key will prevent the pod from starting.
+                                    The keys defined within a source may consist of any printable ASCII characters except '='.
+                                    During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                  type: string
+                                optional:
+                                  default: false
+                                  description: |-
+                                    Specify whether the file or its key must be defined. If the file or key
+                                    does not exist, then the env var is not published.
+                                    If optional is set to true and the specified key does not exist,
+                                    the environment variable will not be set in the Pod's containers.
+
+                                    If optional is set to false and the specified key does not exist,
+                                    an error will be returned during Pod creation.
+                                  type: boolean
+                                path:
+                                  description: |-
+                                    The path within the volume from which to select the file.
+                                    Must be relative and may not contain the '..' path or start with '..'.
+                                  type: string
+                                volumeName:
+                                  description: The name of the volume mount containing
+                                    the env file.
+                                  type: string
+                              required:
+                              - key
+                              - path
+                              - volumeName
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            resourceFieldRef:
+                              description: |-
+                                Selects a resource of the container: only resources limits and requests
+                                (limits.cpu, limits.memory, limits.ephemeral-storage, requests.cpu, requests.memory and requests.ephemeral-storage) are currently supported.
+                              properties:
+                                containerName:
+                                  description: 'Container name: required for volumes,
+                                    optional for env vars'
+                                  type: string
+                                divisor:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: Specifies the output format of the
+                                    exposed resources, defaults to "1"
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                resource:
+                                  description: 'Required: resource to select'
+                                  type: string
+                              required:
+                              - resource
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            secretKeyRef:
+                              description: Selects a key of a secret in the pod's
+                                namespace
+                              properties:
+                                key:
+                                  description: The key of the secret to select from.  Must
+                                    be a valid secret key.
+                                  type: string
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                                optional:
+                                  description: Specify whether the Secret or its key
+                                    must be defined
+                                  type: boolean
+                              required:
+                              - key
+                              type: object
+                              x-kubernetes-map-type: atomic
+                          type: object
+                      required:
+                      - host
+                      - valueFrom
+                      type: object
+                    type: array
+                  resources:
+                    description: Resources specifies compute resources for the iron-proxy
+                      container.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                type: object
               extraVolumeMounts:
                 description: |-
                   ExtraVolumeMounts adds additional volume mounts to the main container.
@@ -7389,6 +7663,14 @@ spec:
                 description: managedResources describes the Kubernetes resources currently
                   owned by this HermesAgent.
                 properties:
+                  egressCASecret:
+                    description: egressCASecret is the name of the managed iron-proxy
+                      CA Secret.
+                    type: string
+                  egressConfigMap:
+                    description: egressConfigMap is the name of the managed iron-proxy
+                      configuration ConfigMap.
+                    type: string
                   hermesConfigMap:
                     description: hermesConfigMap is the name of the Hermes configuration
                       ConfigMap.

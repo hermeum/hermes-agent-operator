@@ -22,6 +22,8 @@ const (
 	condReasonServiceFailed         = "ServiceReconcileFailed"
 	condReasonIngressFailed         = "IngressReconcileFailed"
 	condReasonNetworkPolicyFailed   = "NetworkPolicyReconcileFailed"
+	condReasonEgressCAFailed        = "EgressCAReconcileFailed"
+	condReasonEgressConfigMapFailed = "EgressConfigMapReconcileFailed"
 	condReasonStatefulSetFailed     = "StatefulSetReconcileFailed"
 )
 
