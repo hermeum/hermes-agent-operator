@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -82,5 +83,76 @@ var _ = Describe("HermesAgent Controller", func() {
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
+	})
+})
+
+var _ = Describe("Mapping a ConfigMap to the agents that read a config from it", func() {
+	const namespace = "default"
+
+	ctx := context.Background()
+	reconciler := &HermesAgentReconciler{}
+
+	// agent creates a HermesAgent whose default profile and named profile read
+	// their config from defaultRef and profileRef, either of which may be "".
+	agent := func(name, defaultRef, profileRef string) {
+		hermes := &agentsv1alpha1.Hermes{}
+		if defaultRef != "" {
+			hermes.Config = &agentsv1alpha1.HermesConfig{
+				ConfigMapRef: &agentsv1alpha1.HermesConfigMapKeyRef{Name: defaultRef},
+			}
+		}
+		if profileRef != "" {
+			hermes.Profiles = map[string]agentsv1alpha1.HermesProfile{
+				"coder": {Config: &agentsv1alpha1.HermesProfileConfig{
+					ConfigMapRef: &agentsv1alpha1.HermesConfigMapKeyRef{Name: profileRef},
+				}},
+			}
+		}
+		resource := &agentsv1alpha1.HermesAgent{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Spec:       agentsv1alpha1.HermesAgentSpec{Hermes: hermes},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+		})
+	}
+
+	configMap := func(name, ns string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}
+	}
+
+	names := func(requests []reconcile.Request) []string {
+		out := make([]string, 0, len(requests))
+		for _, r := range requests {
+			out = append(out, r.Name)
+		}
+		return out
+	}
+
+	BeforeEach(func() {
+		reconciler.Client = k8sClient
+		reconciler.Scheme = k8sClient.Scheme()
+	})
+
+	It("enqueues every agent that references it, from the default or a named profile", func() {
+		agent("maps-default", "shared-config", "")
+		agent("maps-profile", "", "shared-config")
+		agent("maps-neither", "other-config", "other-config")
+
+		Expect(names(reconciler.agentsReferencingConfigMap(ctx, configMap("shared-config", namespace)))).
+			To(ConsistOf("maps-default", "maps-profile"))
+	})
+
+	It("enqueues nothing for a ConfigMap no agent references", func() {
+		agent("maps-unrelated", "some-config", "")
+
+		Expect(reconciler.agentsReferencingConfigMap(ctx, configMap("nobody-reads-this", namespace))).To(BeEmpty())
+	})
+
+	It("enqueues nothing for a ConfigMap in another namespace", func() {
+		agent("maps-elsewhere", "shared-config", "")
+
+		Expect(reconciler.agentsReferencingConfigMap(ctx, configMap("shared-config", "kube-system"))).To(BeEmpty())
 	})
 })

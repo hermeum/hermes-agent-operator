@@ -694,11 +694,43 @@ func (w *HermesWebhook) GetPortName() string {
 	return "webhook"
 }
 
+// `HermesConfigMapKeyRef` references a single key of a `ConfigMap` in the
+// HermesAgent's namespace.
+type HermesConfigMapKeyRef struct {
+	// name is the `ConfigMap` name.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// key is the `ConfigMap` key holding the document.  Defaults to "config.yaml".
+	// +kubebuilder:default="config.yaml"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// `GetKey` returns the `ConfigMap` key holding the document.
+func (r *HermesConfigMapKeyRef) GetKey() string {
+	if r == nil || r.Key == "" {
+		return "config.yaml"
+	}
+	return r.Key
+}
+
 // HermesConfig holds the Hermes agent config.yml and related configuration.
 type HermesConfig struct {
 	// raw holds the verbatim Hermes agent config.yml as free-form YAML/JSON.
+	// Mutually exclusive with configMapRef.
 	// +optional
 	Raw *apiextensionsv1.JSON `json:"raw,omitempty"`
+	// `configMapRef` reads the Hermes agent `config.yml` from a key of a
+	// `ConfigMap` in the same namespace, instead of holding it inline in raw.  The
+	// referenced document is treated exactly as raw is: the operator applies
+	// the same defaults to it and copies the result into its own bootstrap
+	// `ConfigMap`, so a change to the referenced `ConfigMap` rolls the agent.
+	// Reconciliation fails while the `ConfigMap` or the key is missing, and fails
+	// when raw is set as well: raw is free-form, so the API server cannot
+	// reject the pair at admission time.
+	// +optional
+	ConfigMapRef *HermesConfigMapKeyRef `json:"configMapRef,omitempty"`
 	// apiServer configures the gateway API server. For convenience, the operator
 	// automatically generates an API key Secret internally — no manual secret
 	// management required. The Secret is persisted across reconciles; enabling
@@ -715,6 +747,21 @@ func (c *HermesConfig) GetRaw() *apiextensionsv1.JSON {
 		return nil
 	}
 	return c.Raw
+}
+
+// `GetConfigMapRef` returns the `ConfigMap` reference holding `config.yml`, if
+// any.
+func (c *HermesConfig) GetConfigMapRef() *HermesConfigMapKeyRef {
+	if c == nil {
+		return nil
+	}
+	return c.ConfigMapRef
+}
+
+// `HasDocument` reports whether a `config.yml` is declared, inline or by
+// reference.
+func (c *HermesConfig) HasDocument() bool {
+	return c.GetRaw() != nil || c.GetConfigMapRef() != nil
 }
 
 func (c *HermesConfig) GetAPIServer() *HermesAPIServer {
@@ -742,12 +789,19 @@ type HermesInitScript struct {
 	Script string `json:"script"`
 }
 
-// HermesProfileConfig holds the raw config.yaml for a named profile.
+// `HermesProfileConfig` holds the `config.yaml` for a named profile.
 // apiServer and webhook are excluded — profiles share a single multiplexed gateway.
 type HermesProfileConfig struct {
 	// raw is the profile config as a JSON-serialized object.
+	// Mutually exclusive with configMapRef.
 	// +optional
 	Raw *apiextensionsv1.JSON `json:"raw,omitempty"`
+	// `configMapRef` reads the profile config from a key of a `ConfigMap` in the
+	// same namespace, instead of holding it inline in raw.  See
+	// HermesConfig.configMapRef, including why setting both fails at
+	// reconcile time rather than at admission time.
+	// +optional
+	ConfigMapRef *HermesConfigMapKeyRef `json:"configMapRef,omitempty"`
 }
 
 func (c *HermesProfileConfig) GetRaw() *apiextensionsv1.JSON {
@@ -755,6 +809,20 @@ func (c *HermesProfileConfig) GetRaw() *apiextensionsv1.JSON {
 		return nil
 	}
 	return c.Raw
+}
+
+// `GetConfigMapRef` returns the `ConfigMap` reference holding the profile
+// config, if any.
+func (c *HermesProfileConfig) GetConfigMapRef() *HermesConfigMapKeyRef {
+	if c == nil {
+		return nil
+	}
+	return c.ConfigMapRef
+}
+
+// `HasDocument` reports whether a config is declared, inline or by reference.
+func (c *HermesProfileConfig) HasDocument() bool {
+	return c.GetRaw() != nil || c.GetConfigMapRef() != nil
 }
 
 // HermesProfile defines a named Hermes profile to create and configure.
@@ -897,6 +965,24 @@ func (h *Hermes) GetConfig() *apiextensionsv1.JSON {
 		return nil
 	}
 	return h.Config.GetRaw()
+}
+
+// `GetConfigMapRef` returns the `ConfigMap` reference holding the default
+// profile's `config.yml`, if any.
+func (h *Hermes) GetConfigMapRef() *HermesConfigMapKeyRef {
+	if h == nil {
+		return nil
+	}
+	return h.Config.GetConfigMapRef()
+}
+
+// `HasConfigDocument` reports whether the default profile declares a
+// `config.yml`, inline or by reference.
+func (h *Hermes) HasConfigDocument() bool {
+	if h == nil {
+		return false
+	}
+	return h.Config.HasDocument()
 }
 
 func (h *Hermes) GetAPIServer() *HermesAPIServer {
@@ -1729,6 +1815,25 @@ func (h *HermesAgent) GetServiceAccountName() string {
 
 func (h *HermesAgent) GetHermes() *Hermes {
 	return h.Spec.Hermes
+}
+
+// `GetConfigSourceConfigMapNames` returns the name of every `ConfigMap` the
+// operator reads a config document from, for the default profile and for each
+// named profile.  Names may repeat when profiles share a `ConfigMap`.
+func (h *HermesAgent) GetConfigSourceConfigMapNames() []string {
+	if h == nil {
+		return nil
+	}
+	var names []string
+	if ref := h.GetHermes().GetConfigMapRef(); ref != nil {
+		names = append(names, ref.Name)
+	}
+	for _, profile := range h.GetHermes().GetProfiles() {
+		if ref := profile.Config.GetConfigMapRef(); ref != nil {
+			names = append(names, ref.Name)
+		}
+	}
+	return names
 }
 
 func (h *HermesAgent) GetSecurity() *HermesSecurity {

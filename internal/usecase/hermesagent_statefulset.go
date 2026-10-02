@@ -65,7 +65,12 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	desired := buildStatefulSet(ha)
+	refs, err := u.resolveConfigDocuments(ctx, ha)
+	if err != nil {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+
+	desired := buildStatefulSet(ha, refs)
 	hash := desiredSpecHash(desired)
 	if desired.Annotations == nil {
 		desired.Annotations = map[string]string{}
@@ -180,14 +185,18 @@ func desiredSpecHash(sts *appsv1.StatefulSet) string {
 	return fmt.Sprintf("%x", h[:])[:16]
 }
 
-func buildStatefulSet(ha *agentsv1alpha1.HermesAgent) *appsv1.StatefulSet {
+// `buildStatefulSet` renders the desired `StatefulSet`. refs holds the config
+// documents read from referenced `ConfigMap` objects, which belong in the
+// config hash so that editing one restarts the `Pod`: the init containers read
+// the config once, at start.
+func buildStatefulSet(ha *agentsv1alpha1.HermesAgent, refs resolvedConfigDocuments) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if ha.IsSuspended() {
 		replicas = int32(0)
 	}
 
 	// The config hash annotation is used to trigger a rolling update of the StatefulSet when the config changes.
-	cm, _ := buildHermesConfigMap(ha)
+	cm, _ := buildHermesConfigMap(ha, refs)
 	configHash := configMapDataHash(cm.Data)
 
 	maxUnavailable := intstr.FromInt32(1)
@@ -464,7 +473,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	var defaultMounts []corev1.VolumeMount
 
 	// config: copy config.yaml from the bootstrap ConfigMap to the data volume.
-	if ha.GetHermes().GetConfig() != nil {
+	if ha.GetHermes().HasConfigDocument() {
 		defaultSteps = append(defaultSteps, buildConfigScript(hermesDefaultProfile))
 	}
 
@@ -623,7 +632,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 
 		steps = append(steps, buildProfileCreationScript(name, profile.Clone))
 
-		if profile.Config.GetRaw() != nil {
+		if profile.Config.HasDocument() {
 			steps = append(steps, buildConfigScript(name))
 		}
 

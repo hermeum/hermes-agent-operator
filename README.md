@@ -101,7 +101,7 @@ Then run the `/hermes-agent-operator` skill to create a custom resource.
 
 ### `hermes.config`
 
-Configure the Hermes agent runtime. `raw`, `apiServer`, and `webhook` can be used independently or together.
+Configure the Hermes agent runtime. `raw`, `configMapRef`, `apiServer`, and `webhook` can be used independently or together, except that `raw` and `configMapRef` are mutually exclusive.
 
 #### `raw`
 
@@ -115,6 +115,28 @@ hermes:
         provider: anthropic
         default: claude-sonnet-4-6
 ```
+
+#### `configMapRef`
+
+Read the same `config.yml` from a `ConfigMap` in the agent's namespace instead of holding it inline. Use this to keep a long config out of the `HermesAgent`, to generate it with a `kustomize` `configMapGenerator`, or to let a different pipeline own the config's lifecycle.
+
+```yaml
+hermes:
+  config:
+    configMapRef:
+      name: my-agent-config        # required; `ConfigMap` in the agent's namespace
+      key: config.yaml             # optional; defaults to "config.yaml"
+```
+
+```sh
+kubectl create configmap my-agent-config --from-file=config.yaml=./config.yaml
+```
+
+The referenced document is treated exactly as `raw` is: the operator applies the same defaults to it (`web.search_backend` for SearXNG, `gateway.multiplex_profiles` for profiles) and copies the result into its own bootstrap `ConfigMap`. A change to the referenced `ConfigMap` reconciles the agent and restarts the `Pod`, because the init containers read the config only at start.
+
+> **Note:** Reconciliation fails, with the reason on the `Ready` condition, while the `ConfigMap` or the key is missing, or when `raw` is set as well. `raw` is free-form, so the API server cannot reject that pair at admission time.
+
+The same field is available per profile. See [`hermes.profiles`](#hermesprofiles).
 
 #### `apiServer`
 
@@ -512,6 +534,10 @@ hermes:
         raw:                           # optional; raw config.yaml content (JSON-serialized)
           model: claude-sonnet-4-5
           # NOTE: apiServer and webhook are not supported here
+        # or, mutually exclusive with raw, read it from a `ConfigMap`:
+        # configMapRef:
+        #   name: coder-config
+        #   key: config.yaml           # optional; defaults to "config.yaml"
       workspace:
         dotEnv:                        # optional; write .env from a ConfigMap and/or Secret
           secretRef:
