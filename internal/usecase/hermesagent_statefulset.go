@@ -117,7 +117,9 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 
 	ha.Status.ManagedResources.StatefulSet = ha.Name
 	phase, pod := u.deriveStatus(ctx, ha)
-	ha.Status.Phase, ha.Status.Reason = phase, firstPodFailure(pod).GetReason()
+	initFailure := initContainerFailure(pod)
+	ha.Status.Phase, ha.Status.Reason = phase, podStatusReason(pod, initFailure)
+	u.applyInitFailedCondition(ctx, ha, initFailure)
 	// The StatefulSet loop runs after every other resource loop, so reaching
 	// this point means all managed resources reconciled. Workload readiness
 	// itself is tracked by status.phase, not by this condition.
@@ -299,6 +301,10 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{script},
+			// A failing step is diagnosed from `status.conditions`, so fall back
+			// to the tail of the container's log when the script itself wrote
+			// no termination message.
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "HOME", Value: hermesHomeMount + "/home"},
@@ -447,6 +453,9 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{"chown -R 10000:10000 /opt/data"},
+			// See the hermes init containers: a failure is diagnosed from
+			// `status.conditions`, which needs the tail of this container's log.
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "HOME", Value: hermesHomeMount + "/home"},
@@ -743,6 +752,8 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{is.Script},
+			// See the operator-managed init containers above.
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "HOME", Value: hermesHomeMount + "/home"},
@@ -864,6 +875,9 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		Image:           sx.GetImage(),
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
+		// See the hermes init containers: a failure is diagnosed from
+		// `status.conditions`, which needs the tail of this container's log.
+		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		Args: []string{
 			fmt.Sprintf(
 				"cp -r /bootstrap-searxng/. /etc/searxng/ && chown -R %d:%d /etc/searxng /var/cache/searxng",
