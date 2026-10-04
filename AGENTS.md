@@ -63,6 +63,9 @@ Concrete adapters live in `internal/infras/` (`kubernetes.go`, `prometheus.go`, 
 - **Spec-derived identity and constants** (resource names, labels, shared URLs, key formats) belong on the CRD type in `api/<version>` (e.g. `ResourceLabels()`, `GetHermesConfigMapRef()`), so both files depend on the API package instead of each other.
 - **Values produced by another reconciler** are read from the live object through the `Kubernetes` interface (e.g. `reconcileStatefulSet` hashes the ConfigMap that `reconcileHermesConfigMap` already ensured) rather than by invoking the other file's builder. `hermesagent.go` owns the ordering guarantee that makes this safe.
 - **Logic spanning multiple resources** belongs in the orchestrator (`hermesagent.go`) or a dedicated shared file — never in one resource's file.
+- This rule applies **between different resources**, not within one resource's file family — companion sub-files of the same resource may share helpers and constants freely.
+
+**Splitting large resource files:** when a `hermesagent_<resource>.go` grows beyond a few hundred lines, split it into companion files named `hermesagent_<resource>_<postfix>.go`, grouped by concern — e.g. per container (`hermesagent_statefulset_searxng.go`, `hermesagent_statefulset_camofox.go`) or by kind of code (shell script generators in `hermesagent_statefulset_hermes_scripts.go`). The reconcile entrypoint, shared constants, and top-level spec assembly stay in the root resource file.
 
 **Noop implementations:** optional/out-of-band dependencies get a no-op implementation (e.g. `NoopHeartbeat`) so their failures never affect reconciliation.
 
