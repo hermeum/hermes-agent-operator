@@ -58,6 +58,12 @@ Concrete adapters live in `internal/infras/` (`kubernetes.go`, `prometheus.go`, 
 
 **One file per owned resource:** each managed resource gets its own `hermesagent_<resource>.go` in `internal/usecase/` (e.g. `hermesagent_statefulset.go`, `hermesagent_service.go`), orchestrated by `hermesagent.go`.
 
+**No cross-file dependencies between resource files:** each `hermesagent_<resource>.go` builds and reconciles only its own resource — it must not call builders, helpers, or constants defined in another `hermesagent_<resource>.go`. When two resource files need the same value:
+
+- **Spec-derived identity and constants** (resource names, labels, shared URLs, key formats) belong on the CRD type in `api/<version>` (e.g. `ResourceLabels()`, `GetHermesConfigMapRef()`), so both files depend on the API package instead of each other.
+- **Values produced by another reconciler** are read from the live object through the `Kubernetes` interface (e.g. `reconcileStatefulSet` hashes the ConfigMap that `reconcileHermesConfigMap` already ensured) rather than by invoking the other file's builder. `hermesagent.go` owns the ordering guarantee that makes this safe.
+- **Logic spanning multiple resources** belongs in the orchestrator (`hermesagent.go`) or a dedicated shared file — never in one resource's file.
+
 **Noop implementations:** optional/out-of-band dependencies get a no-op implementation (e.g. `NoopHeartbeat`) so their failures never affect reconciliation.
 
 **Testing:** usecase tests use hand-written in-package fakes implementing the interfaces (`silentTelemetry`, `fake*Kube`) — no envtest needed. Controller-level tests cover the wiring.
