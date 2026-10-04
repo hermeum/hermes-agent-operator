@@ -82,11 +82,11 @@ func buildNetworkPolicy(ha *agentsv1alpha1.HermesAgent, np *agentsv1alpha1.Netwo
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.Name,
 			Namespace: ha.Namespace,
-			Labels:    resourceLabels(ha),
+			Labels:    ha.ResourceLabels(),
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
-				MatchLabels: selectorLabels(ha),
+				MatchLabels: ha.SelectorLabels(),
 			},
 			PolicyTypes: []networkingv1.PolicyType{
 				networkingv1.PolicyTypeIngress,

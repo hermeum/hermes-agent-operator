@@ -89,12 +89,12 @@ func buildService(ha *agentsv1alpha1.HermesAgent) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        ha.Name,
 			Namespace:   ha.Namespace,
-			Labels:      resourceLabels(ha),
+			Labels:      ha.ResourceLabels(),
 			Annotations: annotations,
 		},
 		Spec: corev1.ServiceSpec{
 			Type:     svc.GetType(),
-			Selector: selectorLabels(ha),
+			Selector: ha.SelectorLabels(),
 			Ports:    buildServicePorts(ha, svc),
 		},
 	}

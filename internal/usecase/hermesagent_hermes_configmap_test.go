@@ -184,11 +184,11 @@ func TestResolveConfigDocuments(t *testing.T) {
 func TestBuildHermesConfigMapWithReferencedDocuments(t *testing.T) {
 	t.Run("referenced document is written as the default profile config", func(t *testing.T) {
 		ha := haWithConfigRef("agent-config", "")
-		cm, err := buildHermesConfigMap(ha, resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)})
+		data, err := buildHermesConfigMapData(ha, resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got := cm.Data["profile.default.config.yaml"]; !strings.Contains(got, "model: opus") {
+		if got := data["profile.default.config.yaml"]; !strings.Contains(got, "model: opus") {
 			t.Errorf("unexpected config.yaml:\n%s", got)
 		}
 	})
@@ -196,11 +196,11 @@ func TestBuildHermesConfigMapWithReferencedDocuments(t *testing.T) {
 	t.Run("operator defaults still apply to a referenced document", func(t *testing.T) {
 		ha := haWithConfigRef("agent-config", "")
 		ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true}
-		cm, err := buildHermesConfigMap(ha, resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)})
+		data, err := buildHermesConfigMapData(ha, resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got := cm.Data["profile.default.config.yaml"]; !strings.Contains(got, "search_backend: searxng") {
+		if got := data["profile.default.config.yaml"]; !strings.Contains(got, "search_backend: searxng") {
 			t.Errorf("expected the SearXNG default to be applied, got:\n%s", got)
 		}
 	})
@@ -216,11 +216,11 @@ func TestBuildHermesConfigMapWithReferencedDocuments(t *testing.T) {
 		}
 		ha.Spec.Hermes.Profiles = map[string]agentsv1alpha1.HermesProfile{"coder": {}}
 
-		cm, err := buildHermesConfigMap(ha, resolvedConfigDocuments{Default: []byte("{}")})
+		data, err := buildHermesConfigMapData(ha, resolvedConfigDocuments{Default: []byte("{}")})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		got := cm.Data["profile.default.config.yaml"]
+		got := data["profile.default.config.yaml"]
 		for _, want := range []string{"search_backend: searxng", "multiplex_profiles: true", "managed_persistence: true"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("expected %q in:\n%s", want, got)
@@ -237,13 +237,13 @@ func TestBuildHermesConfigMapWithReferencedDocuments(t *testing.T) {
 				}},
 			},
 		}
-		cm, err := buildHermesConfigMap(ha, resolvedConfigDocuments{
+		data, err := buildHermesConfigMapData(ha, resolvedConfigDocuments{
 			Profiles: map[string][]byte{"coder": []byte(`{"model":"haiku"}`)},
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got := cm.Data["profile.coder.config.yaml"]; !strings.Contains(got, "model: haiku") {
+		if got := data["profile.coder.config.yaml"]; !strings.Contains(got, "model: haiku") {
 			t.Errorf("unexpected profile config.yaml:\n%s", got)
 		}
 	})
@@ -253,12 +253,26 @@ func TestBuildHermesConfigMapWithReferencedDocuments(t *testing.T) {
 		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
 			Config: &agentsv1alpha1.HermesConfig{Raw: imageJSON(`{"model":"inline"}`)},
 		}
-		cm, err := buildHermesConfigMap(ha, resolvedConfigDocuments{})
+		data, err := buildHermesConfigMapData(ha, resolvedConfigDocuments{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got := cm.Data["profile.default.config.yaml"]; !strings.Contains(got, "model: inline") {
+		if got := data["profile.default.config.yaml"]; !strings.Contains(got, "model: inline") {
 			t.Errorf("unexpected config.yaml:\n%s", got)
+		}
+	})
+
+	t.Run("the assembled ConfigMap carries the ref identity", func(t *testing.T) {
+		ha := haWithConfigRef("agent-config", "")
+		ref := ha.GetHermesConfigMapRef()
+		if ref.Name != ha.GetHermesName() {
+			t.Errorf("expected ref name %q, got %q", ha.GetHermesName(), ref.Name)
+		}
+		if ref.Namespace != ha.Namespace {
+			t.Errorf("expected ref namespace %q, got %q", ha.Namespace, ref.Namespace)
+		}
+		if ref.Labels[agentsv1alpha1.LabelManagedBy] != agentsv1alpha1.ManagedByValue {
+			t.Errorf("expected ref labels to carry %q", agentsv1alpha1.LabelManagedBy)
 		}
 	})
 }
@@ -266,8 +280,18 @@ func TestBuildHermesConfigMapWithReferencedDocuments(t *testing.T) {
 func TestBuildStatefulSetWithReferencedConfig(t *testing.T) {
 	ha := haWithConfigRef("agent-config", "")
 
+	// configHashFor hashes the ConfigMap data the referenced documents yield —
+	// the value reconcileStatefulSet computes from the live ConfigMap.
+	configHashFor := func(refs resolvedConfigDocuments) string {
+		data, err := buildHermesConfigMapData(ha, refs)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		return configMapDataHash(data)
+	}
+
 	t.Run("config step runs for a referenced config", func(t *testing.T) {
-		sts := buildStatefulSet(ha, resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)})
+		sts := buildStatefulSet(ha, configHashFor(resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)}))
 		script := findInitContainer(sts, consolidatedInitContainerName).Args[0]
 		if !strings.Contains(script, "/bootstrap/profile.default.config.yaml") {
 			t.Errorf("expected the config step, got:\n%s", script)
@@ -275,8 +299,8 @@ func TestBuildStatefulSetWithReferencedConfig(t *testing.T) {
 	})
 
 	t.Run("a change to the referenced document rolls the pod", func(t *testing.T) {
-		first := desiredSpecHash(buildStatefulSet(ha, resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)}))
-		second := desiredSpecHash(buildStatefulSet(ha, resolvedConfigDocuments{Default: []byte(`{"model":"haiku"}`)}))
+		first := desiredSpecHash(buildStatefulSet(ha, configHashFor(resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)})))
+		second := desiredSpecHash(buildStatefulSet(ha, configHashFor(resolvedConfigDocuments{Default: []byte(`{"model":"haiku"}`)})))
 		if first == second {
 			t.Error("expected the config hash to follow the referenced document")
 		}

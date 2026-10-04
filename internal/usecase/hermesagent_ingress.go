@@ -103,7 +103,7 @@ func buildIngress(ha *agentsv1alpha1.HermesAgent, ing *agentsv1alpha1.Ingress) *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        ha.Name,
 			Namespace:   ha.Namespace,
-			Labels:      resourceLabels(ha),
+			Labels:      ha.ResourceLabels(),
 			Annotations: annotations,
 		},
 		Spec: networkingv1.IngressSpec{

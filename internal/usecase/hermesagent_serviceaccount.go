@@ -82,7 +82,7 @@ func buildServiceAccount(ha *agentsv1alpha1.HermesAgent) *corev1.ServiceAccount 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        ha.Name,
 			Namespace:   ha.Namespace,
-			Labels:      resourceLabels(ha),
+			Labels:      ha.ResourceLabels(),
 			Annotations: annotations,
 		},
 	}

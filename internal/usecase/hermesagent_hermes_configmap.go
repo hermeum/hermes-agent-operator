@@ -26,9 +26,9 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 		}
 	}()
 
-	cmName := ha.GetHermesName()
+	nsName := types.NamespacedName{Name: ha.GetHermesName(), Namespace: ha.Namespace}
 	cm, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{
-		NamespacedName: types.NamespacedName{Name: cmName, Namespace: ha.Namespace},
+		NamespacedName: nsName,
 	})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
@@ -39,9 +39,18 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	desired, err := buildHermesConfigMap(ha, refs)
+	data, err := buildHermesConfigMapData(ha, refs)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+	}
+	ref := ha.GetHermesConfigMapRef()
+	desired := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ref.Name,
+			Namespace: ref.Namespace,
+			Labels:    ref.Labels,
+		},
+		Data: data,
 	}
 
 	if cm != nil {
@@ -250,7 +259,10 @@ func applyCamofoxConfigDefaults(raw []byte) ([]byte, error) {
 	return out, nil
 }
 
-func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent, refs resolvedConfigDocuments) (*corev1.ConfigMap, error) {
+// `buildHermesConfigMapData` computes the ConfigMap's data keys from the spec
+// and the resolved config documents. Object assembly (name, namespace,
+// labels) comes from `ha.GetHermesConfigMapRef()` at the reconcile site.
+func buildHermesConfigMapData(ha *agentsv1alpha1.HermesAgent, refs resolvedConfigDocuments) (map[string]string, error) {
 	data := map[string]string{}
 
 	// Collect the default profile's config, from `configMapRef` or raw; SearXNG
@@ -302,7 +314,7 @@ func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent, refs resolvedConfigDoc
 
 	if hw := ha.GetHermes().GetWorkspace(); hw != nil {
 		for path, content := range hw.Files {
-			key := "profile.default.workspace." + strings.ReplaceAll(path, "/", hermesWorkspacePathSeparator)
+			key := "profile.default.workspace." + strings.ReplaceAll(path, "/", agentsv1alpha1.HermesWorkspacePathSeparator)
 			data[key] = content
 		}
 	}
@@ -323,7 +335,7 @@ func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent, refs resolvedConfigDoc
 		}
 		if profile.Workspace != nil {
 			for path, content := range profile.Workspace.Files {
-				key := "profile." + name + ".workspace." + strings.ReplaceAll(path, "/", hermesWorkspacePathSeparator)
+				key := "profile." + name + ".workspace." + strings.ReplaceAll(path, "/", agentsv1alpha1.HermesWorkspacePathSeparator)
 				data[key] = content
 			}
 		}
@@ -348,18 +360,11 @@ func buildHermesConfigMap(ha *agentsv1alpha1.HermesAgent, refs resolvedConfigDoc
 		data["WEBHOOK_PORT"] = strconv.Itoa(int(webhook.GetPort()))
 	}
 	if ha.GetSearXNG().IsEnabled() {
-		data["SEARXNG_URL"] = searxngURL
+		data["SEARXNG_URL"] = agentsv1alpha1.SearXNGURL
 	}
 	if ha.GetCamofox().IsEnabled() {
-		data["CAMOFOX_URL"] = camofoxURL
+		data["CAMOFOX_URL"] = agentsv1alpha1.CamofoxURL
 	}
 
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      ha.GetHermesName(),
-			Namespace: ha.Namespace,
-			Labels:    resourceLabels(ha),
-		},
-		Data: data,
-	}, nil
+	return data, nil
 }

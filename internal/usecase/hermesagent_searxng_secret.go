@@ -73,7 +73,7 @@ func buildSearXNGSecret(ha *agentsv1alpha1.HermesAgent) (*corev1.Secret, error) 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.GetSearXNGName(),
 			Namespace: ha.Namespace,
-			Labels:    resourceLabels(ha),
+			Labels:    ha.ResourceLabels(),
 		},
 		Data: map[string][]byte{
 			"SEARXNG_SECRET": []byte(fmt.Sprintf("%x", raw)),

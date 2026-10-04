@@ -126,7 +126,7 @@ func buildRole(ha *agentsv1alpha1.HermesAgent, rules []agentsv1alpha1.RBACRule) 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.Name,
 			Namespace: ha.Namespace,
-			Labels:    resourceLabels(ha),
+			Labels:    ha.ResourceLabels(),
 		},
 		Rules: policyRules,
 	}
@@ -137,7 +137,7 @@ func buildRoleBinding(ha *agentsv1alpha1.HermesAgent, saName string) *rbacv1.Rol
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.Name,
 			Namespace: ha.Namespace,
-			Labels:    resourceLabels(ha),
+			Labels:    ha.ResourceLabels(),
 		},
 		Subjects: []rbacv1.Subject{
 			{

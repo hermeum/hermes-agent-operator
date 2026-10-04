@@ -72,7 +72,7 @@ func buildSearXNGConfigMap(ha *agentsv1alpha1.HermesAgent) *corev1.ConfigMap {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.GetSearXNGName(),
 			Namespace: ha.Namespace,
-			Labels:    resourceLabels(ha),
+			Labels:    ha.ResourceLabels(),
 		},
 		Data: ha.GetSearXNG().GetConfigFiles(),
 	}
