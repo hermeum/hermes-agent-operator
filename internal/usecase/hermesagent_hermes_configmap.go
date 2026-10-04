@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
-	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -78,10 +77,6 @@ func (u *HermesAgentUseCase) reconcileHermesConfigMap(ctx context.Context, ha *a
 	return ctrl.Result{}, nil
 }
 
-func configMapDataEqual(a, b *corev1.ConfigMap) bool {
-	return maps.Equal(a.Data, b.Data)
-}
-
 // `resolvedConfigDocuments` holds the config documents read from the
 // `ConfigMap` objects the spec references, converted to JSON so they flow
 // through the same defaulting as an inline raw config.
@@ -112,7 +107,7 @@ func (u *HermesAgentUseCase) resolveConfigDocuments(ctx context.Context, ha *age
 		out.Default = doc
 	}
 
-	for _, name := range sortedProfileNames(ha.GetHermes().GetProfiles()) {
+	for _, name := range ha.GetHermes().GetSortedProfileNames() {
 		cfg := ha.GetHermes().GetProfiles()[name].Config
 		ref := cfg.GetConfigMapRef()
 		if ref == nil {

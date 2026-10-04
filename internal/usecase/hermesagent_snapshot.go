@@ -218,7 +218,7 @@ func buildDataPVCName(ha *agentsv1alpha1.HermesAgent) string {
 		return ec
 	}
 	if es := ha.GetHermes().GetPersistence().GetExistingSnapshot(); es != "" {
-		return buildRestoredPVCName(es)
+		return agentsv1alpha1.RestoredPVCName(es)
 	}
 	return fmt.Sprintf("%s-%s-0", hermesHomeVolume, ha.Name)
 }

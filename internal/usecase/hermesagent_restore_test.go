@@ -607,8 +607,8 @@ func TestReconcileRestore_StorageClass(t *testing.T) {
 }
 
 func TestBuildRestoredPVCName(t *testing.T) {
-	if got := buildRestoredPVCName(simpleSnapshot); got != simpleRestoredPVC {
-		t.Errorf("buildRestoredPVCName() = %q, want %q", got, simpleRestoredPVC)
+	if got := agentsv1alpha1.RestoredPVCName(simpleSnapshot); got != simpleRestoredPVC {
+		t.Errorf("agentsv1alpha1.RestoredPVCName() = %q, want %q", got, simpleRestoredPVC)
 	}
 }
 

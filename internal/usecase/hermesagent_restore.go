@@ -70,7 +70,7 @@ func (u *HermesAgentUseCase) reconcileRestore(ctx context.Context, ha *agentsv1a
 	}
 
 	nsName := types.NamespacedName{Namespace: ha.Namespace, Name: ha.Name}
-	restoredPVCName := buildRestoredPVCName(source)
+	restoredPVCName := agentsv1alpha1.RestoredPVCName(source)
 
 	// Provision the restore PVC from the snapshot while the agent keeps
 	// running on its current volume.
@@ -176,12 +176,6 @@ func statefulSetHasVolumeClaimTemplate(sts *appsv1.StatefulSet, name string) boo
 	return false
 }
 
-// buildRestoredPVCName returns the deterministic name of the PVC provisioned
-// from a restore source snapshot: <snapshot>-restore.
-func buildRestoredPVCName(snapshotName string) string {
-	return fmt.Sprintf("%s-restore", snapshotName)
-}
-
 // buildRestoredPVC constructs the PVC provisioned from the source snapshot.
 // The name derives from the snapshot; the size from the snapshot's
 // restoreSize (no user-supplied size needed); the storage class comes from
@@ -198,7 +192,7 @@ func buildRestoredPVC(ha *agentsv1alpha1.HermesAgent, snapshot *VolumeSnapshot) 
 
 	return &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      buildRestoredPVCName(snapshot.Name),
+			Name:      agentsv1alpha1.RestoredPVCName(snapshot.Name),
 			Namespace: ha.Namespace,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{

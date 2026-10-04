@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	"encoding/json"
 	"maps"
+	"sort"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -195,6 +196,12 @@ func (p *HermesPersistence) GetExistingSnapshot() string {
 		return *p.ExistingSnapshot
 	}
 	return ""
+}
+
+// RestoredPVCName is the deterministic name of the PersistentVolumeClaim
+// provisioned from a restore source snapshot: <snapshot>-restore.
+func RestoredPVCName(snapshotName string) string {
+	return snapshotName + "-restore"
 }
 
 func (p *HermesPersistence) GetSize() resource.Quantity {
@@ -1077,6 +1084,20 @@ func (h *Hermes) GetProfiles() map[string]HermesProfile {
 	return h.Profiles
 }
 
+// GetSortedProfileNames returns the profile names in a deterministic order, so
+// reconcilers iterate the spec's profiles without map-order nondeterminism.
+func (h *Hermes) GetSortedProfileNames() []string {
+	if h == nil {
+		return nil
+	}
+	names := make([]string, 0, len(h.Profiles))
+	for name := range h.Profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func (h *Hermes) GetEnv() []corev1.EnvVar {
 	if h == nil {
 		return nil
@@ -1929,6 +1950,10 @@ const (
 	// HermesWorkspacePathSeparator replaces "/" in workspace-file ConfigMap keys.
 	HermesWorkspacePathSeparator = "--"
 )
+
+// HermesDataVolumeName is the StatefulSet volumeClaimTemplate name for the
+// agent data PVC, shared by the reconcilers that mount or snapshot it.
+const HermesDataVolumeName = "hermes-data"
 
 // ResourceLabels returns the labels applied to every resource the operator
 // manages.
