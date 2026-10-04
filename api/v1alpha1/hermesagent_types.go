@@ -1909,6 +1909,78 @@ func (h *HermesAgent) GetCamofoxName() string {
 	return h.Name + "-camofox"
 }
 
+// Standard resource labels applied to every resource the operator manages.
+const (
+	LabelName      = "app.kubernetes.io/name"
+	LabelInstance  = "app.kubernetes.io/instance"
+	LabelManagedBy = "app.kubernetes.io/managed-by"
+
+	AppNameValue   = "hermes-agent"
+	ManagedByValue = "hermes-agent-operator"
+)
+
+// Shared operator-managed values referenced by both the bootstrap ConfigMap
+// data and the StatefulSet wiring.
+const (
+	// SearXNGURL is the in-pod URL the hermes-agent uses to reach the SearXNG sidecar.
+	SearXNGURL = "http://localhost:8080"
+	// CamofoxURL is the in-pod URL the hermes-agent uses to reach the Camofox sidecar.
+	CamofoxURL = "http://localhost:9377"
+	// HermesWorkspacePathSeparator replaces "/" in workspace-file ConfigMap keys.
+	HermesWorkspacePathSeparator = "--"
+)
+
+// ResourceLabels returns the labels applied to every resource the operator
+// manages.
+func (h *HermesAgent) ResourceLabels() map[string]string {
+	return map[string]string{
+		LabelName:      AppNameValue,
+		LabelInstance:  h.Name,
+		LabelManagedBy: ManagedByValue,
+	}
+}
+
+// SelectorLabels returns the labels the StatefulSet selector matches. They
+// must never be shadowable by user-provided pod labels.
+func (h *HermesAgent) SelectorLabels() map[string]string {
+	return map[string]string{
+		LabelName:     AppNameValue,
+		LabelInstance: h.Name,
+	}
+}
+
+// PodTemplateLabels returns the labels for the agent pod template.  It copies
+// `spec.podLabels` first, then the operator-managed labels over the top.  An
+// operator-managed label always wins, so an entry in `spec.podLabels` cannot
+// shadow a key that the `StatefulSet` pod selector matches.
+func (h *HermesAgent) PodTemplateLabels() map[string]string {
+	labels := make(map[string]string, len(h.GetPodLabels())+len(h.ResourceLabels()))
+	maps.Copy(labels, h.GetPodLabels())
+	maps.Copy(labels, h.ResourceLabels())
+	return labels
+}
+
+// HermesConfigMapRef identifies the operator-managed bootstrap ConfigMap
+// without building it: its data is assembled by the reconciler.
+type HermesConfigMapRef struct {
+	// Name is the ConfigMap name.
+	Name string
+	// Namespace is the ConfigMap namespace.
+	Namespace string
+	// Labels are the labels applied to the ConfigMap.
+	Labels map[string]string
+}
+
+// GetHermesConfigMapRef returns the identifying reference (name, namespace,
+// labels) of the operator-managed bootstrap ConfigMap.
+func (h *HermesAgent) GetHermesConfigMapRef() *HermesConfigMapRef {
+	return &HermesConfigMapRef{
+		Name:      h.GetHermesName(),
+		Namespace: h.Namespace,
+		Labels:    h.ResourceLabels(),
+	}
+}
+
 // +kubebuilder:object:root=true
 
 // HermesAgentList contains a list of HermesAgent

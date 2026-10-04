@@ -115,7 +115,7 @@ func buildHermesSecret(ha *agentsv1alpha1.HermesAgent, existing *corev1.Secret) 
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.GetHermesName(),
 			Namespace: ha.Namespace,
-			Labels:    resourceLabels(ha),
+			Labels:    ha.ResourceLabels(),
 		},
 		Data: data,
 	}, nil

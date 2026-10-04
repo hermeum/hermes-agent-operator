@@ -22,21 +22,16 @@ import (
 )
 
 const (
-	hermesContainerName          = "hermes-agent"
-	hermesWorkspacePathSeparator = "--"
+	hermesContainerName = "hermes-agent"
 	// hermesHomeVolume is the StatefulSet volumeClaimTemplate name for the agent
 	// data PVC. Package-level so other reconcilers (e.g. snapshots) can share it.
 	hermesHomeVolume          = "hermes-data"
 	hermesDefaultProfile      = "default"
 	annotationDesiredSpecHash = domain + "/desired-spec-hash"
-	// searxngURL is the in-pod URL the hermes-agent uses to reach the SearXNG sidecar.
-	searxngURL = "http://localhost:8080"
 	// searxngUID/searxngGID are the uid/gid of the searxng image user
 	// (upstream container/dist.dockerfile: COPY --chown=977:977).
 	searxngUID = int64(977)
 	searxngGID = int64(977)
-	// camofoxURL is the in-pod URL the hermes-agent uses to reach the Camofox sidecar.
-	camofoxURL = "http://localhost:9377"
 )
 
 // hermesHealthCheckCommand reports the gateway state regardless of which
@@ -65,12 +60,23 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	refs, err := u.resolveConfigDocuments(ctx, ha)
+	// The bootstrap ConfigMap was reconciled before this loop, so the live
+	// data matches the desired data; hashing the live object — the one the
+	// pod actually mounts — keeps the config-hash annotation truthful.
+	cmRef := ha.GetHermesConfigMapRef()
+	cm, err := u.kube.GetConfigMap(ctx, GetConfigMapParam{
+		NamespacedName: types.NamespacedName{Name: cmRef.Name, Namespace: cmRef.Namespace},
+	})
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
+	var cmData map[string]string
+	if cm != nil {
+		cmData = cm.Data
+	}
+	configHash := configMapDataHash(cmData)
 
-	desired := buildStatefulSet(ha, refs)
+	desired := buildStatefulSet(ha, configHash)
 	hash := desiredSpecHash(desired)
 	if desired.Annotations == nil {
 		desired.Annotations = map[string]string{}
@@ -185,31 +191,28 @@ func desiredSpecHash(sts *appsv1.StatefulSet) string {
 	return fmt.Sprintf("%x", h[:])[:16]
 }
 
-// `buildStatefulSet` renders the desired `StatefulSet`. refs holds the config
-// documents read from referenced `ConfigMap` objects, which belong in the
-// config hash so that editing one restarts the `Pod`: the init containers read
-// the config once, at start.
-func buildStatefulSet(ha *agentsv1alpha1.HermesAgent, refs resolvedConfigDocuments) *appsv1.StatefulSet {
+// `buildStatefulSet` renders the desired `StatefulSet`. The `configHash` is
+// the hash of the bootstrap `ConfigMap` data the pod mounts, injected as a pod
+// template annotation so that editing the config restarts the `Pod`: the init
+// containers read the config once, at start.
+func buildStatefulSet(ha *agentsv1alpha1.HermesAgent, configHash string) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if ha.IsSuspended() {
 		replicas = int32(0)
 	}
 
 	// The config hash annotation is used to trigger a rolling update of the StatefulSet when the config changes.
-	cm, _ := buildHermesConfigMap(ha, refs)
-	configHash := configMapDataHash(cm.Data)
-
 	maxUnavailable := intstr.FromInt32(1)
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ha.Name,
 			Namespace: ha.Namespace,
-			Labels:    resourceLabels(ha),
+			Labels:    ha.ResourceLabels(),
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: selectorLabels(ha),
+				MatchLabels: ha.SelectorLabels(),
 			},
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
 				Type: appsv1.RollingUpdateStatefulSetStrategyType,
@@ -219,7 +222,7 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent, refs resolvedConfigDocumen
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: podTemplateLabels(ha),
+					Labels: ha.PodTemplateLabels(),
 					Annotations: map[string]string{
 						domain + "/config-hash": configHash,
 					},
@@ -841,7 +844,7 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 
 	// Inject SEARXNG_URL into the hermes-agent container env so that the web_search tool can find it.
 	if c := findContainer(sts, hermesContainerName); c != nil {
-		c.Env = append(c.Env, corev1.EnvVar{Name: "SEARXNG_URL", Value: searxngURL})
+		c.Env = append(c.Env, corev1.EnvVar{Name: "SEARXNG_URL", Value: agentsv1alpha1.SearXNGURL})
 	}
 
 	// init container: copy config files from the read-only ConfigMap bootstrap volume into the
@@ -886,7 +889,7 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 			{Name: searxngPortName, ContainerPort: searxngPort, Protocol: corev1.ProtocolTCP},
 		},
 		Env: append([]corev1.EnvVar{
-			{Name: "SEARXNG_BASE_URL", Value: searxngURL + "/"},
+			{Name: "SEARXNG_BASE_URL", Value: agentsv1alpha1.SearXNGURL + "/"},
 			{
 				Name: "SEARXNG_SECRET",
 				ValueFrom: &corev1.EnvVarSource{
@@ -980,7 +983,7 @@ func buildCamofoxContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 
 	// Inject CAMOFOX_URL into the hermes-agent container env so that the browser tool can find it.
 	if c := findContainer(sts, hermesContainerName); c != nil {
-		c.Env = append(c.Env, corev1.EnvVar{Name: "CAMOFOX_URL", Value: camofoxURL})
+		c.Env = append(c.Env, corev1.EnvVar{Name: "CAMOFOX_URL", Value: agentsv1alpha1.CamofoxURL})
 	}
 
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
@@ -1069,8 +1072,8 @@ done
 
 printf '%%s' "$UPDATED_MANIFEST" > "$MANIFEST_FILE"
 `, manifestDir, manifestDir, profile,
-		bootstrapPrefix, hermesWorkspacePathSeparator,
-		bootstrapPrefix, bootstrapPrefix, hermesWorkspacePathSeparator)
+		bootstrapPrefix, agentsv1alpha1.HermesWorkspacePathSeparator,
+		bootstrapPrefix, bootstrapPrefix, agentsv1alpha1.HermesWorkspacePathSeparator)
 }
 
 // pluginDirName derives the plugin directory name from a Git URL or owner/repo shorthand.
