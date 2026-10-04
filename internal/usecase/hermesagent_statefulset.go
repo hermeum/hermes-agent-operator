@@ -418,7 +418,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			Name: hermesHomeVolume,
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: buildRestoredPVCName(es),
+					ClaimName: agentsv1alpha1.RestoredPVCName(es),
 				},
 			},
 		})
@@ -628,7 +628,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	// One init container per named profile: create the profile, then configure
 	// it (config → workspace → dotenv → plugins → skills → bundles → crons).
 	sidecarItemsForProfiles := buildProfileSidecarDotEnvItems(ha)
-	for _, name := range sortedProfileNames(profiles) {
+	for _, name := range ha.GetHermes().GetSortedProfileNames() {
 		profile := profiles[name]
 		var steps []string
 		var profileMounts []corev1.VolumeMount
@@ -1422,20 +1422,15 @@ func buildProfileSidecarDotEnvItems(ha *agentsv1alpha1.HermesAgent) []corev1.Key
 	return items
 }
 
-func sortedProfileNames(profiles map[string]agentsv1alpha1.HermesProfile) []string {
+// buildProfilesCleanupScript removes named profiles no longer desired and
+// rewrites the profiles manifest. It runs inside the consolidated init-hermes
+// container; profile creation happens in the per-profile init containers.
+func buildProfilesCleanupScript(profiles map[string]agentsv1alpha1.HermesProfile) string {
 	names := make([]string, 0, len(profiles))
 	for name := range profiles {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	return names
-}
-
-// buildProfilesCleanupScript removes named profiles no longer desired and
-// rewrites the profiles manifest. It runs inside the consolidated init-hermes
-// container; profile creation happens in the per-profile init containers.
-func buildProfilesCleanupScript(profiles map[string]agentsv1alpha1.HermesProfile) string {
-	names := sortedProfileNames(profiles)
 	casePattern := `"` + strings.Join(names, `"|"`) + `"`
 	manifestContent := strings.Join(names, "\n")
 
