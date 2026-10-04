@@ -38,6 +38,8 @@ Multi-group layout organizes APIs by group name (e.g., `batch`, `apps`). Check t
 6. Fix `path` in `PROJECT` file for each resource
 7. Update test suite CRD paths (add one more `..` to relative paths)
 
+## Coding Convention
+
 ### Clean Architecture
 
 **Layering:** `controller → usecase → infras`. Dependencies point inward. `internal/usecase/` owns the reconciliation logic for all resources the controller manages and never imports controller-runtime clients or `internal/infras` packages directly.
