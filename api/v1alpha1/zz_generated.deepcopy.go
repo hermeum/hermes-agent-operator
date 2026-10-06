@@ -21,8 +21,8 @@ limitations under the License.
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1"
+	"k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -38,13 +38,13 @@ func (in *Camofox) DeepCopyInto(out *Camofox) {
 	}
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
-		*out = new(corev1.ResourceRequirements)
+		*out = new(v1.ResourceRequirements)
 		(*in).DeepCopyInto(*out)
 	}
 	in.Persistence.DeepCopyInto(&out.Persistence)
 	if in.Env != nil {
 		in, out := &in.Env, &out.Env
-		*out = make([]corev1.EnvVar, len(*in))
+		*out = make([]v1.EnvVar, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -147,21 +147,21 @@ func (in *Hermes) DeepCopyInto(out *Hermes) {
 	}
 	if in.Env != nil {
 		in, out := &in.Env, &out.Env
-		*out = make([]corev1.EnvVar, len(*in))
+		*out = make([]v1.EnvVar, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 	if in.EnvFrom != nil {
 		in, out := &in.EnvFrom, &out.EnvFrom
-		*out = make([]corev1.EnvFromSource, len(*in))
+		*out = make([]v1.EnvFromSource, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
-		*out = new(corev1.ResourceRequirements)
+		*out = new(v1.ResourceRequirements)
 		(*in).DeepCopyInto(*out)
 	}
 	if in.Probes != nil {
@@ -171,7 +171,7 @@ func (in *Hermes) DeepCopyInto(out *Hermes) {
 	}
 	if in.Ports != nil {
 		in, out := &in.Ports, &out.Ports
-		*out = make([]corev1.ContainerPort, len(*in))
+		*out = make([]v1.ContainerPort, len(*in))
 		copy(*out, *in)
 	}
 	if in.InitScripts != nil {
@@ -307,28 +307,28 @@ func (in *HermesAgentSpec) DeepCopyInto(out *HermesAgentSpec) {
 	}
 	if in.InitContainers != nil {
 		in, out := &in.InitContainers, &out.InitContainers
-		*out = make([]corev1.Container, len(*in))
+		*out = make([]v1.Container, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 	if in.Sidecars != nil {
 		in, out := &in.Sidecars, &out.Sidecars
-		*out = make([]corev1.Container, len(*in))
+		*out = make([]v1.Container, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 	if in.ExtraVolumes != nil {
 		in, out := &in.ExtraVolumes, &out.ExtraVolumes
-		*out = make([]corev1.Volume, len(*in))
+		*out = make([]v1.Volume, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
 	if in.ExtraVolumeMounts != nil {
 		in, out := &in.ExtraVolumeMounts, &out.ExtraVolumeMounts
-		*out = make([]corev1.VolumeMount, len(*in))
+		*out = make([]v1.VolumeMount, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -525,22 +525,22 @@ func (in *HermesDotEnv) DeepCopyInto(out *HermesDotEnv) {
 	*out = *in
 	if in.SecretRef != nil {
 		in, out := &in.SecretRef, &out.SecretRef
-		*out = new(corev1.LocalObjectReference)
+		*out = new(v1.LocalObjectReference)
 		**out = **in
 	}
 	if in.ConfigMapRef != nil {
 		in, out := &in.ConfigMapRef, &out.ConfigMapRef
-		*out = new(corev1.LocalObjectReference)
+		*out = new(v1.LocalObjectReference)
 		**out = **in
 	}
 	if in.SecretRefs != nil {
 		in, out := &in.SecretRefs, &out.SecretRefs
-		*out = make([]corev1.LocalObjectReference, len(*in))
+		*out = make([]v1.LocalObjectReference, len(*in))
 		copy(*out, *in)
 	}
 	if in.ConfigMapRefs != nil {
 		in, out := &in.ConfigMapRefs, &out.ConfigMapRefs
-		*out = make([]corev1.LocalObjectReference, len(*in))
+		*out = make([]v1.LocalObjectReference, len(*in))
 		copy(*out, *in)
 	}
 }
@@ -1049,7 +1049,7 @@ func (in *NetworkPolicy) DeepCopyInto(out *NetworkPolicy) {
 	}
 	if in.AdditionalEgress != nil {
 		in, out := &in.AdditionalEgress, &out.AdditionalEgress
-		*out = make([]v1.NetworkPolicyEgressRule, len(*in))
+		*out = make([]networkingv1.NetworkPolicyEgressRule, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
@@ -1227,7 +1227,7 @@ func (in *SearXNG) DeepCopyInto(out *SearXNG) {
 	}
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
-		*out = new(corev1.ResourceRequirements)
+		*out = new(v1.ResourceRequirements)
 		(*in).DeepCopyInto(*out)
 	}
 	if in.ConfigFiles != nil {
@@ -1244,7 +1244,7 @@ func (in *SearXNG) DeepCopyInto(out *SearXNG) {
 	}
 	if in.Env != nil {
 		in, out := &in.Env, &out.Env
-		*out = make([]corev1.EnvVar, len(*in))
+		*out = make([]v1.EnvVar, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

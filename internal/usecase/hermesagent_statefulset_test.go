@@ -549,6 +549,17 @@ func TestBuildPluginsScript(t *testing.T) {
 		}
 	})
 
+	t.Run("with ref pins commit sha", func(t *testing.T) {
+		got := buildPluginsScript(hermesDefaultProfile, []agentsv1alpha1.HermesPlugin{
+			{Identifier: "owner/hermes-plugin-pinned", Ref: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"},
+		})
+
+		wantCmd := `hermes plugins install -p "default" --force --enable --ref "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" "owner/hermes-plugin-pinned"`
+		if !strings.Contains(got, wantCmd) {
+			t.Errorf("expected install command %q in script, got:\n%s", wantCmd, got)
+		}
+	})
+
 	t.Run("named profile uses profile in commands and manifest", func(t *testing.T) {
 		got := buildPluginsScript("coder", []agentsv1alpha1.HermesPlugin{
 			{Identifier: "owner/hermes-plugin-foo"},

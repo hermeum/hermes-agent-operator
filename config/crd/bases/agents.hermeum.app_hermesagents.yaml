@@ -2808,6 +2808,11 @@ spec:
                             identifier is the Git URL or owner/repo shorthand
                             (e.g. "anpicasso/hermes-plugin-chrome-profiles").
                           type: string
+                        ref:
+                          description: |-
+                            ref is an optional Git commit SHA to install exactly one immutable
+                            revision of the plugin (e.g. "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").
+                          type: string
                       required:
                       - identifier
                       type: object
@@ -3130,6 +3135,11 @@ spec:
                                 description: |-
                                   identifier is the Git URL or owner/repo shorthand
                                   (e.g. "anpicasso/hermes-plugin-chrome-profiles").
+                                type: string
+                              ref:
+                                description: |-
+                                  ref is an optional Git commit SHA to install exactly one immutable
+                                  revision of the plugin (e.g. "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").
                                 type: string
                             required:
                             - identifier

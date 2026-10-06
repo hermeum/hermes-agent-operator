@@ -318,6 +318,10 @@ type HermesPlugin struct {
 	// Defaults to true (--enable). Set to false to install disabled (--no-enable).
 	// +optional
 	Enable *bool `json:"enable,omitempty"`
+	// ref is an optional Git commit SHA to install exactly one immutable
+	// revision of the plugin (e.g. "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").
+	// +optional
+	Ref string `json:"ref,omitempty"`
 }
 
 // HermesSkill defines a skill to install via hermes skills install.
