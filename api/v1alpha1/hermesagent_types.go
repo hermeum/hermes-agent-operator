@@ -58,6 +58,15 @@ const (
 	// VolumeSnapshot does not exist or is not ReadyToUse). The condition is
 	// cleared once the restored PVC is provisioned or the field is unset.
 	ConditionRestoreFailed HermesAgentConditionType = "RestoreFailed"
+	// `ConditionInitFailed` indicates that one of the agent `Pod`'s init
+	// containers failed, so the agent cannot start.  The message names the
+	// container and carries the detail Kubernetes reported for it, which for a
+	// container that ran and exited is its termination message.  That message is
+	// the tail of its log when the container wrote none of its own.  An init
+	// container still waiting its turn is not a failure, so this stays absent
+	// while an agent starts normally, and it is cleared once no init container
+	// reports a failure.
+	ConditionInitFailed HermesAgentConditionType = "InitFailed"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!

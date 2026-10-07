@@ -100,6 +100,9 @@ func buildSearXNGContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulS
 		Image:           sx.GetImage(),
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-ec"},
+		// See the hermes init containers: a failure is diagnosed from
+		// `status.conditions`, which needs the tail of this container's log.
+		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		Args: []string{
 			fmt.Sprintf(
 				"cp -r /bootstrap-searxng/. /etc/searxng/ && chown -R %d:%d /etc/searxng /var/cache/searxng",

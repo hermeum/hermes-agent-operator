@@ -56,6 +56,10 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{script},
+			// A failing step is diagnosed from `status.conditions`, so fall back
+			// to the tail of the container's log when the script itself wrote
+			// no termination message.
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "HOME", Value: hermesHomeMount + "/home"},
@@ -204,6 +208,9 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{"chown -R 10000:10000 /opt/data"},
+			// See the hermes init containers: a failure is diagnosed from
+			// `status.conditions`, which needs the tail of this container's log.
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "HOME", Value: hermesHomeMount + "/home"},
@@ -500,6 +507,8 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Command:         []string{"/bin/sh", "-ec"},
 			Args:            []string{is.Script},
+			// See the operator-managed init containers above.
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			Env: append([]corev1.EnvVar{
 				{Name: "HERMES_HOME", Value: hermesHomeMount},
 				{Name: "HOME", Value: hermesHomeMount + "/home"},
