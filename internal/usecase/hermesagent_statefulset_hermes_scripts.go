@@ -84,8 +84,13 @@ func buildPluginsScript(profile string, plugins []agentsv1alpha1.HermesPlugin) s
 		if p.Enable != nil && !*p.Enable {
 			enableFlag = "--no-enable"
 		}
-		installLines = append(installLines,
-			fmt.Sprintf("hermes plugins install -p %q --force %s %q", profile, enableFlag, p.Identifier))
+		var cmd strings.Builder
+		fmt.Fprintf(&cmd, "hermes plugins install -p %q --force %s", profile, enableFlag)
+		if p.Ref != "" {
+			fmt.Fprintf(&cmd, " --ref %q", p.Ref)
+		}
+		fmt.Fprintf(&cmd, " %q", p.Identifier)
+		installLines = append(installLines, cmd.String())
 	}
 
 	// case pattern: "name1"|"name2" — safe because plugin names are GitHub repo names
