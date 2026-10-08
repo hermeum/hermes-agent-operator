@@ -369,7 +369,7 @@ hermes:
   plugins:                         # optional; omit if no plugins are needed
     - identifier: hermes-agent/plugin-stocks  # required; owner/repo or full Git URL
       enable: true                 # optional; defaults to true (auto-enable after install)
-      ref: ""                      # optional; Git commit SHA to pin an immutable plugin revision
+      ref: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0  # optional; 40-char Git commit SHA to pin an immutable plugin revision
 ```
 
 ### `hermes.skills`

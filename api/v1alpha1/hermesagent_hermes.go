@@ -320,6 +320,7 @@ type HermesPlugin struct {
 	Enable *bool `json:"enable,omitempty"`
 	// ref is an optional Git commit SHA to install exactly one immutable
 	// revision of the plugin (e.g. "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{40}$`
 	// +optional
 	Ref string `json:"ref,omitempty"`
 }
