@@ -302,7 +302,7 @@ make build-installer IMG=<registry>/<project>:tag
 
 **Example:** Users install with a single command:
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/<org>/<repo>/<tag>/dist/install.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/<org>/<repo>/<tag>/dist/install.yaml
 ```
 
 ### Option 2: Helm Chart
