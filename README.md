@@ -562,6 +562,51 @@ hermes:
 
 > **Tip:** Use `workspace.dotEnv` on each profile to load environment variables from a ConfigMap and/or Secret. This is the recommended way to isolate credentials and configuration (e.g. API keys, tokens) per profile without leaking them across profiles.
 
+#### `distribution`
+
+Install a profile from a [profile distribution](https://hermes-agent.nousresearch.com/docs/user-guide/profile-distributions). A profile distribution is a git repository that holds a complete agent: a `distribution.yaml` manifest, `SOUL.md`, `config.yaml`, `mcp.json`, skills, and cron jobs. Use it to run a specialist agent that someone else maintains. You can also keep your own agent in its own repository, instead of inline in each `HermesAgent`.
+
+```yaml
+hermes:
+  profiles:
+    researcher:
+      distribution:
+        source: https://github.com/you/research-bot   # required; git URL, github.com/owner/repo, or a path in the container
+        # renovate: datasource=github-tags depName=you/research-bot
+        ref: v1.2.0                                   # optional; pin to a tag, branch, or commit SHA
+        updateOnStart: true                           # optional; defaults to true, ignored when ref is set
+        forceConfig: false                            # optional; let an update overwrite config.yaml, ignored when ref is set
+      workspace:
+        dotEnv:                                       # supply the env vars the distribution requires
+          secretRef:
+            name: research-bot-env
+```
+
+Any other profile fields you declare are applied on top of the distribution. A declared `config` or `workspace.files` entry replaces the distribution's copy, and declared `plugins`, `skills`, `bundles`, and `crons` are installed next to the ones it ships. Fields you leave out keep what the distribution ships. Without `config`, for example, the profile runs the distribution's own `config.yaml`. Deleting the profile key deletes the profile, as it does for any named profile.
+
+**Pinning and updates.** With `ref` set, the operator clones that revision and installs it again only when `source` or `ref` changes, so a `Pod` restart never pulls a newer revision. A branch is resolved once, at install, and stays at that commit until you change `ref`; the init container log records the commit. Pin to a tag or a commit SHA so that the custom resource names the exact revision you run. Without `ref`, the profile follows the repository's default branch and is pulled again on every `Pod` start with `hermes profile update`, which keeps your data and, unless `forceConfig` is `true`, your `config.yaml`. If that update fails, for example because the repository is unreachable, the profile stays at its installed revision and the agent still starts.
+
+Pinning to a tag is recommended, because a bot can then propose each version change for review. Renovate has no manager for this field. Use the `# renovate:` comment above together with a custom manager:
+
+```json
+{
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/\\.ya?ml$/"],
+      "matchStrings": ["# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+ref:\\s*[\"']?(?<currentValue>[^\"'\\s]+)"],
+      "versioningTemplate": "semver"
+    }
+  ]
+}
+```
+
+**Private repositories.** For a private GitHub repository without `ref`, set `GITHUB_TOKEN` or `GH_TOKEN` through [`hermes.env`/`hermes.envFrom`](#hermesenv--hermesenvfrom), and the Hermes CLI uses it to clone. With `ref` set, the operator runs the clone itself and does not read those variables, so a pinned private repository is not supported yet.
+
+> **Note:** Distributions must be reachable over HTTPS (port 443). The [default `NetworkPolicy`](#securitynetworkpolicy) allows this. Git over SSH (port 22) needs an `additionalEgress` rule.
+>
+> Cron jobs from a distribution arrive **paused**, by design. Review them with `hermes -p <profile> cron list` before you resume them. The default profile cannot come from a distribution, because the Hermes CLI does not install one over `~/.hermes`. For the default profile, use [`hermes.config.configMapRef`](#configmapref).
+
 ### `searxng`
 
 Optional sidecar that runs a local [SearXNG](https://github.com/searxng/searxng) instance, enabling the agent's `web_search` tool without an external API key. When enabled, the operator automatically injects `SEARXNG_URL` into the agent container and sets `web.search_backend: "searxng"` in the generated Hermes config (unless already set in `hermes.config.raw`):

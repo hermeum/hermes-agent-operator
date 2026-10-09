@@ -86,6 +86,114 @@ var _ = Describe("HermesAgent Controller", func() {
 	})
 })
 
+var _ = Describe("Validating a profile distribution", func() {
+	ctx := context.Background()
+
+	// create applies an agent with one `distribution` profile and returns the
+	// API server's verdict.
+	create := func(name string, profile agentsv1alpha1.HermesProfile) error {
+		resource := &agentsv1alpha1.HermesAgent{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			Spec: agentsv1alpha1.HermesAgentSpec{Hermes: &agentsv1alpha1.Hermes{
+				Profiles: map[string]agentsv1alpha1.HermesProfile{"researcher": profile},
+			}},
+		}
+		err := k8sClient.Create(ctx, resource)
+		if err == nil {
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			})
+		}
+		return err
+	}
+
+	It("accepts a pinned git source", func() {
+		Expect(create("dist-pinned", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source: "github.com/you/research-bot", Ref: "v1.2.0",
+			},
+		})).To(Succeed())
+	})
+
+	It("rejects clone combined with a distribution", func() {
+		err := create("dist-clone", agentsv1alpha1.HermesProfile{
+			Clone: true,
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source: "github.com/you/research-bot",
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("clone cannot be combined with distribution")))
+	})
+
+	It("rejects a ref on a local path source", func() {
+		err := create("dist-path-ref", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source: "/srv/profiles/research-bot", Ref: "v1.2.0",
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("ref is only supported for a git URL source")))
+	})
+
+	It("accepts a pinned scp-style git source", func() {
+		Expect(create("dist-pinned-scp", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source: "git@github.com:you/research-bot.git", Ref: "v1.2.0",
+			},
+		})).To(Succeed())
+	})
+
+	It("rejects a ref on a bare owner/repo source", func() {
+		// The Hermes CLI reads "owner/repo" as a local path, and so would git.
+		err := create("dist-bare-ref", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source: "you/research-bot", Ref: "v1.2.0",
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("ref is only supported for a git URL source")))
+	})
+
+	It("rejects a source that could break out of the init script's quoting", func() {
+		err := create("dist-injection", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source: `github.com/you/bot";rm -rf /opt/data;"`,
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("should match")))
+	})
+
+	It("rejects a ref that could break out of the init script's quoting", func() {
+		err := create("dist-ref-injection", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source: "github.com/you/research-bot", Ref: `v1.0.0";id;"`,
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("should match")))
+	})
+
+	It("rejects a source git would read as an option", func() {
+		err := create("dist-dash-source", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{Source: "--upload-pack"},
+		})
+		Expect(err).To(MatchError(ContainSubstring("should match")))
+	})
+
+	It("rejects a ref git would read as an option", func() {
+		err := create("dist-dash-ref", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source: "https://github.com/you/research-bot", Ref: "-x",
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("should match")))
+	})
+
+	It("requires a source", func() {
+		err := create("dist-no-source", agentsv1alpha1.HermesProfile{
+			Distribution: &agentsv1alpha1.HermesProfileDistribution{},
+		})
+		Expect(err).To(HaveOccurred())
+	})
+})
+
 var _ = Describe("Mapping a ConfigMap to the agents that read a config from it", func() {
 	const namespace = "default"
 
