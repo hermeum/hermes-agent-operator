@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -455,7 +456,10 @@ func gitCloneURL(source string) string {
 // (memories, sessions, `auth.json`, and `.env`) in both cases.  It resets
 // `config.yaml` from the distribution, which is correct when the source or
 // ref changes.
-func buildProfileDistributionScript(name string, dist *agentsv1alpha1.HermesProfileDistribution) string {
+//
+// credentialsFile is the mounted git credential store for a private repository,
+// or "" when the repository needs none.
+func buildProfileDistributionScript(name string, dist *agentsv1alpha1.HermesProfileDistribution, credentialsFile string) string {
 	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + name
 
 	// The source and ref go to the shell as variables.  The CRD patterns for
@@ -480,11 +484,29 @@ fail() {
   echo "$*" >&2
   exit 1
 }
+`, dist.GetSource(), gitCloneURL(dist.GetSource()), dist.GetRef(), manifestDir, manifestDir, name, manifestDir)
 
+	// git gets the credential through the environment, not a config file, so
+	// the token is not on a writable path.  The operator's own clone reads
+	// GIT_CONFIG_* directly.  The Hermes CLI (v2026.9.21 and later) clones
+	// without a credential first; when the host asks for one, it retries with
+	// `git credential fill`, which reads the same environment.  Each init step
+	// runs in a subshell, so these variables apply only to the install.
+	if credentialsFile != "" {
+		fmt.Fprintf(&b, `
+CREDENTIALS=%q
+[ -f "$CREDENTIALS" ] || fail "Profile %s: the git credentials Secret has no key %s."
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=credential.helper
+export GIT_CONFIG_VALUE_0="store --file=$CREDENTIALS"
+`, credentialsFile, name, path.Base(credentialsFile))
+	}
+
+	fmt.Fprint(&b, `
 # The profile's own distribution.yaml is checked too, because someone can
 # delete the profile by hand inside the Pod and leave the manifest behind.
 if [ -f "$MANIFEST" ] && [ "$(cat "$MANIFEST")" = "$DESIRED" ] && [ -f "$PROFILE_DIR/distribution.yaml" ]; then
-`, dist.GetSource(), gitCloneURL(dist.GetSource()), dist.GetRef(), manifestDir, manifestDir, name, manifestDir)
+`)
 
 	switch {
 	case dist.ShouldUpdateOnStart():
