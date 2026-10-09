@@ -555,17 +555,42 @@ func combineInitSteps(steps ...string) string {
 	return s.String()
 }
 
+// `cronJobsPath` returns the path of a profile's cron job store, relative to
+// HERMES_HOME.  The default profile keeps it at the root of the Hermes home;
+// every named profile has its own.
+func cronJobsPath(profile string) string {
+	if profile == hermesDefaultProfile {
+		return "/cron/jobs.json"
+	}
+	return "/profiles/" + profile + "/cron/jobs.json"
+}
+
+// `buildGetJobIDFunction` defines a get_job_id shell function.  The function
+// reads the job store of the profile and prints the id of the cron job with a
+// given name, because the hermes CLI uses ids.  If no job has that name, it
+// prints nothing, so callers test for an empty result, not a non-zero exit.
+func buildGetJobIDFunction(profile string) string {
+	return fmt.Sprintf(`get_job_id() {
+  python3 - "$1" <<'PY'
+import json, os, sys
+p = os.environ.get("HERMES_HOME", "/opt/data") + "%s"
+if not os.path.exists(p):
+    sys.exit(0)
+with open(p) as f:
+    data = json.load(f)
+for j in data.get("jobs", []):
+    if j.get("name") == sys.argv[1]:
+        print(j.get("id", ""))
+        break
+PY
+}
+`, cronJobsPath(profile))
+}
+
 func buildCronsScript(profile string, crons []agentsv1alpha1.HermesCron) string {
 	manifestDir := "$HERMES_HOME/.hermes-agent-operator/profiles/" + profile
 	desiredNames := make([]string, 0, len(crons))
 	createLines := make([]string, 0, len(crons))
-
-	var jobsPathSuffix string
-	if profile == hermesDefaultProfile {
-		jobsPathSuffix = "/cron/jobs.json"
-	} else {
-		jobsPathSuffix = "/profiles/" + profile + "/cron/jobs.json"
-	}
 
 	for _, c := range crons {
 		desiredNames = append(desiredNames, c.Name)
@@ -626,21 +651,7 @@ func buildCronsScript(profile string, crons []agentsv1alpha1.HermesCron) string 
 MANIFEST="%s/crons"
 mkdir -p "%s"
 
-get_job_id() {
-  python3 - "$1" <<'PY'
-import json, os, sys
-p = os.environ.get("HERMES_HOME", "/opt/data") + "%s"
-if not os.path.exists(p):
-    sys.exit(0)
-with open(p) as f:
-    data = json.load(f)
-for j in data.get("jobs", []):
-    if j.get("name") == sys.argv[1]:
-        print(j.get("id", ""))
-        break
-PY
-}
-
+%s
 # Remove crons present in manifest but no longer desired
 if [ -f "$MANIFEST" ]; then
   while IFS= read -r name; do
@@ -658,5 +669,5 @@ fi
 cat > "$MANIFEST" << 'CRONS_EOF'
 %s
 CRONS_EOF
-`, manifestDir, manifestDir, jobsPathSuffix, profile, createScript, manifestContent)
+`, manifestDir, manifestDir, buildGetJobIDFunction(profile), profile, createScript, manifestContent)
 }
