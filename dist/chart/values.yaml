@@ -173,8 +173,12 @@ metrics:
   # Note: Metrics authn/authz needs ClusterRole access.
   secure: true
 
-## Cert-manager integration for TLS certificates.
-## Required for webhook certificates and metrics endpoint certificates.
+## Cert-manager integration for the metrics endpoint certificate.
+## Requires cert-manager to be installed in the cluster.
+## When enabled with metrics.enabled and metrics.secure, the chart creates a
+## self-signed `Issuer` and a `Certificate` that writes the `Secret`
+## metrics-server-cert. The manager serves that certificate, and the
+## `ServiceMonitor` uses it to verify the endpoint.
 ##
 certManager:
   enabled: false

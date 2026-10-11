@@ -1,0 +1,22 @@
+{{- if include "hermes-agent-operator.metricsCertEnabled" . }}
+{{- $service := include "hermes-agent-operator.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "hermes-agent-operator.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    control-plane: controller-manager
+  name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "metrics-certs" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  dnsNames:
+  - {{ $service }}.{{ .Release.Namespace }}.svc
+  - {{ $service }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "selfsigned-issuer" "context" $) }}
+  secretName: {{ include "hermes-agent-operator.metricsCertSecretName" $ }}
+{{- end }}

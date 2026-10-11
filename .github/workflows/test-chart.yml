@@ -51,6 +51,7 @@ jobs:
       - name: Lint Helm Chart
         run: |
           helm lint ./dist/chart
+          helm lint ./dist/chart --set certManager.enabled=true --set prometheus.enabled=true
           # The `ServiceMonitor` renders only when metrics are enabled.
           helm template t ./dist/chart --set prometheus.enabled=true > /tmp/monitor-on.yaml
           grep -q 'kind: ServiceMonitor' /tmp/monitor-on.yaml
@@ -60,28 +61,36 @@ jobs:
             exit 1
           fi
 
-      # TODO: Uncomment if cert-manager is enabled
-      #      - name: Install cert-manager via Helm (wait for readiness)
-      #        run: |
-      #          helm repo add jetstack https://charts.jetstack.io
-      #          helm repo update
-      #          helm install cert-manager jetstack/cert-manager \
-      #            --namespace cert-manager \
-      #            --create-namespace \
-      #            --set crds.enabled=true \
-      #            --wait \
-      #            --timeout 300s
+      - name: Install cert-manager via Helm (wait for readiness)
+        run: |
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update
+          helm install cert-manager jetstack/cert-manager \
+            --version v1.20.2 \
+            --namespace cert-manager \
+            --create-namespace \
+            --set crds.enabled=true \
+            --wait \
+            --timeout 300s
 
-      # TODO: Uncomment if Prometheus is enabled
-      #      - name: Install Prometheus Operator CRDs
-      #        run: |
-      #          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-      #          helm repo update
-      #          helm install prometheus-crds prometheus-community/prometheus-operator-crds
+      - name: Install Prometheus Operator CRDs
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          helm install prometheus-crds prometheus-community/prometheus-operator-crds \
+            --version 32.0.1
 
       - name: Deploy manager via Helm
         run: |
           make helm-deploy
+
+      - name: Upgrade with cert-manager and Prometheus enabled
+        run: |
+          make helm-deploy HELM_EXTRA_ARGS="--set certManager.enabled=true --set prometheus.enabled=true"
+
+      - name: Verify the metrics certificate is issued and served
+        run: |
+          make helm-verify-metrics-cert
 
       - name: Check Helm release status
         run: |
