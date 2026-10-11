@@ -181,6 +181,7 @@ certManager:
 
 ## Prometheus ServiceMonitor for metrics scraping.
 ## Requires prometheus-operator to be installed in the cluster.
+## The `ServiceMonitor` renders only when `metrics.enable` is also true.
 ##
 prometheus:
   enable: false

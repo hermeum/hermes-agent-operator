@@ -51,6 +51,14 @@ jobs:
       - name: Lint Helm Chart
         run: |
           helm lint ./dist/chart
+          # The `ServiceMonitor` renders only when metrics are enabled.
+          helm template t ./dist/chart --set prometheus.enable=true > /tmp/monitor-on.yaml
+          grep -q 'kind: ServiceMonitor' /tmp/monitor-on.yaml
+          helm template t ./dist/chart --set prometheus.enable=true --set metrics.enable=false > /tmp/monitor-off.yaml
+          if grep -q 'kind: ServiceMonitor' /tmp/monitor-off.yaml; then
+            echo "ServiceMonitor rendered with metrics.enable=false" >&2
+            exit 1
+          fi
 
       # TODO: Uncomment if cert-manager is enabled
       #      - name: Install cert-manager via Helm (wait for readiness)
