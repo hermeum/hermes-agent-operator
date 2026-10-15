@@ -106,12 +106,12 @@ var managerSetupOnce = sync.OnceFunc(func() {
 
 	By("scoping the controller to the e2e namespaces")
 	// The stock kustomize args carry no --watch-namespace, so the isolation
-	// is patched onto the deployment afterwards; the arg restart applies it.
+	// flag is prepended to the deployed args (metrics-bind-address stays):
+	// replacing the whole args list would drop flags kustomize patches in.
 	cmd = exec.Command("kubectl", "patch", "deploy", "hermes-agent-operator-controller-manager",
-		"-n", namespace, "-p",
-		fmt.Sprintf(`{"spec":{"template":{"spec":{"containers":[{"name":"manager",
-			"args":["--leader-elect=true","--health-probe-bind-address=:8081",
-			"--watch-namespace=%s,%s"]}]}}}}`, namespace, agentNamespace))
+		"-n", namespace, "--type=json", "-p",
+		fmt.Sprintf(`[{"op":"add","path":"/spec/template/spec/containers/0/args/0","value":
+			"--watch-namespace=%s,%s"}]`, namespace, agentNamespace))
 	out, err = utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to patch the controller args")
 

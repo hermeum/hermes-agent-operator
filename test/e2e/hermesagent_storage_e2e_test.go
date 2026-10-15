@@ -115,10 +115,11 @@ var _ = Describe("HermesAgent storage", Ordered, func() {
 kind: HermesAgent
 metadata:
   name: %s
+  namespace: %s
 spec:
   hermes:
 %s
-`, agentName, storage)
+`, agentName, agentNamespace, storage)
 	}
 
 	enabledPersistence := "      persistence:\n        enabled: true\n        size: 2Gi\n"
