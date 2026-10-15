@@ -64,10 +64,32 @@ func getManagerWatchNamespaces() string {
 	return out
 }
 
+// waitForManagerDeployed blocks until the Manager suite's deployment is
+// available. Ginkgo shuffles top-level Describe containers, so this suite
+// can run before the Manager suite has deployed the controller; its own
+// BeforeAll then fails on the missing namespace/deployment. Waiting here
+// keeps the scenario order-independent.
+func waitForManagerDeployed() {
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "deploy", "hermes-agent-operator-controller-manager",
+			"-n", namespace, "-o", "jsonpath={.status.availableReplicas}")
+		out, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred(), "manager namespace/deployment not found yet")
+		g.Expect(out).To(Equal("1"))
+	}, 5*time.Minute, 5*time.Second).Should(Succeed())
+}
+
 var _ = Describe("HermesAgent storage", Ordered, func() {
 	const agentName = "storage-133"
 
 	BeforeAll(func() {
+		// The scenario needs the operator running: in CI the Manager
+		// Describe (e2e_test.go) deploys it in its own BeforeAll. Ginkgo
+		// shuffles top-level containers, so wait here for the manager
+		// namespace and deployment regardless of which suite runs first.
+		By("waiting for the controller-manager deployment from the Manager suite")
+		waitForManagerDeployed()
+
 		By("creating the isolated agent namespace")
 		cmd := exec.Command("kubectl", "create", "ns", agentNamespace, "--dry-run=client", "-o", "yaml")
 		out, err := utils.Run(cmd)
