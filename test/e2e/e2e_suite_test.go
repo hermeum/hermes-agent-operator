@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -69,6 +70,61 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	teardownCertManager()
 })
+
+// managerSetupOnce guards the controller stand-up: both the Manager Describe
+// (e2e_test.go) and the HermesAgent storage Describe
+// (hermesagent_storage_e2e_test.go) need the controller, and Ginkgo shuffles
+// top-level containers — whichever runs first performs the setup, the other
+// reuses it. The suites' AfterAll blocks never tear the shared setup down:
+// the storage suite must not pull the controller out from under the Manager
+// suite, and the Manager suite must not delete the controller+CRDs the
+// storage scenario (or its own specs, in any order) still need. AfterSuite
+// (e2e_suite_test.go) already skips full teardown on FAIL, matching that.
+var managerSetupOnce = sync.OnceFunc(func() {
+	By("creating manager namespace")
+	// --dry-run=client + apply keeps re-runs idempotent.
+	cmd := exec.Command("kubectl", "create", "ns", namespace, "--dry-run=client", "-o", "yaml")
+	out, err := utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to render namespace")
+	ExpectWithOffset(1, applyStdin(out)).To(Succeed(), "Failed to create namespace")
+
+	By("labeling the namespace to enforce the restricted security policy")
+	cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
+		"pod-security.kubernetes.io/enforce=restricted")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
+
+	By("installing CRDs")
+	cmd = exec.Command("make", "install")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install CRDs")
+
+	By("deploying the controller-manager")
+	cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+
+	By("scoping the controller to the e2e namespaces")
+	// The stock kustomize args carry no --watch-namespace, so the isolation
+	// is patched onto the deployment afterwards; the arg restart applies it.
+	cmd = exec.Command("kubectl", "patch", "deploy", "hermes-agent-operator-controller-manager",
+		"-n", namespace, "-p",
+		fmt.Sprintf(`{"spec":{"template":{"spec":{"containers":[{"name":"manager",
+			"args":["--leader-elect=true","--health-probe-bind-address=:8081",
+			"--watch-namespace=%s,%s"]}]}}}}`, namespace, agentNamespace))
+	out, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to patch the controller args")
+
+	By("waiting for the controller-manager rollout with the scoped args")
+	cmd = exec.Command("kubectl", "rollout", "status", "deploy",
+		"hermes-agent-operator-controller-manager", "-n", namespace, "--timeout=300s")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "controller-manager did not roll out")
+})
+
+// setupManagerOnce stands the controller up exactly once per test process,
+// regardless of which suite runs first (Ginkgo shuffles top-level containers).
+func setupManagerOnce() { managerSetupOnce() }
 
 // Disable kubectl kuberc by default for test isolation.
 // This prevents local kubectl configurations from affecting test behavior.
