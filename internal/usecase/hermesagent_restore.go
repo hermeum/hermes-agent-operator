@@ -115,7 +115,7 @@ func (u *HermesAgentUseCase) reconcileRestore(ctx context.Context, ha *agentsv1a
 	if err != nil {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
-	if sts != nil && statefulSetHasVolumeClaimTemplate(sts, hermesHomeVolume) {
+	if sts != nil && statefulSetHasVolumeClaimTemplate(sts) {
 		if err := u.kube.DeleteStatefulSet(ctx, DeleteStatefulSetParam{NamespacedName: nsName}); err != nil {
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 		}
@@ -165,11 +165,12 @@ func (u *HermesAgentUseCase) getReadySnapshot(ctx context.Context, ha *agentsv1a
 }
 
 // statefulSetHasVolumeClaimTemplate reports whether the live StatefulSet
-// still provisions the named volume via a volumeClaimTemplate, i.e. cannot
-// be updated in place to mount an explicit volume instead.
-func statefulSetHasVolumeClaimTemplate(sts *appsv1.StatefulSet, name string) bool {
+// still provisions hermesHomeVolume via a volumeClaimTemplate, i.e. cannot
+// be updated in place to use an explicit volume for it instead. The agent
+// data volume is the only claim template the operator renders.
+func statefulSetHasVolumeClaimTemplate(sts *appsv1.StatefulSet) bool {
 	for i := range sts.Spec.VolumeClaimTemplates {
-		if sts.Spec.VolumeClaimTemplates[i].Name == name {
+		if sts.Spec.VolumeClaimTemplates[i].Name == hermesHomeVolume {
 			return true
 		}
 	}

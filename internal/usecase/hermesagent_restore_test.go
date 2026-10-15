@@ -613,7 +613,7 @@ func TestBuildRestoredPVCName(t *testing.T) {
 }
 
 func TestStatefulSetHasVolumeClaimTemplate(t *testing.T) {
-	if !statefulSetHasVolumeClaimTemplate(vctStatefulSet(), hermesHomeVolume) {
+	if !statefulSetHasVolumeClaimTemplate(vctStatefulSet()) {
 		t.Error("expected VCT-shaped StatefulSet detected")
 	}
 	explicit := &appsv1.StatefulSet{
@@ -626,7 +626,7 @@ func TestStatefulSetHasVolumeClaimTemplate(t *testing.T) {
 			},
 		},
 	}
-	if statefulSetHasVolumeClaimTemplate(explicit, hermesHomeVolume) {
+	if statefulSetHasVolumeClaimTemplate(explicit) {
 		t.Error("explicit-volume StatefulSet must not be detected as VCT-shaped")
 	}
 }

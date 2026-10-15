@@ -126,6 +126,18 @@ func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam
 		}
 		return result, err
 	}
+	// The volumeClaimTemplate is immutable: a change of the agent data
+	// volume's provisioning shape (e.g. persistence toggled on for an agent
+	// that ran on an emptyDir, issue #133) cannot be applied by a plain
+	// update. The gate deletes the StatefulSet once so the reconcile below
+	// recreates it with the desired shape; no-op when the shape matches.
+	if result, err := u.reconcileDataVolumeReshape(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile data volume reshape")
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
+		return result, err
+	}
 	if result, err := u.reconcileStatefulSet(ctx, ha); err != nil || !result.IsZero() {
 		if err != nil {
 			u.tel.Error(ctx, err, "Failed to reconcile StatefulSet")
