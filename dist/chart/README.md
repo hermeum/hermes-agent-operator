@@ -11,7 +11,9 @@ helm upgrade hermes-agent-operator oci://ghcr.io/hermeum/charts/hermes-agent-ope
   --install --namespace hermes-agent --create-namespace
 ```
 
-## Breaking change: boolean values renamed `enable` -> `enabled` (v0.6.0)
+## Breaking change
+
+### Boolean values renamed `enable` -> `enabled` (v0.6.0)
 
 Chart v0.6.0 standardises every boolean toggle on `enabled` (the prevailing
 Helm convention). The following keys were renamed:
