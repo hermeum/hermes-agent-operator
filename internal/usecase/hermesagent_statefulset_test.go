@@ -1802,6 +1802,25 @@ func TestBuildProfileCreationScript(t *testing.T) {
 	}
 }
 
+func TestCronJobsPath(t *testing.T) {
+	if got := cronJobsPath(hermesDefaultProfile); got != "/cron/jobs.json" {
+		t.Errorf("default profile store = %q", got)
+	}
+	if got := cronJobsPath("coder"); got != "/profiles/coder/cron/jobs.json" {
+		t.Errorf("named profile store = %q", got)
+	}
+}
+
+func TestBuildGetJobIDFunction(t *testing.T) {
+	got := buildGetJobIDFunction("coder")
+	if !strings.Contains(got, "get_job_id() {") {
+		t.Errorf("expected a shell function, got:\n%s", got)
+	}
+	if !strings.Contains(got, "/profiles/coder/cron/jobs.json") {
+		t.Errorf("expected the profile's job store, got:\n%s", got)
+	}
+}
+
 func TestBuildStatefulSetInitContainerTerminationMessagePolicy(t *testing.T) {
 	ha := minimalHA()
 	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
