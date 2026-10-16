@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -341,31 +342,44 @@ spec:
 
 			By("waiting for the StatefulSet to be recreated with the PVC template")
 			// No update can add a volumeClaimTemplate, so only a recreated
-			// StatefulSet carries the new spec.
+			// StatefulSet carries the new spec. The UID must differ AND the
+			// object must exist again — a briefly deleted object reports "".
 			Eventually(func(g Gomega) {
-				g.Expect(kubectlUID("statefulset", agentName, agentNamespace)).NotTo(Equal(stsUIDBefore),
+				uid := kubectlUID("statefulset", agentName, agentNamespace)
+				claimsOut, err := utils.Run(exec.Command("kubectl", "get", "statefulset", agentName,
+					"-n", agentNamespace, "-o", "jsonpath={.spec.volumeClaimTemplates[*].metadata.name}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(uid).NotTo(Equal(stsUIDBefore),
 					"StatefulSet was not recreated after persistence was added")
+				g.Expect(claimsOut).To(ContainSubstring("hermes-data"),
+					"volumeClaimTemplate missing on the recreated StatefulSet")
 			}, 4*time.Minute, 5*time.Second).Should(Succeed())
-			claimsOut, err := utils.Run(exec.Command("kubectl", "get", "statefulset", agentName,
-				"-n", agentNamespace, "-o", "jsonpath={.spec.volumeClaimTemplates[*].metadata.name}"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(claimsOut).To(ContainSubstring("hermes-data"), "volumeClaimTemplate missing on the recreated StatefulSet")
 
 			By("waiting for the recreated pod to run on the data PVC")
+			// StatefulSet pods are released when the StatefulSet is deleted,
+			// so the old pod may still report Running while being replaced:
+			// assert recreation (new UID) and readiness together.
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pod", agentName+"-0", "-n", agentNamespace,
-					"-o", "jsonpath={.status.phase}")
+					"-o", "jsonpath={.metadata.uid} {.status.phase}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(Equal("Running"), "recreated agent pod not yet running")
+				uid, phase, _ := strings.Cut(out, " ")
+				g.Expect(uid).NotTo(BeEmpty())
+				g.Expect(uid).NotTo(Equal(podUIDBefore), "agent pod was not recreated")
+				g.Expect(phase).To(Equal("Running"), "recreated agent pod not yet running")
 			}, 10*time.Minute, 5*time.Second).Should(Succeed())
-			Expect(kubectlUID("pod", agentName+"-0", agentNamespace)).NotTo(Equal(podUIDBefore),
-				"agent pod was not recreated")
-			pvcOut, err := utils.Run(exec.Command("kubectl", "get", "pvc",
-				fmt.Sprintf("hermes-data-%s-0", agentName), "-n", agentNamespace,
-				"-o", "jsonpath={.status.phase}"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(pvcOut).To(Equal("Bound"), "data PVC did not bind")
+
+			// The PVC only binds once the recreated pod mounts it
+			// (WaitForFirstConsumer).
+			By("waiting for the data PVC to bind")
+			Eventually(func(g Gomega) {
+				pvcOut, err := utils.Run(exec.Command("kubectl", "get", "pvc",
+					fmt.Sprintf("hermes-data-%s-0", agentName), "-n", agentNamespace,
+					"-o", "jsonpath={.status.phase}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(pvcOut).To(Equal("Bound"), "data PVC did not bind")
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
 		})
 	})
 })
