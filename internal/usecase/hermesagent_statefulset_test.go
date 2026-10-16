@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -405,15 +406,6 @@ func TestBuildStatefulSetPriorityClassName(t *testing.T) {
 }
 
 func TestBuildStatefulSetPersistenceVolumes(t *testing.T) {
-	findVolume := func(sts *appsv1.StatefulSet) *corev1.Volume {
-		for i := range sts.Spec.Template.Spec.Volumes {
-			if sts.Spec.Template.Spec.Volumes[i].Name == hermesHomeVolume {
-				return &sts.Spec.Template.Spec.Volumes[i]
-			}
-		}
-		return nil
-	}
-
 	t.Run("existingSnapshot mounts the restored PVC explicitly", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Storage: &agentsv1alpha1.HermesStorage{
@@ -426,7 +418,7 @@ func TestBuildStatefulSetPersistenceVolumes(t *testing.T) {
 		if len(sts.Spec.VolumeClaimTemplates) != 0 {
 			t.Error("existingSnapshot must not provision a volumeClaimTemplate")
 		}
-		vol := findVolume(sts)
+		vol := findTemplateVolume(sts)
 		if vol == nil || vol.PersistentVolumeClaim == nil || vol.PersistentVolumeClaim.ClaimName != "snap-1-restore" {
 			t.Errorf("expected explicit volume mounting snap-1-restore, got %+v", vol)
 		}
@@ -442,7 +434,7 @@ func TestBuildStatefulSetPersistenceVolumes(t *testing.T) {
 			},
 		}}
 		sts := buildStatefulSet(ha, testConfigHash)
-		vol := findVolume(sts)
+		vol := findTemplateVolume(sts)
 		if vol == nil || vol.PersistentVolumeClaim == nil || vol.PersistentVolumeClaim.ClaimName != "my-claim" {
 			t.Errorf("expected existingClaim to win, got %+v", vol)
 		}
@@ -458,10 +450,259 @@ func TestBuildStatefulSetPersistenceVolumes(t *testing.T) {
 		if len(sts.Spec.VolumeClaimTemplates) != 1 || sts.Spec.VolumeClaimTemplates[0].Name != hermesHomeVolume {
 			t.Errorf("expected hermes-data volumeClaimTemplate, got %+v", sts.Spec.VolumeClaimTemplates)
 		}
-		if findVolume(sts) != nil {
+		if findTemplateVolume(sts) != nil {
 			t.Error("expected no explicit hermes-data volume")
 		}
 	})
+}
+
+// fakeReshapeKube is a fake Kubernetes interface for the StatefulSet storage
+// reshape tests. Only the methods touched by reconcileStatefulSet are
+// implemented; the rest are inherited from the embedded interface and panic
+// if the reconcile ever grows a new dependency, failing loudly instead of
+// silently.
+type fakeReshapeKube struct {
+	Kubernetes
+
+	sts         *appsv1.StatefulSet
+	stsCreates  int
+	stsUpdates  int
+	stsDeletes  int
+	updatedStss []*appsv1.StatefulSet
+}
+
+func (f *fakeReshapeKube) GetPod(ctx context.Context, param GetPodParam) (*corev1.Pod, error) {
+	return nil, nil
+}
+func (f *fakeReshapeKube) DeletePod(ctx context.Context, param DeletePodParam) error { return nil }
+
+func (f *fakeReshapeKube) GetConfigMap(ctx context.Context, param GetConfigMapParam) (*corev1.ConfigMap, error) {
+	return nil, nil
+}
+
+func (f *fakeReshapeKube) GetStatefulSet(ctx context.Context, param GetStatefulSetParam) (*appsv1.StatefulSet, error) {
+	return f.sts, nil
+}
+func (f *fakeReshapeKube) CreateStatefulSetOwnedByHermesAgent(ctx context.Context, param CreateStatefulSetOfHermesAgentParam) error {
+	f.stsCreates++
+	f.sts = param.StatefulSet
+	return nil
+}
+func (f *fakeReshapeKube) UpdateStatefulSetOwnedByHermesAgent(ctx context.Context, param UpdateStatefulSetParam) error {
+	f.stsUpdates++
+	f.sts = param.StatefulSet
+	f.updatedStss = append(f.updatedStss, param.StatefulSet)
+	return nil
+}
+func (f *fakeReshapeKube) DeleteStatefulSet(ctx context.Context, param DeleteStatefulSetParam) error {
+	f.stsDeletes++
+	f.sts = nil
+	return nil
+}
+
+func (f *fakeReshapeKube) UpdateHermesAgentStatus(ctx context.Context, param UpdateHermesAgentStatusParam) error {
+	return nil
+}
+
+// storageHA builds a HermesAgent with the hermes data persistence block set
+// to the given enabled state and size ("" for the default).
+func storageHA(enabled bool, size string) *agentsv1alpha1.HermesAgent {
+	ha := minimalHA()
+	p := &agentsv1alpha1.HermesPersistence{Enabled: enabled}
+	if size != "" {
+		q := resource.MustParse(size)
+		p.Size = &q
+	}
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{Storage: &agentsv1alpha1.HermesStorage{Persistence: p}}
+	return ha
+}
+
+// findTemplateVolume returns the pod-template volume for the hermes data
+// volume name, or nil when absent.
+func findTemplateVolume(sts *appsv1.StatefulSet) *corev1.Volume {
+	for i := range sts.Spec.Template.Spec.Volumes {
+		if sts.Spec.Template.Spec.Volumes[i].Name == hermesHomeVolume {
+			return &sts.Spec.Template.Spec.Volumes[i]
+		}
+	}
+	return nil
+}
+
+func assertNoReshapeOps(t *testing.T, kube *fakeReshapeKube, wantCreates, wantDeletes, wantUpdates int) {
+	t.Helper()
+	if kube.stsCreates != wantCreates {
+		t.Errorf("StatefulSet creates = %d, want %d", kube.stsCreates, wantCreates)
+	}
+	if kube.stsDeletes != wantDeletes {
+		t.Errorf("StatefulSet deletes = %d, want %d", kube.stsDeletes, wantDeletes)
+	}
+	if kube.stsUpdates != wantUpdates {
+		t.Errorf("StatefulSet updates = %d, want %d", kube.stsUpdates, wantUpdates)
+	}
+}
+
+// TestReconcileStatefulSetAddsStorage covers issue #133: adding storage to a
+// running agent must reshape (delete + recreate) the StatefulSet.
+// TestReconcileStatefulSetAddsStorage covers issue #133: adding storage to a
+// running agent must reshape (delete + recreate) the StatefulSet.
+func TestReconcileStatefulSetAddsStorage(t *testing.T) {
+	ctx := context.Background()
+	kube := &fakeReshapeKube{}
+	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
+
+	// 1. Agent without persistence: the StatefulSet is created with an
+	// emptyDir hermes-data volume and no volumeClaimTemplate.
+	ha := storageHA(false, "")
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("initial reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 1, 0, 0)
+	if len(kube.sts.Spec.VolumeClaimTemplates) != 0 {
+		t.Errorf("expected no volumeClaimTemplates, got %+v", kube.sts.Spec.VolumeClaimTemplates)
+	}
+	vol := findTemplateVolume(kube.sts)
+	if vol == nil || vol.EmptyDir == nil {
+		t.Errorf("expected hermes-data emptyDir volume, got %+v", vol)
+	}
+
+	// 2. Persistence is enabled on the running agent: the shape changed, so
+	// the StatefulSet must be deleted, not updated.
+	ha = storageHA(true, "5Gi")
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("reshape reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 1, 1, 0)
+	if kube.sts != nil {
+		t.Errorf("expected StatefulSet to be deleted, got %+v", kube.sts)
+	}
+
+	// 3. After the deletion settles, the StatefulSet is recreated with the
+	// hermes-data volumeClaimTemplate.
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("recreate reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 2, 1, 0)
+	if len(kube.sts.Spec.VolumeClaimTemplates) != 1 || kube.sts.Spec.VolumeClaimTemplates[0].Name != hermesHomeVolume {
+		t.Errorf("expected hermes-data volumeClaimTemplate, got %+v", kube.sts.Spec.VolumeClaimTemplates)
+	}
+	if got := kube.sts.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage]; got.String() != "5Gi" {
+		t.Errorf("volumeClaimTemplate storage = %s, want 5Gi", got.String())
+	}
+	vol = findTemplateVolume(kube.sts)
+	if vol != nil {
+		t.Errorf("expected no hermes-data pod-template volume, got %+v", vol)
+	}
+	if kube.sts.Annotations[annotationDesiredSpecHash] == "" {
+		t.Error("expected desired-spec-hash annotation on the recreated StatefulSet")
+	}
+
+	// 4. No thrash: a further reconcile of the same shape and spec is a no-op.
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("settled reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 2, 1, 0)
+}
+
+// TestReconcileStatefulSetRemovesStorage covers the symmetric reshape:
+// disabling persistence recreates the StatefulSet with the emptyDir fallback;
+// the old claim is left in place.
+func TestReconcileStatefulSetRemovesStorage(t *testing.T) {
+	ctx := context.Background()
+	kube := &fakeReshapeKube{}
+	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
+
+	ha := storageHA(true, "")
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("initial reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 1, 0, 0)
+	if len(kube.sts.Spec.VolumeClaimTemplates) != 1 {
+		t.Fatalf("expected hermes-data volumeClaimTemplate, got %+v", kube.sts.Spec.VolumeClaimTemplates)
+	}
+
+	ha = storageHA(false, "")
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("reshape reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 1, 1, 0)
+
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("recreate reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 2, 1, 0)
+	if len(kube.sts.Spec.VolumeClaimTemplates) != 0 {
+		t.Errorf("expected no volumeClaimTemplates, got %+v", kube.sts.Spec.VolumeClaimTemplates)
+	}
+	vol := findTemplateVolume(kube.sts)
+	if vol == nil || vol.EmptyDir == nil {
+		t.Errorf("expected hermes-data emptyDir volume, got %+v", vol)
+	}
+}
+
+// TestReconcileStatefulSetSizesStorage covers a size-only change on an
+// existing template: the name set does not change, so the StatefulSet is
+// updated in place instead of being reshaped.
+func TestReconcileStatefulSetSizesStorage(t *testing.T) {
+	ctx := context.Background()
+	kube := &fakeReshapeKube{}
+	uc := NewHermesAgentUseCase(kube, silentTelemetry{})
+
+	ha := storageHA(true, "5Gi")
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("initial reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 1, 0, 0)
+
+	ha = storageHA(true, "10Gi")
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("resize reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 1, 0, 1)
+	latest := kube.updatedStss[len(kube.updatedStss)-1]
+	if got := latest.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage]; got.String() != "10Gi" {
+		t.Errorf("volumeClaimTemplate storage = %s, want 10Gi", got.String())
+	}
+
+	// No thrash: the updated StatefulSet carries the new hash.
+	if _, err := uc.reconcileStatefulSet(ctx, ha); err != nil {
+		t.Fatalf("settled reconcile: %v", err)
+	}
+	assertNoReshapeOps(t, kube, 1, 0, 1)
+}
+
+// TestSameVolumeClaimTemplateNames unit-tests the shape comparison directly.
+func TestSameVolumeClaimTemplateNames(t *testing.T) {
+	liveVCT := func(names ...string) []corev1.PersistentVolumeClaim {
+		vcts := make([]corev1.PersistentVolumeClaim, 0, len(names))
+		for _, name := range names {
+			vcts = append(vcts, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: name},
+			})
+		}
+		return vcts
+	}
+	tests := []struct {
+		name    string
+		live    []corev1.PersistentVolumeClaim
+		desired []corev1.PersistentVolumeClaim
+		want    bool
+	}{
+		{name: "both empty", live: nil, desired: nil, want: true},
+		{name: "same names", live: liveVCT("a", "b"), desired: liveVCT("b", "a"), want: true},
+		{name: "added template", live: liveVCT(), desired: liveVCT("a"), want: false},
+		{name: "removed template", live: liveVCT("a"), desired: liveVCT(), want: false},
+		{name: "renamed template", live: liveVCT("a"), desired: liveVCT("b"), want: false},
+		{name: "same count, one renamed", live: liveVCT("a", "b"), desired: liveVCT("a", "c"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			live := &appsv1.StatefulSet{Spec: appsv1.StatefulSetSpec{VolumeClaimTemplates: tt.live}}
+			desired := &appsv1.StatefulSet{Spec: appsv1.StatefulSetSpec{VolumeClaimTemplates: tt.desired}}
+			if got := sameVolumeClaimTemplateNames(live, desired); got != tt.want {
+				t.Errorf("sameVolumeClaimTemplateNames() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
 
 func ptrBool(b bool) *bool       { return &b }

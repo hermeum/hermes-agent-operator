@@ -86,6 +86,22 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	desired.Annotations[annotationDesiredSpecHash] = hash
 
 	if sts != nil {
+		// volumeClaimTemplates are immutable on an existing StatefulSet, so a
+		// change in their name set — adding, removing, or renaming storage —
+		// cannot be applied by an update: the API server rejects the whole
+		// object, including its pod-template changes, and nothing happens.
+		// Delete the StatefulSet once; the next reconcile recreates it in the
+		// desired shape. An emptyDir→PVC reshape loses nothing (the data was
+		// ephemeral); a PVC→emptyDir reshape leaves the claim in place, as the
+		// restore flow does.
+		if !sameVolumeClaimTemplateNames(sts, desired) {
+			if err := u.kube.DeleteStatefulSet(ctx, DeleteStatefulSetParam{NamespacedName: nsName}); err != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+			}
+			u.tel.Info(ctx, "Deleted StatefulSet to reshape storage", "HermesAgent", ha.Name, "Namespace", ha.Namespace)
+			// Requeue so the deletion settles before the StatefulSet is recreated.
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 		if sts.Annotations[annotationDesiredSpecHash] != hash {
 			pod, err := u.kube.GetPod(ctx, GetPodParam{
 				NamespacedName: types.NamespacedName{Name: ha.Name + "-0", Namespace: ha.Namespace},
@@ -189,6 +205,29 @@ func desiredSpecHash(sts *appsv1.StatefulSet) string {
 	})
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h[:])[:16]
+}
+
+// sameVolumeClaimTemplateNames reports whether the live and desired
+// StatefulSets provision their data claims through the same set of
+// volumeClaimTemplate names. The templates themselves are immutable on an
+// existing StatefulSet, so only a change in that name set requires the
+// delete-and-recreate reshape; a size change on a kept template flows through
+// the normal update path instead, where the API server applies it on clusters
+// with PVC auto-resize.
+func sameVolumeClaimTemplateNames(live, desired *appsv1.StatefulSet) bool {
+	if len(live.Spec.VolumeClaimTemplates) != len(desired.Spec.VolumeClaimTemplates) {
+		return false
+	}
+	names := make(map[string]struct{}, len(live.Spec.VolumeClaimTemplates))
+	for _, vct := range live.Spec.VolumeClaimTemplates {
+		names[vct.Name] = struct{}{}
+	}
+	for _, vct := range desired.Spec.VolumeClaimTemplates {
+		if _, ok := names[vct.Name]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // `buildStatefulSet` renders the desired `StatefulSet`. The `configHash` is

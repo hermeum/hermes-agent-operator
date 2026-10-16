@@ -280,7 +280,106 @@ var _ = Describe("Manager", Ordered, func() {
 		//    strings.ToLower(<Kind>),
 		// ))
 	})
+
+	// Storage reshape scenario (issue #133): volumeClaimTemplates are immutable,
+	// so adding persistence to an already running agent can only be applied by
+	// deleting and recreating the StatefulSet. The agent namespace intentionally
+	// skips the restricted Pod Security Standard label — the hermes image starts
+	// as root (s6-overlay) and cannot run under the restricted policy.
+	Context("Storage reshape", func() {
+		const (
+			agentNamespace = "hermes-agent-storage-test"
+			agentName      = "storage-reshape"
+		)
+
+		It("should apply persistence added to an already running agent", func() {
+			By("creating an isolated namespace for the agent")
+			cmd := exec.Command("kubectl", "create", "ns", agentNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create the agent namespace")
+			DeferCleanup(func() {
+				By("deleting the isolated agent namespace")
+				cmd := exec.Command("kubectl", "delete", "ns", agentNamespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("creating an agent without persistence")
+			manifestPath := filepath.Join(os.TempDir(), "e2e-storage-reshape-agent.yaml")
+			manifest := fmt.Sprintf(`apiVersion: agents.hermeum.app/v1alpha1
+kind: HermesAgent
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  hermes: {}
+`, agentName, agentNamespace)
+			Expect(os.WriteFile(manifestPath, []byte(manifest), 0o644)).To(Succeed())
+			cmd = exec.Command("kubectl", "apply", "-f", manifestPath)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create the agent")
+
+			By("waiting for the agent pod to run")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pod", agentName+"-0", "-n", agentNamespace,
+					"-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Running"), "agent pod not yet running")
+			}, 10*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("recording the StatefulSet and Pod identities")
+			stsUIDBefore := kubectlUID("statefulset", agentName, agentNamespace)
+			podUIDBefore := kubectlUID("pod", agentName+"-0", agentNamespace)
+			Expect(stsUIDBefore).NotTo(BeEmpty())
+			Expect(podUIDBefore).NotTo(BeEmpty())
+
+			By("adding persistence to the running agent")
+			cmd = exec.Command("kubectl", "patch", "hermesagent", agentName, "-n", agentNamespace,
+				"--type=merge", "-p", `{"spec":{"hermes":{"storage":{"persistence":{"enabled":true,"size":"5Gi"}}}}}`)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to add persistence")
+
+			By("waiting for the StatefulSet to be recreated with the PVC template")
+			// No update can add a volumeClaimTemplate, so only a recreated
+			// StatefulSet carries the new spec.
+			Eventually(func(g Gomega) {
+				g.Expect(kubectlUID("statefulset", agentName, agentNamespace)).NotTo(Equal(stsUIDBefore),
+					"StatefulSet was not recreated after persistence was added")
+			}, 4*time.Minute, 5*time.Second).Should(Succeed())
+			claimsOut, err := utils.Run(exec.Command("kubectl", "get", "statefulset", agentName,
+				"-n", agentNamespace, "-o", "jsonpath={.spec.volumeClaimTemplates[*].metadata.name}"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(claimsOut).To(ContainSubstring("hermes-data"), "volumeClaimTemplate missing on the recreated StatefulSet")
+
+			By("waiting for the recreated pod to run on the data PVC")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pod", agentName+"-0", "-n", agentNamespace,
+					"-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Running"), "recreated agent pod not yet running")
+			}, 10*time.Minute, 5*time.Second).Should(Succeed())
+			Expect(kubectlUID("pod", agentName+"-0", agentNamespace)).NotTo(Equal(podUIDBefore),
+				"agent pod was not recreated")
+			pvcOut, err := utils.Run(exec.Command("kubectl", "get", "pvc",
+				fmt.Sprintf("hermes-data-%s-0", agentName), "-n", agentNamespace,
+				"-o", "jsonpath={.status.phase}"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pvcOut).To(Equal("Bound"), "data PVC did not bind")
+		})
+	})
 })
+
+// kubectlUID returns the metadata.uid of an object ("" when absent), used to
+// assert that an object was deleted and recreated rather than updated in place.
+func kubectlUID(kind, name, namespace string) string {
+	out, err := utils.Run(exec.Command("kubectl", "get", kind, name,
+		"-n", namespace, "-o", "jsonpath={.metadata.uid}"))
+	if err != nil {
+		return ""
+	}
+	return out
+}
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
 // It uses the Kubernetes TokenRequest API to generate a token by directly sending a request
