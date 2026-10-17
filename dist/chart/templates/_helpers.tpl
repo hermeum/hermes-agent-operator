@@ -61,3 +61,26 @@ Otherwise, use the standard resourceName helper with "controller-manager" suffix
 {{- include "hermes-agent-operator.resourceName" (dict "suffix" "controller-manager" "context" .) }}
 {{- end }}
 {{- end }}
+
+{{/*
+Whether the metrics endpoint serves a cert-manager-issued certificate.
+Renders "true" or an empty string. The `Certificate`, the manager mount, and the
+`ServiceMonitor` TLS config all key off this, so they never disagree.
+*/}}
+{{- define "hermes-agent-operator.metricsCertEnabled" -}}
+{{- if and .Values.certManager.enabled .Values.metrics.enabled .Values.metrics.secure }}true{{- end }}
+{{- end }}
+
+{{/*
+Name of the `Secret` that holds the metrics certificate.
+*/}}
+{{- define "hermes-agent-operator.metricsCertSecretName" -}}
+metrics-server-cert
+{{- end }}
+
+{{/*
+Directory where the manager mounts the metrics certificate.
+*/}}
+{{- define "hermes-agent-operator.metricsCertDir" -}}
+/tmp/k8s-metrics-server/metrics-certs
+{{- end }}

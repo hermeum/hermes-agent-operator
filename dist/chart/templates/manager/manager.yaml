@@ -90,6 +90,9 @@ spec:
         {{- with .Values.rbac.watchNamespaces }}
         - --watch-namespace={{ join "," . }}
         {{- end }}
+        {{- if include "hermes-agent-operator.metricsCertEnabled" . }}
+        - --metrics-cert-path={{ include "hermes-agent-operator.metricsCertDir" . }}
+        {{- end }}
         {{- range .Values.manager.args }}
         - {{ . }}
         {{- end }}
@@ -128,12 +131,19 @@ spec:
           {{- else }}
           {}
           {{- end }}
+        {{- if or .Values.manager.extraVolumeMounts (include "hermes-agent-operator.metricsCertEnabled" .) }}
         volumeMounts:
-          {{- if .Values.manager.extraVolumeMounts }}
-          {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
-          {{- else }}
-          []
+          {{- if include "hermes-agent-operator.metricsCertEnabled" . }}
+          - mountPath: {{ include "hermes-agent-operator.metricsCertDir" . }}
+            name: metrics-certs
+            readOnly: true
           {{- end }}
+          {{- with .Values.manager.extraVolumeMounts }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        {{- else }}
+        volumeMounts: []
+        {{- end }}
       securityContext:
         {{- if .Values.manager.podSecurityContext }}
         {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
@@ -144,10 +154,24 @@ spec:
       {{- if and (hasKey .Values.manager "terminationGracePeriodSeconds") (ne .Values.manager.terminationGracePeriodSeconds nil) }}
       terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
       {{- end }}
+      {{- if or .Values.manager.extraVolumes (include "hermes-agent-operator.metricsCertEnabled" .) }}
       volumes:
-        {{- if .Values.manager.extraVolumes }}
-        {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
-        {{- else }}
-        []
+        {{- if include "hermes-agent-operator.metricsCertEnabled" . }}
+        - name: metrics-certs
+          secret:
+            items:
+            - key: ca.crt
+              path: ca.crt
+            - key: tls.crt
+              path: tls.crt
+            - key: tls.key
+              path: tls.key
+            secretName: {{ include "hermes-agent-operator.metricsCertSecretName" . }}
         {{- end }}
+        {{- with .Values.manager.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- else }}
+      volumes: []
+      {{- end }}
 {{- end }}

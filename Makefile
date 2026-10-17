@@ -294,6 +294,10 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)
 
+.PHONY: helm-verify-metrics-cert
+helm-verify-metrics-cert: ## Check that the Helm release issues and serves the metrics certificate.
+	HELM_NAMESPACE=$(HELM_NAMESPACE) HELM_RELEASE=$(HELM_RELEASE) KUBECTL="$(KUBECTL)" test/chart/verify-metrics-cert.sh
+
 .PHONY: helm-uninstall
 helm-uninstall: ## Uninstall the Helm release from the K8s cluster.
 	$(HELM) uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)

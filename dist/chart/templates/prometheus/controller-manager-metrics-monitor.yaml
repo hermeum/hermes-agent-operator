@@ -21,17 +21,17 @@ spec:
     {{- if .Values.metrics.secure }}
     tlsConfig:
       serverName: {{ include "hermes-agent-operator.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc
-      {{- if .Values.certManager.enabled }}
+      {{- if include "hermes-agent-operator.metricsCertEnabled" . }}
       ca:
         secret:
-          name: metrics-server-cert
+          name: {{ include "hermes-agent-operator.metricsCertSecretName" $ }}
           key: ca.crt
       cert:
         secret:
-          name: metrics-server-cert
+          name: {{ include "hermes-agent-operator.metricsCertSecretName" $ }}
           key: tls.crt
       keySecret:
-        name: metrics-server-cert
+        name: {{ include "hermes-agent-operator.metricsCertSecretName" $ }}
         key: tls.key
       {{- else }}
       insecureSkipVerify: true
