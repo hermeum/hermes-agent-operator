@@ -397,7 +397,24 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		// A distribution creates the profile itself.  Otherwise the operator
 		// creates an empty profile, or clones the default profile.
 		if profile.Distribution != nil {
-			steps = append(steps, buildProfileDistributionScript(name, profile.Distribution))
+			// A private repository's credentials are mounted into this init
+			// container alone, so the agent container cannot read them.
+			var credentialsFile string
+			if gc := profile.Distribution.GetGitCredentials(); gc != nil {
+				volName := "hermes-git-credentials-" + name
+				mountPath := "/hermes-git-credentials-" + name
+				volumes = append(volumes, corev1.Volume{
+					Name: volName,
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{SecretName: gc.SecretRef.Name},
+					},
+				})
+				profileMounts = append(profileMounts, corev1.VolumeMount{
+					Name: volName, MountPath: mountPath, ReadOnly: true,
+				})
+				credentialsFile = mountPath + "/" + gc.GetKey()
+			}
+			steps = append(steps, buildProfileDistributionScript(name, profile.Distribution, credentialsFile))
 		} else {
 			steps = append(steps, buildProfileCreationScript(name, profile.Clone))
 		}

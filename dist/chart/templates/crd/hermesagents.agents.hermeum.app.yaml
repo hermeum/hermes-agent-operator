@@ -3139,6 +3139,47 @@ spec:
                                 ref is set: a pinned profile never updates, and a new ref reinstalls,
                                 which always resets `config.yaml`.
                               type: boolean
+                            gitCredentials:
+                              description: |-
+                                gitCredentials supplies HTTPS credentials for a private repository on
+                                any host, pinned or not.  Use it rather than putting GITHUB_TOKEN or
+                                GH_TOKEN in the agent's environment: the `Secret` is mounted only into
+                                this profile's init container, so the running agent cannot read the
+                                token, and it also covers the operator's own clone for a pinned ref.
+                              properties:
+                                key:
+                                  default: .git-credentials
+                                  description: |-
+                                    key is the `Secret` key holding the credentials, in git-credential-store
+                                    format: one entry per line, as "https://<user>:<token>@<host>".  git uses
+                                    the first entry for a host, so repositories on one host that need
+                                    different tokens need different keys.  Defaults to ".git-credentials".
+                                  pattern: ^[-._a-zA-Z0-9]+$
+                                  type: string
+                                secretRef:
+                                  description: |-
+                                    `secretRef` names a `Secret` in the agent's namespace.  The name is
+                                    required.  `LocalObjectReference` makes it optional, but with an empty
+                                    name the API server would reject the `Pod` later.
+                                  properties:
+                                    name:
+                                      default: ""
+                                      description: |-
+                                        Name of the referent.
+                                        This field is effectively required, but due to backwards compatibility is
+                                        allowed to be empty. Instances of this type with an empty value here are
+                                        almost certainly wrong.
+                                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                      type: string
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                              required:
+                              - secretRef
+                              type: object
+                              x-kubernetes-validations:
+                              - message: secretRef.name is required
+                                rule: has(self.secretRef.name) && self.secretRef.name.size()
+                                  > 0
                             ref:
                               description: |-
                                 ref pins the distribution to a git tag, branch, or commit SHA.  The

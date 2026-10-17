@@ -601,7 +601,32 @@ Pinning to a tag is recommended, because a bot can then propose each version cha
 }
 ```
 
-**Private repositories.** For a private GitHub repository without `ref`, set `GITHUB_TOKEN` or `GH_TOKEN` through [`hermes.env`/`hermes.envFrom`](#hermesenv--hermesenvfrom), and the Hermes CLI uses it to clone. With `ref` set, the operator runs the clone itself and does not read those variables, so a pinned private repository is not supported yet.
+**Private repositories.** Use `gitCredentials` for a private repository on any host, pinned or not:
+
+```yaml
+hermes:
+  profiles:
+    researcher:
+      distribution:
+        source: https://git.example.com/team/research-bot.git
+        gitCredentials:
+          secretRef:
+            name: research-bot-git
+          key: .git-credentials      # optional; defaults to ".git-credentials"
+```
+
+The `Secret` key holds a [git credential store](https://git-scm.com/docs/git-credential-store) file, one entry per line:
+
+```sh
+kubectl create secret generic research-bot-git \
+  --from-literal=.git-credentials='https://oauth2:glpat-xxxxxxxx@git.example.com'
+```
+
+Each profile names its own `Secret` and key, so distributions that need different credentials can each have one. Give each profile its own `Secret`, or keep one `Secret` with a key per profile. Within one file, git uses the first entry for a host, so two repositories on the same host that need different tokens need different keys.
+
+The operator mounts the `Secret` only into the init container of that profile, not into the agent container. Thus the running agent cannot read the token. The operator gives the credential to git through the environment and does not write a `.gitconfig`, so the token is not on the data volume. Kubernetes keeps `Secret` volumes in tmpfs, so the token is not written to the disk of the node.
+
+> **Note:** Without `ref`, the Hermes CLI runs the clone. It tries without a credential first and uses the one from `gitCredentials` when the host asks for it, as GitHub, GitLab, Codeberg, and Bitbucket all do for a private repository. That retry arrived in hermes-agent `v2026.9.21`. On an older image, or with a host that answers 404 instead of asking for credentials, set `ref` so that the operator runs the clone with the credential from the start.
 
 > **Note:** Distributions must be reachable over HTTPS (port 443). The [default `NetworkPolicy`](#securitynetworkpolicy) allows this. Git over SSH (port 22) needs an `additionalEgress` rule.
 >
