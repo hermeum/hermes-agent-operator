@@ -2398,6 +2398,77 @@ func TestBuildStatefulSetProfileDistribution(t *testing.T) {
 	}
 }
 
+func TestBuildResumeCronsScript(t *testing.T) {
+	t.Run("allowlisted jobs are resumed", func(t *testing.T) {
+		got := buildResumeCronsScript("coder", []string{"daily-digest", "arxiv-sweep"})
+		if !strings.Contains(got, "daily-digest\narxiv-sweep") {
+			t.Errorf("expected both names, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes cron resume -p "coder" "$id"`) {
+			t.Errorf("expected a resume by id, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes cron pause -p "coder" "$id"`) {
+			t.Errorf("expected dropped names to be paused, got:\n%s", got)
+		}
+		if !strings.Contains(got, "profiles/coder/resumed-crons") {
+			t.Errorf("expected a per-profile manifest, got:\n%s", got)
+		}
+		// Names are data, not shell syntax.  A quoted heredoc does no
+		// expansion, and the CRD forbids a line break that could end it early.
+		if !strings.Contains(got, "<<'RESUME_EOF'") {
+			t.Errorf("expected names passed through a quoted heredoc, got:\n%s", got)
+		}
+	})
+
+	t.Run("an empty allowlist still pauses what it resumed before", func(t *testing.T) {
+		got := buildResumeCronsScript("coder", nil)
+		if !strings.Contains(got, `hermes cron pause -p "coder" "$id"`) {
+			t.Errorf("expected the pause pass, got:\n%s", got)
+		}
+	})
+
+	t.Run("a name matching no job is skipped, not fatal", func(t *testing.T) {
+		got := buildResumeCronsScript("coder", []string{"renamed-upstream"})
+		if !strings.Contains(got, "skipping") {
+			t.Errorf("expected an unmatched name to be skipped, got:\n%s", got)
+		}
+		if !strings.Contains(got, `hermes cron resume -p "coder" "$id" || true`) {
+			t.Errorf("expected resume failures to be tolerated, got:\n%s", got)
+		}
+	})
+}
+
+func TestBuildStatefulSetProfileDistributionResumeCrons(t *testing.T) {
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Profiles: map[string]agentsv1alpha1.HermesProfile{
+			"researcher": {Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source:      "github.com/you/research-bot",
+				ResumeCrons: []string{"daily-digest"},
+			}},
+			"plain": {Crons: []agentsv1alpha1.HermesCron{{Name: "nightly", Schedule: "0 2 * * *"}}},
+		},
+	}
+
+	sts := buildStatefulSet(ha, testConfigHash)
+
+	script := findInitContainer(sts, "init-profile-researcher").Args[0]
+	if !strings.Contains(script, "resumed-crons") {
+		t.Errorf("expected the allowlist step, got:\n%s", script)
+	}
+	// It runs after the operator's own cron reconciliation, so the job store it
+	// reads is already complete.
+	if strings.Index(script, "resumed-crons") < strings.Index(script, `MANIFEST="$HERMES_HOME/.hermes-agent-operator/profiles/researcher/crons"`) {
+		t.Errorf("expected the allowlist after the crons step, got:\n%s", script)
+	}
+
+	// A profile without a `distribution` has no allowlist step: its jobs are
+	// created by the operator and are not paused to begin with.
+	if plain := findInitContainer(sts, "init-profile-plain").Args[0]; strings.Contains(plain, "resumed-crons") {
+		t.Errorf("unexpected allowlist step without a distribution, got:\n%s", plain)
+	}
+}
+
 func TestCombineInitSteps(t *testing.T) {
 	got := combineInitSteps("step one", "step two")
 	if !strings.Contains(got, "==> Step 1/2") || !strings.Contains(got, "==> Step 2/2") {

@@ -731,6 +731,24 @@ type HermesProfileDistribution struct {
 	// which always resets `config.yaml`.
 	// +optional
 	ForceConfig bool `json:"forceConfig,omitempty"`
+	// `resumeCrons` names the cron jobs of the distribution to resume.  The
+	// jobs of a distribution arrive paused, so that no job runs before review.
+	// A job named here resumes.
+	//
+	// The list is the desired state.  If you remove a name, that job pauses
+	// again at the next `Pod` start.  This field does not affect jobs that the
+	// distribution does not ship, or jobs declared in crons.  The names come
+	// from `cron/jobs.json` in the distribution, and `hermes -p <profile> cron
+	// list` shows them.
+	//
+	// A name cannot contain a line break.  The init script gets the list as a
+	// quoted heredoc, and a line break could end the list early.
+	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[^\n\r]+$`
+	ResumeCrons []string `json:"resumeCrons,omitempty"`
 	// gitCredentials supplies HTTPS credentials for a private repository on
 	// any host, pinned or not.  Use it rather than putting GITHUB_TOKEN or
 	// GH_TOKEN in the agent's environment: the `Secret` is mounted only into
@@ -768,6 +786,14 @@ func (c *HermesGitCredentials) GetKey() string {
 		return ".git-credentials"
 	}
 	return c.Key
+}
+
+// `GetResumeCrons` returns the names of the distribution's cron jobs to resume.
+func (d *HermesProfileDistribution) GetResumeCrons() []string {
+	if d == nil {
+		return nil
+	}
+	return d.ResumeCrons
 }
 
 // `GetGitCredentials` returns the credentials for a private repository, if any.
