@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"sort"
@@ -74,7 +75,19 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	}
 	configHash := configMapDataHash(cmData)
 
-	desired := buildStatefulSet(ha, configHash)
+	in := statefulSetInputs{configHash: configHash}
+	if ha.GetEgress().IsEnabled() {
+		in.egressTokenNames, in.egressHash, err = u.egressPodInputs(ctx, ha)
+		if errors.Is(err, errEgressInputsPending) {
+			u.tel.Debug(ctx, "Waiting for egress Secrets", "reason", err.Error())
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
+		if err != nil {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		}
+	}
+
+	desired := buildStatefulSet(ha, in)
 	hash := desiredSpecHash(desired)
 	if desired.Annotations == nil {
 		desired.Annotations = map[string]string{}
@@ -230,11 +243,22 @@ func sameVolumeClaimTemplateNames(live, desired *appsv1.StatefulSet) bool {
 	return true
 }
 
-// `buildStatefulSet` renders the desired `StatefulSet`. The `configHash` is
-// the hash of the bootstrap `ConfigMap` data the pod mounts, injected as a pod
-// template annotation so that editing the config restarts the `Pod`: the init
-// containers read the config once, at start.
-func buildStatefulSet(ha *agentsv1alpha1.HermesAgent, configHash string) *appsv1.StatefulSet {
+// statefulSetInputs carries what `buildStatefulSet` needs from live objects.
+// `reconcileStatefulSet` reads them so that the builder stays pure.
+type statefulSetInputs struct {
+	// configHash is the hash of the bootstrap `ConfigMap` data the pod mounts,
+	// injected as a pod template annotation so that editing the config
+	// restarts the `Pod`: the init containers read the config once, at start.
+	configHash string
+	// egressTokenNames are the env var names the egress Secret holds proxy
+	// tokens for.
+	egressTokenNames []string
+	// egressHash covers the egress inputs the pod reads only at start.
+	egressHash string
+}
+
+// `buildStatefulSet` renders the desired `StatefulSet`.
+func buildStatefulSet(ha *agentsv1alpha1.HermesAgent, in statefulSetInputs) *appsv1.StatefulSet {
 	replicas := int32(1)
 	if ha.IsSuspended() {
 		replicas = int32(0)
@@ -263,7 +287,7 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent, configHash string) *appsv1
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: ha.PodTemplateLabels(),
 					Annotations: map[string]string{
-						domain + "/config-hash": configHash,
+						domain + "/config-hash": in.configHash,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -284,6 +308,7 @@ func buildStatefulSet(ha *agentsv1alpha1.HermesAgent, configHash string) *appsv1
 	sts = buildHermesContainer(ha, sts)
 	sts = buildSearXNGContainer(ha, sts)
 	sts = buildCamofoxContainer(ha, sts)
+	sts = buildEgressContainer(ha, sts, in.egressTokenNames, in.egressHash)
 
 	// additional user-provided init containers run after the operator-managed ones.
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, ha.GetInitContainers()...)

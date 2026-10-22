@@ -159,6 +159,11 @@ type HermesAgentSpec struct {
 	// Camofox configures an optional Camofox sidecar used by the browser automation tool.
 	// +optional
 	Camofox *Camofox `json:"camofox,omitempty"`
+
+	// Egress configures an optional iron-proxy sidecar that keeps provider API
+	// keys out of the agent container and allowlists its outbound hosts.
+	// +optional
+	Egress *Egress `json:"egress,omitempty"`
 }
 
 // ManagedResources lists the Kubernetes resources currently owned by this HermesAgent.
@@ -195,6 +200,12 @@ type ManagedResources struct {
 	// networkPolicy is the name of the managed NetworkPolicy.
 	// +optional
 	NetworkPolicy string `json:"networkPolicy,omitempty"`
+	// egressSecret is the name of the managed iron-proxy config and proxy token Secret.
+	// +optional
+	EgressSecret string `json:"egressSecret,omitempty"`
+	// egressCASecret is the name of the managed iron-proxy CA Secret.
+	// +optional
+	EgressCASecret string `json:"egressCASecret,omitempty"`
 	// statefulSet is the name of the managed StatefulSet.
 	// +optional
 	StatefulSet string `json:"statefulSet,omitempty"`

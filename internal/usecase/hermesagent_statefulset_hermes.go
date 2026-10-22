@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
@@ -245,6 +247,25 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	// ConfigMap keys use the format "profile.default.workspace.<path>" with "/" replaced by "--".
 	defaultSteps = append(defaultSteps, buildWorkspaceScript(hermesDefaultProfile))
 
+	// egress: with the proxy on, every .env gets proxy tokens in place of the
+	// real keys (see buildDotEnvScript), read from the egress Secret.
+	const (
+		egressTokensVolume = "hermes-egress-tokens"
+		egressTokensMount  = "/hermes-egress-tokens"
+	)
+	egressTokensDir := ""
+	var egressTokensMounts []corev1.VolumeMount
+	if ha.GetEgress().IsEnabled() {
+		egressTokensDir = egressTokensMount
+		egressTokensMounts = []corev1.VolumeMount{{Name: egressTokensVolume, MountPath: egressTokensMount, ReadOnly: true}}
+		volumes = append(volumes, corev1.Volume{
+			Name: egressTokensVolume,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: ha.GetEgressSecretName()},
+			},
+		})
+	}
+
 	// dotenv: write the default profile .env.
 	de := ha.GetHermes().GetWorkspace().GetDotEnv()
 	operatorItems := buildOperatorDotEnvItems(ha)
@@ -349,8 +370,8 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			}
 		}
 
-		defaultSteps = append(defaultSteps, buildDotEnvScript(hermesDefaultProfile, mountPaths...))
-		defaultMounts = mounts
+		defaultSteps = append(defaultSteps, buildDotEnvScript(hermesDefaultProfile, egressTokensDir, mountPaths...))
+		defaultMounts = append(mounts, egressTokensMounts...)
 	}
 
 	// python-packages: install desired packages into $HERMES_HOME/.python-packages.
@@ -509,7 +530,8 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				}
 			}
 
-			steps = append(steps, buildDotEnvScript(name, mountPaths...))
+			steps = append(steps, buildDotEnvScript(name, egressTokensDir, mountPaths...))
+			profileMounts = append(profileMounts, egressTokensMounts...)
 		}
 
 		steps = append(steps, buildPluginsScript(name, profile.Plugins))
@@ -581,6 +603,24 @@ func buildOperatorDotEnvItems(ha *agentsv1alpha1.HermesAgent) []corev1.KeyToPath
 	if ha.GetCamofox().IsEnabled() {
 		items = append(items, corev1.KeyToPath{Key: "CAMOFOX_URL", Path: "CAMOFOX_URL"})
 	}
+	items = append(items, buildEgressDotEnvItems(ha)...)
+	return items
+}
+
+// buildEgressDotEnvItems returns the Items filter for the proxy env vars the
+// Hermes ConfigMap holds while egress is on. They go to every profile's .env:
+// hermes-agent resolves a profile's settings from its .env, not from the
+// container env.
+func buildEgressDotEnvItems(ha *agentsv1alpha1.HermesAgent) []corev1.KeyToPath {
+	eg := ha.GetEgress()
+	if !eg.IsEnabled() {
+		return nil
+	}
+	keys := slices.Sorted(maps.Keys(eg.GetAgentProxyEnv()))
+	items := make([]corev1.KeyToPath, 0, len(keys))
+	for _, k := range keys {
+		items = append(items, corev1.KeyToPath{Key: k, Path: k})
+	}
 	return items
 }
 
@@ -609,5 +649,6 @@ func buildProfileSidecarDotEnvItems(ha *agentsv1alpha1.HermesAgent) []corev1.Key
 	if ha.GetCamofox().IsEnabled() {
 		items = append(items, corev1.KeyToPath{Key: "CAMOFOX_URL", Path: "CAMOFOX_URL"})
 	}
+	items = append(items, buildEgressDotEnvItems(ha)...)
 	return items
 }

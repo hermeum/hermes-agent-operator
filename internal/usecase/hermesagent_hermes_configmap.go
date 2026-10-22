@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -377,6 +378,9 @@ func buildHermesConfigMapData(ha *agentsv1alpha1.HermesAgent, refs resolvedConfi
 	}
 	if ha.GetCamofox().IsEnabled() {
 		data["CAMOFOX_URL"] = agentsv1alpha1.CamofoxURL
+	}
+	if eg := ha.GetEgress(); eg.IsEnabled() {
+		maps.Copy(data, eg.GetAgentProxyEnv())
 	}
 
 	return data, nil

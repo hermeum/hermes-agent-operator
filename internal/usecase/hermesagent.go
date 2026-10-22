@@ -116,6 +116,22 @@ func (u *HermesAgentUseCase) Reconcile(ctx context.Context, param ReconcileParam
 		}
 		return result, err
 	}
+	// The egress CA and Secret must exist before the StatefulSet is
+	// reconciled: the pod mounts both and the StatefulSet hashes them.
+	if result, err := u.reconcileEgressCA(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile egress CA")
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
+		return result, err
+	}
+	if result, err := u.reconcileEgressSecret(ctx, ha); err != nil || !result.IsZero() {
+		if err != nil {
+			u.tel.Error(ctx, err, "Failed to reconcile egress Secret")
+			u.tel.IncReconcile(ctx, IncReconcileParam{NamespacedName: nsName, Result: ResultError})
+		}
+		return result, err
+	}
 	// The restore PVC must be provisioned (and an empty-PVC-shaped
 	// StatefulSet removed) before the StatefulSet is reconciled, so the
 	// recreated StatefulSet mounts the restored volume.

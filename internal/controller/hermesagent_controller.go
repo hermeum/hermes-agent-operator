@@ -91,6 +91,27 @@ func (r *HermesAgentReconciler) agentsReferencingConfigMap(ctx context.Context, 
 	return requests
 }
 
+// agentsReferencingSecret maps a `Secret` to every HermesAgent in its namespace
+// whose egress proxy reads it (credentials or CA), so that rotating it
+// reconciles those agents.
+func (r *HermesAgentReconciler) agentsReferencingSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	var agents agentsv1alpha1.HermesAgentList
+	if err := r.List(ctx, &agents, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for i := range agents.Items {
+		agent := &agents.Items[i]
+		if slices.Contains(agent.GetEgressSourceSecretNames(), obj.GetName()) {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: client.ObjectKeyFromObject(agent),
+			})
+		}
+	}
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *HermesAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
@@ -105,6 +126,7 @@ func (r *HermesAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&networkingv1.Ingress{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Owns(&corev1.Secret{}).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.agentsReferencingSecret)).
 		Named("hermesagent").
 		Complete(r)
 }
