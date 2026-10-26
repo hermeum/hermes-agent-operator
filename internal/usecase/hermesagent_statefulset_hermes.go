@@ -2,8 +2,6 @@ package usecase
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 
 	agentsv1alpha1 "hermeum/hermes-agent-operator/api/v1alpha1"
@@ -238,6 +236,13 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	var defaultSteps []string
 	var defaultMounts []corev1.VolumeMount
 
+	// egress: drop the proxy env a previous start left in the .env files. The
+	// init steps run before iron-proxy listens, and init-egress adds it back
+	// last (see buildEgressDotEnvStripScript).
+	if ha.GetEgress().IsEnabled() {
+		defaultSteps = append(defaultSteps, buildEgressDotEnvStripScript())
+	}
+
 	// config: copy config.yaml from the bootstrap ConfigMap to the data volume.
 	if ha.GetHermes().HasConfigDocument() {
 		defaultSteps = append(defaultSteps, buildConfigScript(hermesDefaultProfile))
@@ -270,7 +275,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	de := ha.GetHermes().GetWorkspace().GetDotEnv()
 	operatorItems := buildOperatorDotEnvItems(ha)
 	operatorSecretItems := buildOperatorDotEnvSecretItems(ha)
-	if de != nil || len(operatorItems) > 0 || len(operatorSecretItems) > 0 {
+	if de != nil || len(operatorItems) > 0 || len(operatorSecretItems) > 0 || egressTokensDir != "" {
 		var mountPaths []string
 		var mounts []corev1.VolumeMount
 
@@ -450,7 +455,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		// written to every named profile's .env. API_SERVER_* / WEBHOOK_* are
 		// intentionally excluded — they belong to the default profile's
 		// gateway.
-		if de := profile.Workspace.GetDotEnv(); de != nil || len(sidecarItemsForProfiles) > 0 {
+		if de := profile.Workspace.GetDotEnv(); de != nil || len(sidecarItemsForProfiles) > 0 || egressTokensDir != "" {
 			var mountPaths []string
 
 			// Operator sidecar keys first (user keys override on collision).
@@ -567,6 +572,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		})
 	}
 
+	// egress: init-egress runs last and adds the proxy env to every .env, so no
+	// init step, the user's included, sees it.
+	if eg := ha.GetEgress(); eg.IsEnabled() {
+		initContainers = append(initContainers, initContainer("init-egress", buildEgressDotEnvAppendScript(eg.GetAgentProxyEnv())))
+	}
+
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)
 	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, container)
 	sts.Spec.Template.Spec.Volumes = append(sts.Spec.Template.Spec.Volumes, volumes...)
@@ -603,24 +614,6 @@ func buildOperatorDotEnvItems(ha *agentsv1alpha1.HermesAgent) []corev1.KeyToPath
 	if ha.GetCamofox().IsEnabled() {
 		items = append(items, corev1.KeyToPath{Key: "CAMOFOX_URL", Path: "CAMOFOX_URL"})
 	}
-	items = append(items, buildEgressDotEnvItems(ha)...)
-	return items
-}
-
-// buildEgressDotEnvItems returns the Items filter for the proxy env vars the
-// Hermes ConfigMap holds while egress is on. They go to every profile's .env:
-// hermes-agent resolves a profile's settings from its .env, not from the
-// container env.
-func buildEgressDotEnvItems(ha *agentsv1alpha1.HermesAgent) []corev1.KeyToPath {
-	eg := ha.GetEgress()
-	if !eg.IsEnabled() {
-		return nil
-	}
-	keys := slices.Sorted(maps.Keys(eg.GetAgentProxyEnv()))
-	items := make([]corev1.KeyToPath, 0, len(keys))
-	for _, k := range keys {
-		items = append(items, corev1.KeyToPath{Key: k, Path: k})
-	}
 	return items
 }
 
@@ -649,6 +642,5 @@ func buildProfileSidecarDotEnvItems(ha *agentsv1alpha1.HermesAgent) []corev1.Key
 	if ha.GetCamofox().IsEnabled() {
 		items = append(items, corev1.KeyToPath{Key: "CAMOFOX_URL", Path: "CAMOFOX_URL"})
 	}
-	items = append(items, buildEgressDotEnvItems(ha)...)
 	return items
 }

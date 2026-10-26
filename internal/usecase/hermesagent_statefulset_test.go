@@ -1682,24 +1682,22 @@ func TestOperatorDotEnvUserDotEnvAlone(t *testing.T) {
 }
 
 func TestDotEnvEgress(t *testing.T) {
-	// With egress on, every profile's .env carries the proxy env vars and the
-	// proxy tokens, and never a real key that has a token: hermes-agent
-	// resolves a profile's credentials from its .env and lets .env override
-	// the process env.
+	// With egress on, every profile's .env carries the proxy tokens, and never
+	// a real key that has a token: hermes-agent resolves a profile's
+	// credentials from its .env and lets .env override the process env.  The
+	// proxy env reaches the .env only in init-egress, the last init container:
+	// the earlier ones run before iron-proxy listens.
 	withProfile := func(ha *agentsv1alpha1.HermesAgent, dotEnv *agentsv1alpha1.HermesDotEnv) *agentsv1alpha1.HermesAgent {
 		ws := &agentsv1alpha1.HermesWorkspace{DotEnv: dotEnv}
 		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
-			Workspace: ws,
-			Profiles:  map[string]agentsv1alpha1.HermesProfile{"work": {Workspace: ws}},
+			Workspace:   ws,
+			Profiles:    map[string]agentsv1alpha1.HermesProfile{"work": {Workspace: ws}},
+			InitScripts: []agentsv1alpha1.HermesInitScript{{Name: "user-step", Script: "true"}},
 		}
 		return ha
 	}
 	userDotEnv := &agentsv1alpha1.HermesDotEnv{SecretRef: &corev1.LocalObjectReference{Name: "my-env"}}
 	const tokensLoop = `for f in "/hermes-egress-tokens"/*`
-	initContainers := []struct{ name, proxyEnvVolume string }{
-		{consolidatedInitContainerName, "hermes-operator-dotenv-configmap"},
-		{"init-profile-work", "hermes-operator-dotenv-profile-work"},
-	}
 
 	for _, tt := range []struct {
 		name   string
@@ -1710,20 +1708,41 @@ func TestDotEnvEgress(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sts := buildStatefulSet(withProfile(egressHA(nil), tt.dotEnv), statefulSetInputs{configHash: testConfigHash})
-			for _, want := range initContainers {
-				ic := findInitContainer(sts, want.name)
+			for _, name := range []string{consolidatedInitContainerName, "init-profile-work"} {
+				ic := findInitContainer(sts, name)
 				if ic == nil {
-					t.Fatalf("expected %s", want.name)
+					t.Fatalf("expected %s", name)
 				}
 				if !strings.Contains(ic.Args[0], tokensLoop) || !hasVolumeMount(ic.VolumeMounts, "hermes-egress-tokens") {
-					t.Errorf("%s: expected the proxy tokens written to the .env:\n%s", want.name, ic.Args[0])
+					t.Errorf("%s: expected the proxy tokens written to the .env:\n%s", name, ic.Args[0])
 				}
 				if tt.dotEnv != nil && !strings.Contains(ic.Args[0], `if [ -f "/hermes-egress-tokens/$key" ]; then continue; fi`) {
-					t.Errorf("%s: expected real keys that have a token skipped:\n%s", want.name, ic.Args[0])
+					t.Errorf("%s: expected real keys that have a token skipped:\n%s", name, ic.Args[0])
 				}
-				if !volumeHasItem(sts, want.proxyEnvVolume, "HTTPS_PROXY") || !volumeHasItem(sts, want.proxyEnvVolume, "NO_PROXY") {
-					t.Errorf("%s: expected the proxy env vars in volume %s", want.name, want.proxyEnvVolume)
+			}
+
+			script := findInitContainer(sts, consolidatedInitContainerName).Args[0]
+			if i := strings.Index(script, egressDotEnvBegin); i < 0 || i > strings.Index(script, "==> Step 2/") {
+				t.Errorf("expected init-hermes to drop the proxy env first:\n%s", script)
+			}
+			for _, v := range sts.Spec.Template.Spec.Volumes {
+				if v.ConfigMap == nil {
+					continue
 				}
+				for _, item := range v.ConfigMap.Items {
+					if item.Key == "HTTPS_PROXY" {
+						t.Errorf("volume %s carries the proxy env into an init step", v.Name)
+					}
+				}
+			}
+
+			ics := sts.Spec.Template.Spec.InitContainers
+			last := ics[len(ics)-1]
+			if last.Name != "init-egress" {
+				t.Fatalf("expected init-egress last, after the user's init scripts, got %s", last.Name)
+			}
+			if !strings.Contains(last.Args[0], "HTTPS_PROXY=http://127.0.0.1:9090\n") {
+				t.Errorf("expected init-egress to add the proxy env:\n%s", last.Args[0])
 			}
 		})
 	}
@@ -1734,22 +1753,10 @@ func TestDotEnvEgress(t *testing.T) {
 		if strings.Contains(ic.Args[0], "hermes-egress-tokens") || hasVolumeMount(ic.VolumeMounts, "hermes-egress-tokens") {
 			t.Error("expected no egress tokens without egress")
 		}
+		if strings.Contains(ic.Args[0], egressDotEnvBegin) || findInitContainer(sts, "init-egress") != nil {
+			t.Error("expected no proxy env steps without egress")
+		}
 	})
-}
-
-// volumeHasItem reports whether the named pod volume projects the given key.
-func volumeHasItem(sts *appsv1.StatefulSet, volume, key string) bool {
-	for _, v := range sts.Spec.Template.Spec.Volumes {
-		if v.Name != volume || v.ConfigMap == nil {
-			continue
-		}
-		for _, item := range v.ConfigMap.Items {
-			if item.Key == key {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func TestDotEnvPluralConfigMapRefs(t *testing.T) {

@@ -331,29 +331,3 @@ func TestBuildStatefulSetWithReferencedConfig(t *testing.T) {
 		}
 	})
 }
-
-func TestBuildHermesConfigMapDataEgressEnv(t *testing.T) {
-	data, err := buildHermesConfigMapData(egressHA(nil), resolvedConfigDocuments{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := map[string]string{
-		"HTTPS_PROXY":   "http://127.0.0.1:9090",
-		"HTTP_PROXY":    "http://127.0.0.1:9091",
-		"NO_PROXY":      "localhost,127.0.0.1,.svc,.cluster.local,${KUBERNETES_SERVICE_HOST}",
-		"SSL_CERT_FILE": agentsv1alpha1.EgressAgentCAPath,
-	}
-	for k, v := range expected {
-		if data[k] != v {
-			t.Errorf("expected %s=%q in the ConfigMap, got %q", k, v, data[k])
-		}
-	}
-
-	off, err := buildHermesConfigMapData(minimalHA(), resolvedConfigDocuments{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := off["HTTPS_PROXY"]; ok {
-		t.Error("expected no proxy env vars without egress")
-	}
-}

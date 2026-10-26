@@ -2,8 +2,10 @@ package usecase
 
 import (
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -372,6 +374,52 @@ func buildDotEnvScript(profile, egressTokensDir string, mountPaths ...string) st
 %s} > "$(hermes config env-path -p %q)"
 echo "Generated .env for profile %s"
 `, body.String(), profile, profile)
+}
+
+// The proxy env goes into every .env between these markers, so a later start
+// can find and drop it.  The glob names the default profile's .env and each
+// named profile's.
+const (
+	egressDotEnvBegin = "# BEGIN hermes-agent-operator egress"
+	egressDotEnvEnd   = "# END hermes-agent-operator egress"
+	egressDotEnvFiles = `"$HERMES_HOME/.env" "$HERMES_HOME"/profiles/*/.env`
+)
+
+// buildEgressDotEnvStripScript drops the proxy env from every .env.  The init
+// containers run before the iron-proxy sidecar listens, and they do not mount
+// its CA.  hermes-agent loads the .env over the process env, so with the proxy
+// env in it every request of a `hermes` step would fail.  A .env keeps the
+// proxy env across restarts on the data volume, so the first init step drops
+// it.
+func buildEgressDotEnvStripScript() string {
+	return fmt.Sprintf(`set -eu
+for f in %s; do
+  [ -f "$f" ] || continue
+  sed -i '/^%s$/,/^%s$/d' "$f"
+done
+`, egressDotEnvFiles, egressDotEnvBegin, egressDotEnvEnd)
+}
+
+// buildEgressDotEnvAppendScript adds the proxy env to every .env.  It runs in
+// the last init container, so only the agent sees the proxy env.  It drops a
+// previous copy first, so a retry does not add the proxy env twice.
+func buildEgressDotEnvAppendScript(env map[string]string) string {
+	var block strings.Builder
+	for _, k := range slices.Sorted(maps.Keys(env)) {
+		fmt.Fprintf(&block, "%s=%s\n", k, env[k])
+	}
+	return fmt.Sprintf(`set -eu
+for f in %[1]s; do
+  [ -f "$f" ] || continue
+  sed -i '/^%[2]s$/,/^%[3]s$/d' "$f"
+  if [ -n "$(tail -c 1 "$f")" ]; then echo >> "$f"; fi
+  cat >> "$f" << 'EGRESS_EOF'
+%[2]s
+%[4]s%[3]s
+EGRESS_EOF
+  echo "Added the egress proxy env to $f"
+done
+`, egressDotEnvFiles, egressDotEnvBegin, egressDotEnvEnd, block.String())
 }
 
 // buildProfilesCleanupScript removes named profiles no longer desired and
