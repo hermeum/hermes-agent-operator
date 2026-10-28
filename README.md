@@ -564,7 +564,7 @@ hermes:
 
 #### `distribution`
 
-Install a profile from a [profile distribution](https://hermes-agent.nousresearch.com/docs/user-guide/profile-distributions). A profile distribution is a git repository that holds a complete agent: a `distribution.yaml` manifest, `SOUL.md`, `config.yaml`, `mcp.json`, skills, and cron jobs. Use it to run a specialist agent that someone else maintains. You can also keep your own agent in its own repository, instead of inline in each `HermesAgent`.
+Install a profile from a [profile distribution](https://hermes-agent.nousresearch.com/docs/user-guide/profile-distributions): a git repository that ships a complete agent (`distribution.yaml`, `SOUL.md`, `config.yaml`, skills, and cron jobs).
 
 ```yaml
 hermes:
@@ -572,7 +572,6 @@ hermes:
     researcher:
       distribution:
         source: https://github.com/you/research-bot   # required; git URL, github.com/owner/repo, or a path in the container
-        # renovate: datasource=github-tags depName=you/research-bot
         ref: v1.2.0                                   # optional; pin to a tag, branch, or commit SHA
         updateOnStart: true                           # optional; defaults to true, ignored when ref is set
         forceConfig: false                            # optional; let an update overwrite config.yaml, ignored when ref is set
@@ -584,37 +583,19 @@ hermes:
             name: research-bot-env
 ```
 
-Any other profile fields you declare are applied on top of the distribution. A declared `config` or `workspace.files` entry replaces the distribution's copy, and declared `plugins`, `skills`, `bundles`, and `crons` are installed next to the ones it ships. Fields you leave out keep what the distribution ships. Without `config`, for example, the profile runs the distribution's own `config.yaml`. Deleting the profile key deletes the profile, as it does for any named profile.
+Profile fields you declare are applied on top of the distribution; undeclared fields keep what it ships.
 
-**Pinning and updates.** With `ref` set, the operator clones that revision and installs it again only when `source` or `ref` changes, so a `Pod` restart never pulls a newer revision. A branch is resolved once, at install, and stays at that commit until you change `ref`; the init container log records the commit. Pin to a tag or a commit SHA so that the custom resource names the exact revision you run. Without `ref`, the profile follows the repository's default branch and is pulled again on every `Pod` start with `hermes profile update`, which keeps your data and, unless `forceConfig` is `true`, your `config.yaml`. If that update fails, for example because the repository is unreachable, the profile stays at its installed revision and the agent still starts.
+**Pinning.** With `ref` set, the operator clones that revision and re-installs only when `source` or `ref` changes, so a `Pod` restart never pulls a newer revision. Without `ref`, the profile follows the default branch and is updated on each `Pod` start (`hermes profile update`), keeping your data and (unless `forceConfig: true`) your `config.yaml`. Pin to a tag or commit SHA so the custom resource names the exact revision you run.
 
-Pinning to a tag is recommended, because a bot can then propose each version change for review. Renovate has no manager for this field. Use the `# renovate:` comment above together with a custom manager:
-
-```json
-{
-  "customManagers": [
-    {
-      "customType": "regex",
-      "managerFilePatterns": ["/\\.ya?ml$/"],
-      "matchStrings": ["# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+ref:\\s*[\"']?(?<currentValue>[^\"'\\s]+)"],
-      "versioningTemplate": "semver"
-    }
-  ]
-}
-```
-
-**Private repositories.** Use `gitCredentials` for a private repository on any host, pinned or not:
+**Private repositories.** Set `gitCredentials`:
 
 ```yaml
-hermes:
-  profiles:
-    researcher:
-      distribution:
-        source: https://git.example.com/team/research-bot.git
-        gitCredentials:
-          secretRef:
-            name: research-bot-git
-          key: .git-credentials      # optional; defaults to ".git-credentials"
+        distribution:
+          source: https://git.example.com/team/research-bot.git
+          gitCredentials:
+            secretRef:
+              name: research-bot-git
+            key: .git-credentials      # optional; defaults to ".git-credentials"
 ```
 
 The `Secret` key holds a [git credential store](https://git-scm.com/docs/git-credential-store) file, one entry per line:
@@ -624,38 +605,21 @@ kubectl create secret generic research-bot-git \
   --from-literal=.git-credentials='https://oauth2:glpat-xxxxxxxx@git.example.com'
 ```
 
-Each profile names its own `Secret` and key, so distributions that need different credentials can each have one. Give each profile its own `Secret`, or keep one `Secret` with a key per profile. Within one file, git uses the first entry for a host, so two repositories on the same host that need different tokens need different keys.
+The `Secret` is mounted only into that profile's init container (not the agent container), so the running agent cannot read the token.
 
-The operator mounts the `Secret` only into the init container of that profile, not into the agent container. Thus the running agent cannot read the token. The operator gives the credential to git through the environment and does not write a `.gitconfig`, so the token is not on the data volume. Kubernetes keeps `Secret` volumes in tmpfs, so the token is not written to the disk of the node.
+> **Note:** Distributions must be reachable over HTTPS (port 443); the [default `NetworkPolicy`](#securitynetworkpolicy) allows this, but SSH (port 22) needs an `additionalEgress` rule. The default profile cannot come from a distribution; use [`hermes.config.configMapRef`](#configmapref) instead.
 
-> **Note:** Without `ref`, the Hermes CLI runs the clone. It tries without a credential first and uses the one from `gitCredentials` when the host asks for it, as GitHub, GitLab, Codeberg, and Bitbucket all do for a private repository. That retry arrived in hermes-agent `v2026.9.21`. On an older image, or with a host that answers 404 instead of asking for credentials, set `ref` so that the operator runs the clone with the credential from the start.
-
-> **Note:** Distributions must be reachable over HTTPS (port 443). The [default `NetworkPolicy`](#securitynetworkpolicy) allows this. Git over SSH (port 22) needs an `additionalEgress` rule.
->
-> The default profile cannot come from a distribution, because the Hermes CLI does not install one over `~/.hermes`. For the default profile, use [`hermes.config.configMapRef`](#configmapref).
-
-**Cron jobs.** The cron jobs of a distribution arrive **paused**, so an install never schedules work that you did not review. Review the jobs, then allowlist the ones to run:
-
-```sh
-kubectl exec my-agent-0 -- hermes -p researcher cron list
-```
+**Cron jobs.** A distribution's cron jobs arrive **paused**. Review them, then allowlist the ones to run:
 
 ```yaml
-hermes:
-  profiles:
-    researcher:
-      distribution:
-        source: https://github.com/you/research-bot
-        resumeCrons:
-          - daily-digest
-          - arxiv-sweep
+        distribution:
+          source: https://github.com/you/research-bot
+          resumeCrons:
+            - daily-digest
+            - arxiv-sweep
 ```
 
-`resumeCrons` is the desired state, not a one-time action. If you remove a name, the job pauses again at the next `Pod` start. There is no wildcard, because the jobs arrive paused so that you review each one. If a name matches no job, the init container logs it and continues. Thus a distribution can rename or remove a job without stopping the agent. Jobs declared in `crons` start active, and this field does not affect them.
-
-A resumed job stays resumed after an update. `hermes profile update` merges `cron/jobs.json` by job id and keeps the paused state of each job. Only new jobs in a new revision arrive paused.
-
-> **Note:** hermes-agent `v2026.9.24` added paused installs and the merge by job id. In `v2026.9.21` and earlier, an update replaces all of `cron/jobs.json`, and each job keeps the state that its author committed. `resumeCrons` still gets the correct result, because it runs again at each `Pod` start. But on an older image, a job that you paused manually becomes active again at the next update.
+`resumeCrons` is desired state: removing a name pauses its job again at the next `Pod` start. A resumed job stays resumed after an update (only new jobs arrive paused). Jobs declared in `crons` are unaffected.
 
 ### `searxng`
 
