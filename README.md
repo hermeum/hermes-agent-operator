@@ -88,6 +88,7 @@ Then run the `/hermes-agent-operator` skill to create a custom resource.
 - [`hermes.profiles`](#hermesprofiles)
 - [`searxng`](#searxng)
 - [`camofox`](#camofox)
+- [`egress`](#egress)
 - [`security.rbac`](#securityrbac)
 - [`security.networkPolicy`](#securitynetworkpolicy)
 - [`networking.service`](#networkingservice)
@@ -712,6 +713,42 @@ camofox:
     - name: DISPLAY
       value: ":99"
 ```
+
+### `egress`
+
+Optional [iron-proxy](https://github.com/ironsh/iron-proxy) sidecar that keeps provider API keys out of the agent container and allowlists its outbound hosts. The agent holds opaque proxy tokens; only the sidecar holds the real keys and swaps them in on the way out. A token leaked from the agent is useless outside its pod.
+
+```yaml
+egress:
+  enabled: true                    # defaults to false; omit the entire block to disable
+  image: docker.io/ironsh/iron-proxy:0.49.0  # optional; defaults to this pinned release
+  resources: {}                    # optional; compute resources for the iron-proxy container
+  env:                             # optional; IRON_* overrides for the sidecar; overriding a listener can expose it outside the pod
+    - name: IRON_LOG_LEVEL
+      value: debug
+  credentials:                     # optional; omit to run egress with no swapped credentials
+    secretRef:
+      name: llm-keys               # required; real keys by env var name, read by the sidecar only
+  config:                          # optional; follows hermes-agent's `proxy` config
+    tunnelPort: 9090               # optional; defaults to 9090 (plain-HTTP listener uses +1)
+    upstreamDenyCidrs:             # optional; REPLACES the default deny list — omit to keep all 11 default ranges
+      - 169.254.0.0/16
+      - 10.0.0.0/8
+    extraAllowedHosts:             # optional; hosts allowed on top of the bundled providers
+      - api.github.com
+      - "*.example.com"
+    extraSecrets:                  # optional; extra or overriding credential swaps
+      - name: API_TOKEN
+        hosts: [api.example.com]
+        matchHeaders: [Authorization]
+  # ca:
+  #   secretRef:
+  #     name: egress-ca             # optional; kubernetes.io/tls CA (cert-manager isCA: true)
+```
+
+Every key of `credentials.secretRef` naming a provider hermes-agent knows (OpenRouter, OpenAI, Anthropic, Gemini/Google, Azure OpenAI, Groq, Mistral, xAI, Together, DeepSeek, Nous) becomes a proxied credential (see [`api/v1alpha1/hermesagent_egress.go`](api/v1alpha1/hermesagent_egress.go)); `config.extraSecrets` adds or overrides one, and each entry must be present in the credentials Secret (under its name or an alias). Two credentials may not share a host. Omit `ca` to have the operator generate a self-signed CA.
+
+> **Note:** This keeps the real keys away from the agent but does not *enforce* egress — `HTTPS_PROXY` is advisory. Keys absent from the credentials Secret reach the agent unchanged.
 
 [↑ Back to Configuration](#configuration)
 
