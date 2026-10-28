@@ -236,6 +236,13 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	var defaultSteps []string
 	var defaultMounts []corev1.VolumeMount
 
+	// egress: drop the proxy env a previous start left in the .env files. The
+	// init steps run before iron-proxy listens, and init-egress adds it back
+	// last (see buildEgressDotEnvStripScript).
+	if ha.GetEgress().IsEnabled() {
+		defaultSteps = append(defaultSteps, buildEgressDotEnvStripScript())
+	}
+
 	// config: copy config.yaml from the bootstrap ConfigMap to the data volume.
 	if ha.GetHermes().HasConfigDocument() {
 		defaultSteps = append(defaultSteps, buildConfigScript(hermesDefaultProfile))
@@ -245,11 +252,30 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	// ConfigMap keys use the format "profile.default.workspace.<path>" with "/" replaced by "--".
 	defaultSteps = append(defaultSteps, buildWorkspaceScript(hermesDefaultProfile))
 
+	// egress: with the proxy on, every .env gets proxy tokens in place of the
+	// real keys (see buildDotEnvScript), read from the egress Secret.
+	const (
+		egressTokensVolume = "hermes-egress-tokens"
+		egressTokensMount  = "/hermes-egress-tokens"
+	)
+	egressTokensDir := ""
+	var egressTokensMounts []corev1.VolumeMount
+	if ha.GetEgress().IsEnabled() {
+		egressTokensDir = egressTokensMount
+		egressTokensMounts = []corev1.VolumeMount{{Name: egressTokensVolume, MountPath: egressTokensMount, ReadOnly: true}}
+		volumes = append(volumes, corev1.Volume{
+			Name: egressTokensVolume,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: ha.GetEgressSecretName()},
+			},
+		})
+	}
+
 	// dotenv: write the default profile .env.
 	de := ha.GetHermes().GetWorkspace().GetDotEnv()
 	operatorItems := buildOperatorDotEnvItems(ha)
 	operatorSecretItems := buildOperatorDotEnvSecretItems(ha)
-	if de != nil || len(operatorItems) > 0 || len(operatorSecretItems) > 0 {
+	if de != nil || len(operatorItems) > 0 || len(operatorSecretItems) > 0 || egressTokensDir != "" {
 		var mountPaths []string
 		var mounts []corev1.VolumeMount
 
@@ -349,8 +375,8 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 			}
 		}
 
-		defaultSteps = append(defaultSteps, buildDotEnvScript(hermesDefaultProfile, mountPaths...))
-		defaultMounts = mounts
+		defaultSteps = append(defaultSteps, buildDotEnvScript(hermesDefaultProfile, egressTokensDir, mountPaths...))
+		defaultMounts = append(mounts, egressTokensMounts...)
 	}
 
 	// python-packages: install desired packages into $HERMES_HOME/.python-packages.
@@ -429,7 +455,7 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		// written to every named profile's .env. API_SERVER_* / WEBHOOK_* are
 		// intentionally excluded — they belong to the default profile's
 		// gateway.
-		if de := profile.Workspace.GetDotEnv(); de != nil || len(sidecarItemsForProfiles) > 0 {
+		if de := profile.Workspace.GetDotEnv(); de != nil || len(sidecarItemsForProfiles) > 0 || egressTokensDir != "" {
 			var mountPaths []string
 
 			// Operator sidecar keys first (user keys override on collision).
@@ -509,7 +535,8 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				}
 			}
 
-			steps = append(steps, buildDotEnvScript(name, mountPaths...))
+			steps = append(steps, buildDotEnvScript(name, egressTokensDir, mountPaths...))
+			profileMounts = append(profileMounts, egressTokensMounts...)
 		}
 
 		steps = append(steps, buildPluginsScript(name, profile.Plugins))
@@ -543,6 +570,12 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 				{Name: hermesTmpVolume, MountPath: hermesTmpMount},
 			},
 		})
+	}
+
+	// egress: init-egress runs last and adds the proxy env to every .env, so no
+	// init step, the user's included, sees it.
+	if eg := ha.GetEgress(); eg.IsEnabled() {
+		initContainers = append(initContainers, initContainer("init-egress", buildEgressDotEnvAppendScript(eg.GetAgentProxyEnv())))
 	}
 
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers, initContainers...)

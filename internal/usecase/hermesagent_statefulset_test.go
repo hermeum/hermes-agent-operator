@@ -72,7 +72,7 @@ func TestGetImageReferenceForms(t *testing.T) {
 func TestDigestPinnedImageInPod(t *testing.T) {
 	ha := minimalHA()
 	ha.Spec.Hermes = &agentsv1alpha1.Hermes{Image: imageJSON(`"nousresearch/hermes-agent@sha256:abc123"`)}
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	for _, c := range sts.Spec.Template.Spec.Containers {
 		if c.Name != "hermes-agent" {
 			continue
@@ -134,8 +134,8 @@ func TestUsesLegacyImageForm(t *testing.T) {
 func TestDesiredSpecHash(t *testing.T) {
 	t.Run("stable for identical spec", func(t *testing.T) {
 		ha := minimalHA()
-		h1 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
-		h2 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
+		h1 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
+		h2 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
 		if h1 != h2 {
 			t.Error("hash must be deterministic")
 		}
@@ -143,38 +143,38 @@ func TestDesiredSpecHash(t *testing.T) {
 
 	t.Run("changes when replicas change", func(t *testing.T) {
 		ha := minimalHA()
-		h1 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
+		h1 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
 		suspend := true
 		ha.Spec.Suspend = &suspend
-		if desiredSpecHash(buildStatefulSet(ha, testConfigHash)) == h1 {
+		if desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})) == h1 {
 			t.Error("expected different hash when replicas change")
 		}
 	})
 
 	t.Run("changes when pod template changes", func(t *testing.T) {
 		ha := minimalHA()
-		h1 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
+		h1 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
 		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Image: imageJSON(`"nousresearch/hermes-agent:v2"`)}
-		if desiredSpecHash(buildStatefulSet(ha, testConfigHash)) == h1 {
+		if desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})) == h1 {
 			t.Error("expected different hash when pod template changes")
 		}
 	})
 
 	t.Run("changes when volume claim templates change", func(t *testing.T) {
 		ha := minimalHA()
-		h1 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
+		h1 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
 		size := resource.MustParse("10Gi")
 		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Storage: &agentsv1alpha1.HermesStorage{
 			Persistence: &agentsv1alpha1.HermesPersistence{Enabled: true, Size: &size},
 		}}
-		if desiredSpecHash(buildStatefulSet(ha, testConfigHash)) == h1 {
+		if desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})) == h1 {
 			t.Error("expected different hash when PVC added")
 		}
 	})
 
 	t.Run("stable when only ObjectMeta differs", func(t *testing.T) {
 		ha := minimalHA()
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		h1 := desiredSpecHash(sts)
 		sts.Labels["k8s-injected"] = testTrue
 		if desiredSpecHash(sts) != h1 {
@@ -184,45 +184,45 @@ func TestDesiredSpecHash(t *testing.T) {
 
 	t.Run("changes when hostUsers changes", func(t *testing.T) {
 		ha := minimalHA()
-		h1 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
+		h1 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
 		ha.Spec.HostUsers = ptrBool(false)
-		if desiredSpecHash(buildStatefulSet(ha, testConfigHash)) == h1 {
+		if desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})) == h1 {
 			t.Error("expected different hash when hostUsers changes")
 		}
 	})
 
 	t.Run("changes when podAnnotations change", func(t *testing.T) {
 		ha := minimalHA()
-		h1 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
+		h1 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
 		ha.Spec.PodAnnotations = map[string]string{"rotatedAt": "2026-07-06T12:00:00Z"}
-		if desiredSpecHash(buildStatefulSet(ha, testConfigHash)) == h1 {
+		if desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})) == h1 {
 			t.Error("expected different hash when podAnnotations change")
 		}
 	})
 
 	t.Run("changes when podLabels change", func(t *testing.T) {
 		ha := minimalHA()
-		h1 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
+		h1 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
 		ha.Spec.PodLabels = map[string]string{"example.com/internet-client": testTrue}
-		if desiredSpecHash(buildStatefulSet(ha, testConfigHash)) == h1 {
+		if desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})) == h1 {
 			t.Error("expected different hash when podLabels change")
 		}
 	})
 
 	t.Run("changes when runtimeClassName changes", func(t *testing.T) {
 		ha := minimalHA()
-		h1 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
+		h1 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
 		ha.Spec.RuntimeClassName = ptrString("kata-qemu")
-		if desiredSpecHash(buildStatefulSet(ha, testConfigHash)) == h1 {
+		if desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})) == h1 {
 			t.Error("expected different hash when runtimeClassName changes")
 		}
 	})
 
 	t.Run("changes when priorityClassName changes", func(t *testing.T) {
 		ha := minimalHA()
-		h1 := desiredSpecHash(buildStatefulSet(ha, testConfigHash))
+		h1 := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}))
 		ha.Spec.PriorityClassName = testPriorityClass
-		if desiredSpecHash(buildStatefulSet(ha, testConfigHash)) == h1 {
+		if desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})) == h1 {
 			t.Error("expected different hash when priorityClassName changes")
 		}
 	})
@@ -231,7 +231,7 @@ func TestDesiredSpecHash(t *testing.T) {
 func TestBuildStatefulSetHostUsers(t *testing.T) {
 	t.Run("unset leaves the pod in the host user namespace", func(t *testing.T) {
 		ha := minimalHA()
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if got := sts.Spec.Template.Spec.HostUsers; got != nil {
 			t.Errorf("expected nil hostUsers, got %v", *got)
 		}
@@ -240,7 +240,7 @@ func TestBuildStatefulSetHostUsers(t *testing.T) {
 	t.Run("false gives the pod its own user namespace", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.HostUsers = ptrBool(false)
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		got := sts.Spec.Template.Spec.HostUsers
 		if got == nil {
 			t.Fatal("expected hostUsers to be set")
@@ -255,7 +255,7 @@ func TestBuildStatefulSetHostUsers(t *testing.T) {
 	t.Run("true is passed through rather than dropped", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.HostUsers = ptrBool(true)
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		got := sts.Spec.Template.Spec.HostUsers
 		if got == nil {
 			t.Fatal("expected hostUsers to be set")
@@ -269,7 +269,7 @@ func TestBuildStatefulSetHostUsers(t *testing.T) {
 func TestBuildStatefulSetPodAnnotations(t *testing.T) {
 	t.Run("no extra annotations when unset", func(t *testing.T) {
 		ha := minimalHA()
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if len(sts.Spec.Template.Annotations) != 1 {
 			t.Errorf("expected only config-hash annotation, got %v", sts.Spec.Template.Annotations)
 		}
@@ -278,7 +278,7 @@ func TestBuildStatefulSetPodAnnotations(t *testing.T) {
 	t.Run("user annotations are merged in", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.PodAnnotations = map[string]string{"rotatedAt": "2026-07-06T12:00:00Z", "prometheus.io/scrape": testTrue}
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if sts.Spec.Template.Annotations["rotatedAt"] != "2026-07-06T12:00:00Z" {
 			t.Error("expected rotatedAt annotation to be present")
 		}
@@ -306,7 +306,7 @@ func TestBuildStatefulSetPodLabels(t *testing.T) {
 
 	t.Run("only operator labels when unset", func(t *testing.T) {
 		ha := minimalHA()
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if len(sts.Spec.Template.Labels) != 3 {
 			t.Errorf("expected only the three operator labels, got %v", sts.Spec.Template.Labels)
 		}
@@ -318,7 +318,7 @@ func TestBuildStatefulSetPodLabels(t *testing.T) {
 			"example.com/internet-client": testTrue,
 			"example.com/traefik-route":   testTrue,
 		}
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if sts.Spec.Template.Labels["example.com/internet-client"] != testTrue {
 			t.Error("expected example.com/internet-client label to be present")
 		}
@@ -340,7 +340,7 @@ func TestBuildStatefulSetPodLabels(t *testing.T) {
 			agentsv1alpha1.LabelName:     "hijacked",
 			agentsv1alpha1.LabelInstance: "hijacked",
 		}
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if sts.Spec.Template.Labels[agentsv1alpha1.LabelName] != agentsv1alpha1.AppNameValue {
 			t.Errorf("%s = %q, want %q", agentsv1alpha1.LabelName, sts.Spec.Template.Labels[agentsv1alpha1.LabelName], agentsv1alpha1.AppNameValue)
 		}
@@ -356,7 +356,7 @@ func TestBuildStatefulSetPodLabels(t *testing.T) {
 	t.Run("StatefulSet labels are untouched", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.PodLabels = map[string]string{"example.com/internet-client": testTrue}
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if _, ok := sts.Labels["example.com/internet-client"]; ok {
 			t.Errorf("podLabels must not leak onto the StatefulSet, got %v", sts.Labels)
 		}
@@ -366,7 +366,7 @@ func TestBuildStatefulSetPodLabels(t *testing.T) {
 func TestBuildStatefulSetRuntimeClassName(t *testing.T) {
 	t.Run("unset leaves the pod on the cluster default runtime", func(t *testing.T) {
 		ha := minimalHA()
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if sts.Spec.Template.Spec.RuntimeClassName != nil {
 			t.Errorf("expected nil runtimeClassName, got %q", *sts.Spec.Template.Spec.RuntimeClassName)
 		}
@@ -375,7 +375,7 @@ func TestBuildStatefulSetRuntimeClassName(t *testing.T) {
 	t.Run("set is passed through to the pod spec", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.RuntimeClassName = ptrString("kata-qemu-runtime-rs")
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		got := sts.Spec.Template.Spec.RuntimeClassName
 		if got == nil {
 			t.Fatal("expected runtimeClassName to be set")
@@ -389,7 +389,7 @@ func TestBuildStatefulSetRuntimeClassName(t *testing.T) {
 func TestBuildStatefulSetPriorityClassName(t *testing.T) {
 	t.Run("empty when unset", func(t *testing.T) {
 		ha := minimalHA()
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if got := sts.Spec.Template.Spec.PriorityClassName; got != "" {
 			t.Errorf("expected empty priorityClassName, got %q", got)
 		}
@@ -398,7 +398,7 @@ func TestBuildStatefulSetPriorityClassName(t *testing.T) {
 	t.Run("set is passed through to the pod spec", func(t *testing.T) {
 		ha := minimalHA()
 		ha.Spec.PriorityClassName = testPriorityClass
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if got := sts.Spec.Template.Spec.PriorityClassName; got != testPriorityClass {
 			t.Errorf("priorityClassName = %q, want %q", got, testPriorityClass)
 		}
@@ -414,7 +414,7 @@ func TestBuildStatefulSetPersistenceVolumes(t *testing.T) {
 				ExistingSnapshot: ptrString("snap-1"),
 			},
 		}}
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if len(sts.Spec.VolumeClaimTemplates) != 0 {
 			t.Error("existingSnapshot must not provision a volumeClaimTemplate")
 		}
@@ -433,7 +433,7 @@ func TestBuildStatefulSetPersistenceVolumes(t *testing.T) {
 				ExistingSnapshot: ptrString("snap-1"),
 			},
 		}}
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		vol := findTemplateVolume(sts)
 		if vol == nil || vol.PersistentVolumeClaim == nil || vol.PersistentVolumeClaim.ClaimName != "my-claim" {
 			t.Errorf("expected existingClaim to win, got %+v", vol)
@@ -446,7 +446,7 @@ func TestBuildStatefulSetPersistenceVolumes(t *testing.T) {
 		ha.Spec.Hermes = &agentsv1alpha1.Hermes{Storage: &agentsv1alpha1.HermesStorage{
 			Persistence: &agentsv1alpha1.HermesPersistence{Enabled: true, Size: &size},
 		}}
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		if len(sts.Spec.VolumeClaimTemplates) != 1 || sts.Spec.VolumeClaimTemplates[0].Name != hermesHomeVolume {
 			t.Errorf("expected hermes-data volumeClaimTemplate, got %+v", sts.Spec.VolumeClaimTemplates)
 		}
@@ -1275,7 +1275,7 @@ func TestOperatorDotEnvAPIServer(t *testing.T) {
 		}
 
 		// init-hermes must exist and mount the operator ConfigMap and Secret.
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		ic := findInitContainer(sts, consolidatedInitContainerName)
 		if ic == nil {
 			t.Fatal("expected init-hermes init container")
@@ -1353,7 +1353,7 @@ func TestOperatorDotEnvAPIServer(t *testing.T) {
 				t.Errorf("expected %q absent from ConfigMap when apiServer disabled", key)
 			}
 		}
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		ic := findInitContainer(sts, consolidatedInitContainerName)
 		if ic == nil {
 			t.Fatal("expected init-hermes")
@@ -1383,7 +1383,7 @@ func TestOperatorDotEnvWebhook(t *testing.T) {
 		t.Errorf("expected WEBHOOK_PORT=8644, got %q", data["WEBHOOK_PORT"])
 	}
 
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
 		t.Fatal("expected init-hermes init container")
@@ -1414,7 +1414,7 @@ func TestSearXNGVolumeOwnership(t *testing.T) {
 	ha := minimalHA()
 	ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true}
 
-	ic := findInitContainer(buildStatefulSet(ha, testConfigHash), "init-searxng-config")
+	ic := findInitContainer(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}), "init-searxng-config")
 	if ic == nil {
 		t.Fatal("expected init-searxng-config init container")
 	}
@@ -1461,7 +1461,7 @@ func TestSearXNGVolumeOwnership(t *testing.T) {
 	})
 
 	t.Run("searxng runtime still runs as uid/gid 977 non-root", func(t *testing.T) {
-		c := findContainer(buildStatefulSet(ha, testConfigHash), "searxng")
+		c := findContainer(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}), "searxng")
 		if c == nil {
 			t.Fatal("expected searxng container")
 		}
@@ -1476,7 +1476,7 @@ func TestSearXNGVolumeOwnership(t *testing.T) {
 
 	t.Run("no chown step when searxng is disabled", func(t *testing.T) {
 		ha := minimalHA()
-		if ic := findInitContainer(buildStatefulSet(ha, testConfigHash), "init-searxng-config"); ic != nil {
+		if ic := findInitContainer(buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash}), "init-searxng-config"); ic != nil {
 			t.Error("expected no init-searxng-config init container when searxng is disabled")
 		}
 	})
@@ -1495,7 +1495,7 @@ func TestOperatorDotEnvSidecars(t *testing.T) {
 			t.Errorf("expected SEARXNG_URL in ConfigMap, got %q", data["SEARXNG_URL"])
 		}
 
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		ic := findInitContainer(sts, consolidatedInitContainerName)
 		if ic == nil {
 			t.Fatal("expected init-hermes init container")
@@ -1525,7 +1525,7 @@ func TestOperatorDotEnvSidecars(t *testing.T) {
 			t.Errorf("expected CAMOFOX_URL in ConfigMap, got %q", data["CAMOFOX_URL"])
 		}
 
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 		ic := findInitContainer(sts, consolidatedInitContainerName)
 		if ic == nil {
 			t.Fatal("expected init-hermes init container")
@@ -1559,7 +1559,7 @@ func TestOperatorDotEnvMultiplex(t *testing.T) {
 		ha.Spec.SearXNG = &agentsv1alpha1.SearXNG{Enabled: true}
 		ha.Spec.Camofox = &agentsv1alpha1.Camofox{Enabled: true}
 
-		sts := buildStatefulSet(ha, testConfigHash)
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 
 		// Default profile: operator ConfigMap + Secret mounted.
 		defIC := findInitContainer(sts, consolidatedInitContainerName)
@@ -1620,7 +1620,7 @@ func TestOperatorDotEnvCollision(t *testing.T) {
 			},
 		},
 	}
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
 		t.Fatal("expected init-hermes")
@@ -1645,7 +1645,7 @@ func TestOperatorDotEnvOrdering(t *testing.T) {
 			APIServer: &agentsv1alpha1.HermesAPIServer{Enabled: true},
 		},
 	}
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
 		t.Fatal("expected init-hermes")
@@ -1675,10 +1675,88 @@ func TestOperatorDotEnvUserDotEnvAlone(t *testing.T) {
 			},
 		},
 	}
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	if findInitContainer(sts, consolidatedInitContainerName) == nil {
 		t.Error("expected dotenv section in init-hermes when user dotEnv is set")
 	}
+}
+
+func TestDotEnvEgress(t *testing.T) {
+	// With egress on, every profile's .env carries the proxy tokens, and never
+	// a real key that has a token: hermes-agent resolves a profile's
+	// credentials from its .env and lets .env override the process env.  The
+	// proxy env reaches the .env only in init-egress, the last init container:
+	// the earlier ones run before iron-proxy listens.
+	withProfile := func(ha *agentsv1alpha1.HermesAgent, dotEnv *agentsv1alpha1.HermesDotEnv) *agentsv1alpha1.HermesAgent {
+		ws := &agentsv1alpha1.HermesWorkspace{DotEnv: dotEnv}
+		ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+			Workspace:   ws,
+			Profiles:    map[string]agentsv1alpha1.HermesProfile{"work": {Workspace: ws}},
+			InitScripts: []agentsv1alpha1.HermesInitScript{{Name: "user-step", Script: "true"}},
+		}
+		return ha
+	}
+	userDotEnv := &agentsv1alpha1.HermesDotEnv{SecretRef: &corev1.LocalObjectReference{Name: "my-env"}}
+	const tokensLoop = `for f in "/hermes-egress-tokens"/*`
+
+	for _, tt := range []struct {
+		name   string
+		dotEnv *agentsv1alpha1.HermesDotEnv
+	}{
+		{name: "with a user dotenv", dotEnv: userDotEnv},
+		{name: "without a user dotenv"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sts := buildStatefulSet(withProfile(egressHA(nil), tt.dotEnv), statefulSetInputs{configHash: testConfigHash})
+			for _, name := range []string{consolidatedInitContainerName, "init-profile-work"} {
+				ic := findInitContainer(sts, name)
+				if ic == nil {
+					t.Fatalf("expected %s", name)
+				}
+				if !strings.Contains(ic.Args[0], tokensLoop) || !hasVolumeMount(ic.VolumeMounts, "hermes-egress-tokens") {
+					t.Errorf("%s: expected the proxy tokens written to the .env:\n%s", name, ic.Args[0])
+				}
+				if tt.dotEnv != nil && !strings.Contains(ic.Args[0], `if [ -f "/hermes-egress-tokens/$key" ]; then continue; fi`) {
+					t.Errorf("%s: expected real keys that have a token skipped:\n%s", name, ic.Args[0])
+				}
+			}
+
+			script := findInitContainer(sts, consolidatedInitContainerName).Args[0]
+			if i := strings.Index(script, egressDotEnvBegin); i < 0 || i > strings.Index(script, "==> Step 2/") {
+				t.Errorf("expected init-hermes to drop the proxy env first:\n%s", script)
+			}
+			for _, v := range sts.Spec.Template.Spec.Volumes {
+				if v.ConfigMap == nil {
+					continue
+				}
+				for _, item := range v.ConfigMap.Items {
+					if item.Key == "HTTPS_PROXY" {
+						t.Errorf("volume %s carries the proxy env into an init step", v.Name)
+					}
+				}
+			}
+
+			ics := sts.Spec.Template.Spec.InitContainers
+			last := ics[len(ics)-1]
+			if last.Name != "init-egress" {
+				t.Fatalf("expected init-egress last, after the user's init scripts, got %s", last.Name)
+			}
+			if !strings.Contains(last.Args[0], "HTTPS_PROXY=http://127.0.0.1:9090\n") {
+				t.Errorf("expected init-egress to add the proxy env:\n%s", last.Args[0])
+			}
+		})
+	}
+
+	t.Run("disabled", func(t *testing.T) {
+		sts := buildStatefulSet(withProfile(minimalHA(), userDotEnv), statefulSetInputs{configHash: testConfigHash})
+		ic := findInitContainer(sts, consolidatedInitContainerName)
+		if strings.Contains(ic.Args[0], "hermes-egress-tokens") || hasVolumeMount(ic.VolumeMounts, "hermes-egress-tokens") {
+			t.Error("expected no egress tokens without egress")
+		}
+		if strings.Contains(ic.Args[0], egressDotEnvBegin) || findInitContainer(sts, "init-egress") != nil {
+			t.Error("expected no proxy env steps without egress")
+		}
+	})
 }
 
 func TestDotEnvPluralConfigMapRefs(t *testing.T) {
@@ -1694,7 +1772,7 @@ func TestDotEnvPluralConfigMapRefs(t *testing.T) {
 			},
 		},
 	}
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
 		t.Fatal("expected init-hermes")
@@ -1734,7 +1812,7 @@ func TestDotEnvPluralSecretRefs(t *testing.T) {
 			},
 		},
 	}
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
 		t.Fatal("expected init-hermes")
@@ -1772,7 +1850,7 @@ func TestDotEnvMixedSingularAndPluralOrder(t *testing.T) {
 			},
 		},
 	}
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	ic := findInitContainer(sts, consolidatedInitContainerName)
 	if ic == nil {
 		t.Fatal("expected init-hermes")
@@ -1819,7 +1897,7 @@ func TestDotEnvPluralRefsPerProfile(t *testing.T) {
 			},
 		},
 	}
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	ic := findInitContainer(sts, "init-profile-writer")
 	if ic == nil {
 		t.Fatal("expected init-profile-writer")
@@ -1867,7 +1945,7 @@ func TestConsolidatedInitContainers(t *testing.T) {
 		},
 	}
 
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 
 	// Exactly one consolidated default-profile init container.
 	var initHermes []*corev1.Container
@@ -1967,7 +2045,7 @@ func TestConsolidatedInitContainers(t *testing.T) {
 
 	// User initScripts run after all operator-managed init containers.
 	ha.Spec.Hermes.InitScripts = []agentsv1alpha1.HermesInitScript{{Name: "extra", Script: "echo hi"}}
-	sts2 := buildStatefulSet(ha, testConfigHash)
+	sts2 := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	extraIdx, lastManaged := -1, -1
 	for i, c := range sts2.Spec.Template.Spec.InitContainers {
 		if c.Name == "extra" {
@@ -1985,7 +2063,7 @@ func TestConsolidatedInitContainers(t *testing.T) {
 func TestConsolidatedInitContainersMinimal(t *testing.T) {
 	// No profiles: only init-hermes, no per-profile containers; no dotenv section.
 	ha := minimalHA()
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	if findInitContainer(sts, consolidatedInitContainerName) == nil {
 		t.Fatal("expected init-hermes")
 	}
@@ -2073,7 +2151,7 @@ func TestBuildStatefulSetInitContainerTerminationMessagePolicy(t *testing.T) {
 	// A user-supplied init container is passed through untouched.
 	ha.Spec.InitContainers = []corev1.Container{{Name: "init-user", Image: "busybox"}}
 
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	var managed int
 	for _, c := range sts.Spec.Template.Spec.InitContainers {
 		if c.Name == "init-user" {
@@ -2302,7 +2380,7 @@ func TestBuildStatefulSetProfileDistributionGitCredentials(t *testing.T) {
 		},
 	}
 
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 	const volumeName = "hermes-git-credentials-researcher"
 
 	var volume *corev1.Volume
@@ -2372,7 +2450,7 @@ func TestBuildStatefulSetProfileDistribution(t *testing.T) {
 		},
 	}
 
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 
 	script := findInitContainer(sts, "init-profile-researcher").Args[0]
 	if !strings.Contains(script, `hermes profile install "$STAGED" --name "researcher"`) {

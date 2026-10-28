@@ -316,7 +316,7 @@ func TestBuildStatefulSetWithReferencedConfig(t *testing.T) {
 	}
 
 	t.Run("config step runs for a referenced config", func(t *testing.T) {
-		sts := buildStatefulSet(ha, configHashFor(resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)}))
+		sts := buildStatefulSet(ha, statefulSetInputs{configHash: configHashFor(resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)})})
 		script := findInitContainer(sts, consolidatedInitContainerName).Args[0]
 		if !strings.Contains(script, "/bootstrap/profile.default.config.yaml") {
 			t.Errorf("expected the config step, got:\n%s", script)
@@ -324,8 +324,8 @@ func TestBuildStatefulSetWithReferencedConfig(t *testing.T) {
 	})
 
 	t.Run("a change to the referenced document rolls the pod", func(t *testing.T) {
-		first := desiredSpecHash(buildStatefulSet(ha, configHashFor(resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)})))
-		second := desiredSpecHash(buildStatefulSet(ha, configHashFor(resolvedConfigDocuments{Default: []byte(`{"model":"haiku"}`)})))
+		first := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: configHashFor(resolvedConfigDocuments{Default: []byte(`{"model":"opus"}`)})}))
+		second := desiredSpecHash(buildStatefulSet(ha, statefulSetInputs{configHash: configHashFor(resolvedConfigDocuments{Default: []byte(`{"model":"haiku"}`)})}))
 		if first == second {
 			t.Error("expected the config hash to follow the referenced document")
 		}
