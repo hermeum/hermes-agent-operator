@@ -315,7 +315,7 @@ spec:
   hermes: {}
 `, agentName, agentNamespace)
 			Expect(os.WriteFile(manifestPath, []byte(manifest), 0o644)).To(Succeed())
-			cmd = exec.Command("kubectl", "apply", "-f", manifestPath)
+			cmd = exec.Command("kubectl", "apply", "--server-side", "-f", manifestPath)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create the agent")
 

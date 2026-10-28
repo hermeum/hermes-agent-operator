@@ -199,7 +199,7 @@ make docker-build docker-push IMG=$IMG  # Or: kind load docker-image $IMG --name
 make deploy IMG=$IMG
 
 # 3. Test
-kubectl apply -k config/samples/
+kubectl apply --server-side -k config/samples/
 
 # 4. Debug
 kubectl logs -n <project>-system deployment/<project>-controller-manager -c manager -f
