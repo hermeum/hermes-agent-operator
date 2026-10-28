@@ -184,6 +184,8 @@ hermes:
         name: my-webhook-secret    # Secret with key WEBHOOK_SECRET=<your-hmac-value>
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.storage`
 
 #### `persistence`
@@ -243,6 +245,8 @@ kubectl get volumesnapshots -l agents.hermeum.app/agent=my-agent
 
 Restore back into the agent with [`persistence.existingSnapshot`](#persistenceexistingsnapshot).
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.workspace`
 
 Seed files and secrets into the agent's home directory before startup.
@@ -288,6 +292,8 @@ hermes:
 Secrets override ConfigMaps, and later entries override earlier ones.
 
 > **Note:** The singular `configMapRef`/`secretRef` forms are still accepted for compatibility but are deprecated; they will be removed in the v1 type. They take the lowest precedence: ConfigMap first, then Secret, then the plural lists above.
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.packages`
 
@@ -360,6 +366,8 @@ hermes:
         export PATH="$HERMES_HOME/.npm-packages/bin:$PATH"
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.plugins`
 
 Install Hermes plugins at startup. Use `owner/repo` shorthand or a full Git URL.
@@ -371,6 +379,8 @@ hermes:
       enable: true                 # optional; defaults to true (auto-enable after install)
       ref: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0  # optional; 40-char Git commit SHA to pin an immutable plugin revision
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.skills`
 
@@ -384,6 +394,8 @@ hermes:
       name: stocks                 # optional; overrides the skill name from SKILL.md frontmatter
       force: false                 # optional; set true to install despite a blocked scan verdict
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.crons`
 
@@ -411,6 +423,8 @@ hermes:
       profile: default             # optional; Hermes profile name to run under
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.bundles`
 
 Define slash-command bundles that group related skills under a single name.
@@ -425,6 +439,8 @@ hermes:
       instruction: Use these tools for financial queries  # optional; prepended to skill content
       force: false                 # optional; set true to overwrite an existing bundle with the same name
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.env` / `hermes.envFrom`
 
@@ -442,6 +458,8 @@ hermes:
         name: my-agent-config
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.resources`
 
 CPU and memory for the agent container. Defaults: limits `2 CPU / 4Gi`, requests `500m / 1Gi`.
@@ -456,6 +474,8 @@ hermes:
       cpu: 500m
       memory: 1Gi
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.image`
 
@@ -490,6 +510,8 @@ A reference without a tag or digest (e.g. `nousresearch/hermes-agent`) uses the 
 >
 > Prefer the string form; it also works with [kustomize image overrides](https://kubectl.docs.kubernetes.io/references/kustomize/kustomization/images/).
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.initChownData`
 
 Run an init container that sets `/opt/data` ownership to the hermes user (`10000:10000`). Useful when using an existing PVC whose data was written by a different user.
@@ -500,6 +522,8 @@ Run an init container that sets `/opt/data` ownership to the hermes user (`10000
 hermes:
   initChownData: true              # optional; defaults to false
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.initScripts`
 
@@ -521,6 +545,8 @@ hermes:
 ```
 
 Use `spec.initContainers` instead when you need a different image, custom volume mounts, or fine-grained resource limits on the init step.
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.profiles`
 
@@ -621,6 +647,8 @@ The `Secret` is mounted only into that profile's init container (not the agent c
 
 `resumeCrons` is desired state: removing a name pauses its job again at the next `Pod` start. A resumed job stays resumed after an update (only new jobs arrive paused). Jobs declared in `crons` are unaffected.
 
+[↑ Back to Configuration](#configuration)
+
 ### `searxng`
 
 Optional sidecar that runs a local [SearXNG](https://github.com/searxng/searxng) instance, enabling the agent's `web_search` tool without an external API key. When enabled, the operator automatically injects `SEARXNG_URL` into the agent container and sets `web.search_backend: "searxng"` in the generated Hermes config (unless already set in `hermes.config.raw`):
@@ -658,6 +686,8 @@ searxng:
       value: "4"
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `camofox`
 
 Optional sidecar for browser automation via [Camofox](https://github.com/jo-inc/camofox-browser). When enabled, `CAMOFOX_URL` is automatically injected into the agent container.
@@ -683,6 +713,8 @@ camofox:
       value: ":99"
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `security.rbac`
 
 ServiceAccount and Role configuration. A ServiceAccount is created by default.
@@ -699,6 +731,8 @@ security:
         resources: ["secrets"]
         verbs: ["get", "list"]
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `security.networkPolicy`
 
@@ -723,6 +757,8 @@ security:
             protocol: TCP
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `networking.service`
 
 Service configuration for the agent. Ports defined by `hermes.config.apiServer` and `hermes.config.webhook` are automatically exposed — use `ports` only for additional ports beyond those.
@@ -739,6 +775,8 @@ networking:
         targetPort: 9090           # optional; defaults to port
         protocol: TCP              # optional; TCP (default) | UDP | SCTP
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `networking.ingress`
 
@@ -763,6 +801,8 @@ networking:
         secretName: agent-tls
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `suspend`
 
 Pause the agent by scaling its StatefulSet to 0 without deleting the resource or its data.
@@ -770,6 +810,8 @@ Pause the agent by scaling its StatefulSet to 0 without deleting the resource or
 ```yaml
 suspend: true                      # optional; defaults to false
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hostUsers`
 
@@ -783,6 +825,8 @@ Omitting the field, or setting it to `true`, leaves the pod in the host user nam
 
 User namespaces are stable as of Kubernetes v1.36, where the `UserNamespacesSupport` feature gate is locked on and ignored; they were on by default for several releases before that. What still gates the feature is the node. The pod must land on a Linux node meeting [the requirements](https://kubernetes.io/docs/concepts/workloads/pods/user-namespaces/#before-you-begin): kernel 6.3 or newer, a CRI runtime that supports user namespaces (containerd 2.0+ or CRI-O 1.25+), and idmap-capable filesystems both for the kubelet directory and for every volume the pod mounts. Where only some nodes in a cluster qualify, schedule the agent onto one that does.
 
+[↑ Back to Configuration](#configuration)
+
 ### `podAnnotations`
 
 Add custom annotations to the agent's pod template. Changing any key/value triggers a rolling restart of the StatefulSet's pods — set a key like `rotatedAt` to an RFC3339 timestamp and update it whenever a restart is needed, equivalent to `kubectl rollout restart statefulset`.
@@ -791,6 +835,8 @@ Add custom annotations to the agent's pod template. Changing any key/value trigg
 podAnnotations:                      # optional
   rotatedAt: "2026-07-06T12:00:00Z"  # any change here triggers a rolling restart
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `podLabels`
 
@@ -804,6 +850,8 @@ podLabels:                           # optional
 
 The operator-managed `app.kubernetes.io/name`, `app.kubernetes.io/instance` and `app.kubernetes.io/managed-by` labels are applied last and always win.  An entry in `podLabels` cannot shadow one of them, and cannot break the `StatefulSet` pod selector.  The labels go on the **pod template only**; the `StatefulSet` labels do not change.  A change to any key starts a rolling restart.
 
+[↑ Back to Configuration](#configuration)
+
 ### `priorityClassName`
 
 Assign the agent `Pod` a [`PriorityClass`](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/).  A `PriorityClass` controls the `Pod`'s scheduling order.  It also controls how early the `Pod` is evicted under node pressure.
@@ -814,6 +862,8 @@ priorityClassName: system-cluster-critical  # optional; omit to use the cluster'
 
 The `PriorityClass` must already exist in the cluster.  The operator does not create it.  A change to this value starts a rolling restart of the `StatefulSet`'s pods.
 
+[↑ Back to Configuration](#configuration)
+
 ### `runtimeClassName`
 
 Run the agent `Pod` under a named [`RuntimeClass`](https://kubernetes.io/docs/concepts/containers/runtime-class/).  This replaces the cluster's default container runtime for this `Pod`.  The agent executes model-authored shell commands, so a sandboxed runtime such as gVisor or Kata Containers is a good fit for it.
@@ -823,6 +873,8 @@ runtimeClassName: kata-qemu          # optional; omit to use the cluster default
 ```
 
 The `RuntimeClass` must already exist in the cluster.  The operator does not create it.  A change to this value starts a rolling restart of the `StatefulSet`'s pods.
+
+[↑ Back to Configuration](#configuration)
 
 ## Heartbeat
 
