@@ -2635,7 +2635,7 @@ func TestBuildStatefulSetProfileDistributionResumeCrons(t *testing.T) {
 		},
 	}
 
-	sts := buildStatefulSet(ha, testConfigHash)
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
 
 	script := findInitContainer(sts, "init-profile-researcher").Args[0]
 	if !strings.Contains(script, "resumed-crons") {
