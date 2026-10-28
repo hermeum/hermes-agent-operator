@@ -2,6 +2,9 @@ package usecase
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -2473,6 +2476,181 @@ func TestBuildStatefulSetProfileDistribution(t *testing.T) {
 	plain := findInitContainer(sts, "init-profile-plain").Args[0]
 	if !strings.Contains(plain, `hermes profile create "plain" --no-alias`) {
 		t.Errorf("expected plain profile creation, got:\n%s", plain)
+	}
+}
+
+func TestBuildResumeCronsScript(t *testing.T) {
+	home := t.TempDir()
+	jobs := filepath.Join(home, cronJobsPath("coder"))
+	if err := os.MkdirAll(filepath.Dir(jobs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(jobs, []byte(`{"jobs": [
+		{"id": "id-digest", "name": "daily-digest"},
+		{"id": "id-nightly", "name": "nightly"},
+		{"id": "id-eof", "name": "RESUME_EOF"},
+		{"id": "id-quote", "name": "it's 'quoted'"},
+		{"id": "id-star", "name": "*"},
+		{"id": "id-dup-1", "name": "twin"},
+		{"id": "id-dup-2", "name": "twin"}
+	]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The script may use only what an agent image is sure to have, so the
+	// PATH holds only mkdir, python3, and hermes.  The fake hermes fails the
+	// subcommand named in HERMES_FAIL.
+	bin := t.TempDir()
+	calls := filepath.Join(home, "calls")
+	fake := "#!/bin/sh\necho \"$*\" >> \"$HERMES_CALLS\"\n[ \"$2\" != \"${HERMES_FAIL:-}\" ]\n"
+	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"mkdir", "python3"} {
+		path, err := exec.LookPath(tool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(path, filepath.Join(bin, tool)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	declared := []agentsv1alpha1.HermesCron{{Name: "nightly", Schedule: "0 2 * * *"}}
+
+	// `run` executes the step against the job store and a fake hermes CLI, and
+	// returns the CLI calls and the script output.  The manifest stays in home
+	// between runs, as it does on the data volume, so the subtests run in order.
+	run := func(t *testing.T, names []string, env ...string) ([]string, string) {
+		t.Helper()
+		_ = os.Remove(calls)
+		cmd := exec.Command("sh", "-c", buildResumeCronsScript("coder", names, declared))
+		cmd.Dir = home
+		cmd.Env = append([]string{"HERMES_HOME=" + home, "HERMES_CALLS=" + calls, "PATH=" + bin}, env...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("script failed: %v\n%s", err, out)
+		}
+		log, err := os.ReadFile(calls)
+		if os.IsNotExist(err) {
+			return nil, string(out)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Split(strings.TrimSpace(string(log)), "\n"), string(out)
+	}
+
+	t.Run("allowlisted jobs resume, and jobs declared in crons are left alone", func(t *testing.T) {
+		got, _ := run(t, []string{"daily-digest", "nightly", "RESUME_EOF", "it's 'quoted'", "*", "$(touch pwned)"})
+		want := []string{
+			"cron resume -p coder id-digest",
+			"cron resume -p coder id-eof",
+			"cron resume -p coder id-quote",
+			"cron resume -p coder id-star",
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("got calls %q, want %q", got, want)
+		}
+		if _, err := os.Stat(filepath.Join(home, "pwned")); err == nil {
+			t.Error("a job name ran as a shell command")
+		}
+	})
+
+	t.Run("dropping names pauses only the jobs the allowlist resumed", func(t *testing.T) {
+		got, _ := run(t, []string{"daily-digest"})
+		want := []string{
+			"cron pause -p coder id-eof",
+			"cron pause -p coder id-quote",
+			"cron pause -p coder id-star",
+			"cron resume -p coder id-digest",
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("got calls %q, want %q", got, want)
+		}
+	})
+
+	t.Run("an empty allowlist still pauses what it resumed before", func(t *testing.T) {
+		got, _ := run(t, nil)
+		want := []string{"cron pause -p coder id-digest"}
+		if !slices.Equal(got, want) {
+			t.Errorf("got calls %q, want %q", got, want)
+		}
+	})
+
+	t.Run("a name matching no job is skipped, not fatal", func(t *testing.T) {
+		got, out := run(t, []string{`renamed\tupstream`})
+		if len(got) != 0 {
+			t.Errorf("unexpected calls %q", got)
+		}
+		if !strings.Contains(out, `No cron job named renamed\tupstream`) {
+			t.Errorf("expected the skip to be logged, got:\n%s", out)
+		}
+	})
+
+	t.Run("an ambiguous name is logged", func(t *testing.T) {
+		got, out := run(t, []string{"twin"})
+		want := []string{"cron resume -p coder id-dup-1"}
+		if !slices.Equal(got, want) {
+			t.Errorf("got calls %q, want %q", got, want)
+		}
+		if !strings.Contains(out, "2 cron jobs named twin") {
+			t.Errorf("expected the ambiguity to be logged, got:\n%s", out)
+		}
+	})
+
+	t.Run("a failed pause is retried at the next start", func(t *testing.T) {
+		run(t, []string{"daily-digest"})
+		got, out := run(t, nil, "HERMES_FAIL=pause")
+		want := []string{"cron pause -p coder id-digest"}
+		if !slices.Equal(got, want) {
+			t.Errorf("got calls %q, want %q", got, want)
+		}
+		if !strings.Contains(out, "Could not pause cron job daily-digest") {
+			t.Errorf("expected the failure to be logged, got:\n%s", out)
+		}
+		if got, _ := run(t, nil); !slices.Equal(got, want) {
+			t.Errorf("got calls %q after the failure, want %q", got, want)
+		}
+		if got, _ := run(t, nil); len(got) != 0 {
+			t.Errorf("unexpected calls %q after the retry", got)
+		}
+	})
+
+	t.Run("a failed resume is logged as a failure", func(t *testing.T) {
+		_, out := run(t, []string{"daily-digest"}, "HERMES_FAIL=resume")
+		if !strings.Contains(out, "Could not resume cron job daily-digest") || strings.Contains(out, "Resumed cron job daily-digest") {
+			t.Errorf("expected only the failure to be logged, got:\n%s", out)
+		}
+	})
+}
+
+func TestBuildStatefulSetProfileDistributionResumeCrons(t *testing.T) {
+	ha := minimalHA()
+	ha.Spec.Hermes = &agentsv1alpha1.Hermes{
+		Profiles: map[string]agentsv1alpha1.HermesProfile{
+			"researcher": {Distribution: &agentsv1alpha1.HermesProfileDistribution{
+				Source:      "github.com/you/research-bot",
+				ResumeCrons: []string{"daily-digest"},
+			}},
+			"plain": {Crons: []agentsv1alpha1.HermesCron{{Name: "nightly", Schedule: "0 2 * * *"}}},
+		},
+	}
+
+	sts := buildStatefulSet(ha, statefulSetInputs{configHash: testConfigHash})
+
+	script := findInitContainer(sts, "init-profile-researcher").Args[0]
+	if !strings.Contains(script, "resumed-crons") {
+		t.Errorf("expected the allowlist step, got:\n%s", script)
+	}
+	// It runs after the operator's own cron reconciliation, so the job store it
+	// reads is already complete.
+	if strings.Index(script, "resumed-crons") < strings.Index(script, `MANIFEST="$HERMES_HOME/.hermes-agent-operator/profiles/researcher/crons"`) {
+		t.Errorf("expected the allowlist after the crons step, got:\n%s", script)
+	}
+
+	// A profile without a `distribution` has no allowlist step, because the
+	// operator creates its jobs and they are not paused to begin with.
+	if plain := findInitContainer(sts, "init-profile-plain").Args[0]; strings.Contains(plain, "resumed-crons") {
+		t.Errorf("unexpected allowlist step without a distribution, got:\n%s", plain)
 	}
 }
 

@@ -544,6 +544,14 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 		steps = append(steps, buildBundlesScript(name, profile.Bundles))
 		steps = append(steps, buildCronsScript(name, profile.Crons))
 
+		// The allowlist runs last, so the job store already holds the jobs of
+		// the distribution and the jobs declared above.  It runs for every
+		// distribution profile, because an empty allowlist must still pause
+		// the jobs that an earlier allowlist resumed.
+		if profile.Distribution != nil {
+			steps = append(steps, buildResumeCronsScript(name, profile.Distribution.GetResumeCrons(), profile.Crons))
+		}
+
 		ic := initContainer("init-profile-"+name, combineInitSteps(steps...))
 		ic.VolumeMounts = append(ic.VolumeMounts, profileMounts...)
 		initContainers = append(initContainers, ic)

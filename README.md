@@ -35,7 +35,7 @@ kubectl create secret generic my-hermes-secret \
 ### 3. Deploy a HermesAgent
 
 ```sh
-kubectl apply -f - <<EOF
+kubectl apply --server-side -f - <<EOF
 apiVersion: agents.hermeum.app/v1alpha1
 kind: HermesAgent
 metadata:
@@ -185,6 +185,8 @@ hermes:
         name: my-webhook-secret    # Secret with key WEBHOOK_SECRET=<your-hmac-value>
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.storage`
 
 #### `persistence`
@@ -244,6 +246,8 @@ kubectl get volumesnapshots -l agents.hermeum.app/agent=my-agent
 
 Restore back into the agent with [`persistence.existingSnapshot`](#persistenceexistingsnapshot).
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.workspace`
 
 Seed files and secrets into the agent's home directory before startup.
@@ -289,6 +293,8 @@ hermes:
 Secrets override ConfigMaps, and later entries override earlier ones.
 
 > **Note:** The singular `configMapRef`/`secretRef` forms are still accepted for compatibility but are deprecated; they will be removed in the v1 type. They take the lowest precedence: ConfigMap first, then Secret, then the plural lists above.
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.packages`
 
@@ -361,6 +367,8 @@ hermes:
         export PATH="$HERMES_HOME/.npm-packages/bin:$PATH"
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.plugins`
 
 Install Hermes plugins at startup. Use `owner/repo` shorthand or a full Git URL.
@@ -372,6 +380,8 @@ hermes:
       enable: true                 # optional; defaults to true (auto-enable after install)
       ref: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0  # optional; 40-char Git commit SHA to pin an immutable plugin revision
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.skills`
 
@@ -385,6 +395,8 @@ hermes:
       name: stocks                 # optional; overrides the skill name from SKILL.md frontmatter
       force: false                 # optional; set true to install despite a blocked scan verdict
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.crons`
 
@@ -412,6 +424,8 @@ hermes:
       profile: default             # optional; Hermes profile name to run under
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.bundles`
 
 Define slash-command bundles that group related skills under a single name.
@@ -426,6 +440,8 @@ hermes:
       instruction: Use these tools for financial queries  # optional; prepended to skill content
       force: false                 # optional; set true to overwrite an existing bundle with the same name
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.env` / `hermes.envFrom`
 
@@ -443,6 +459,8 @@ hermes:
         name: my-agent-config
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.resources`
 
 CPU and memory for the agent container. Defaults: limits `2 CPU / 4Gi`, requests `500m / 1Gi`.
@@ -457,6 +475,8 @@ hermes:
       cpu: 500m
       memory: 1Gi
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.image`
 
@@ -491,6 +511,8 @@ A reference without a tag or digest (e.g. `nousresearch/hermes-agent`) uses the 
 >
 > Prefer the string form; it also works with [kustomize image overrides](https://kubectl.docs.kubernetes.io/references/kustomize/kustomization/images/).
 
+[↑ Back to Configuration](#configuration)
+
 ### `hermes.initChownData`
 
 Run an init container that sets `/opt/data` ownership to the hermes user (`10000:10000`). Useful when using an existing PVC whose data was written by a different user.
@@ -501,6 +523,8 @@ Run an init container that sets `/opt/data` ownership to the hermes user (`10000
 hermes:
   initChownData: true              # optional; defaults to false
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.initScripts`
 
@@ -522,6 +546,8 @@ hermes:
 ```
 
 Use `spec.initContainers` instead when you need a different image, custom volume mounts, or fine-grained resource limits on the init step.
+
+[↑ Back to Configuration](#configuration)
 
 ### `hermes.profiles`
 
@@ -565,7 +591,7 @@ hermes:
 
 #### `distribution`
 
-Install a profile from a [profile distribution](https://hermes-agent.nousresearch.com/docs/user-guide/profile-distributions). A profile distribution is a git repository that holds a complete agent: a `distribution.yaml` manifest, `SOUL.md`, `config.yaml`, `mcp.json`, skills, and cron jobs. Use it to run a specialist agent that someone else maintains. You can also keep your own agent in its own repository, instead of inline in each `HermesAgent`.
+Install a profile from a [profile distribution](https://hermes-agent.nousresearch.com/docs/user-guide/profile-distributions): a git repository that ships a complete agent (`distribution.yaml`, `SOUL.md`, `config.yaml`, skills, and cron jobs).
 
 ```yaml
 hermes:
@@ -573,47 +599,30 @@ hermes:
     researcher:
       distribution:
         source: https://github.com/you/research-bot   # required; git URL, github.com/owner/repo, or a path in the container
-        # renovate: datasource=github-tags depName=you/research-bot
         ref: v1.2.0                                   # optional; pin to a tag, branch, or commit SHA
         updateOnStart: true                           # optional; defaults to true, ignored when ref is set
         forceConfig: false                            # optional; let an update overwrite config.yaml, ignored when ref is set
+        resumeCrons:                                  # optional; shipped cron jobs to resume
+          - daily-digest
       workspace:
         dotEnv:                                       # supply the env vars the distribution requires
           secretRef:
             name: research-bot-env
 ```
 
-Any other profile fields you declare are applied on top of the distribution. A declared `config` or `workspace.files` entry replaces the distribution's copy, and declared `plugins`, `skills`, `bundles`, and `crons` are installed next to the ones it ships. Fields you leave out keep what the distribution ships. Without `config`, for example, the profile runs the distribution's own `config.yaml`. Deleting the profile key deletes the profile, as it does for any named profile.
+Profile fields you declare are applied on top of the distribution; undeclared fields keep what it ships.
 
-**Pinning and updates.** With `ref` set, the operator clones that revision and installs it again only when `source` or `ref` changes, so a `Pod` restart never pulls a newer revision. A branch is resolved once, at install, and stays at that commit until you change `ref`; the init container log records the commit. Pin to a tag or a commit SHA so that the custom resource names the exact revision you run. Without `ref`, the profile follows the repository's default branch and is pulled again on every `Pod` start with `hermes profile update`, which keeps your data and, unless `forceConfig` is `true`, your `config.yaml`. If that update fails, for example because the repository is unreachable, the profile stays at its installed revision and the agent still starts.
+**Pinning.** With `ref` set, the operator clones that revision and re-installs only when `source` or `ref` changes, so a `Pod` restart never pulls a newer revision. Without `ref`, the profile follows the default branch and is updated on each `Pod` start (`hermes profile update`), keeping your data and (unless `forceConfig: true`) your `config.yaml`. Pin to a tag or commit SHA so the custom resource names the exact revision you run.
 
-Pinning to a tag is recommended, because a bot can then propose each version change for review. Renovate has no manager for this field. Use the `# renovate:` comment above together with a custom manager:
-
-```json
-{
-  "customManagers": [
-    {
-      "customType": "regex",
-      "managerFilePatterns": ["/\\.ya?ml$/"],
-      "matchStrings": ["# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+ref:\\s*[\"']?(?<currentValue>[^\"'\\s]+)"],
-      "versioningTemplate": "semver"
-    }
-  ]
-}
-```
-
-**Private repositories.** Use `gitCredentials` for a private repository on any host, pinned or not:
+**Private repositories.** Set `gitCredentials`:
 
 ```yaml
-hermes:
-  profiles:
-    researcher:
-      distribution:
-        source: https://git.example.com/team/research-bot.git
-        gitCredentials:
-          secretRef:
-            name: research-bot-git
-          key: .git-credentials      # optional; defaults to ".git-credentials"
+        distribution:
+          source: https://git.example.com/team/research-bot.git
+          gitCredentials:
+            secretRef:
+              name: research-bot-git
+            key: .git-credentials      # optional; defaults to ".git-credentials"
 ```
 
 The `Secret` key holds a [git credential store](https://git-scm.com/docs/git-credential-store) file, one entry per line:
@@ -623,15 +632,23 @@ kubectl create secret generic research-bot-git \
   --from-literal=.git-credentials='https://oauth2:glpat-xxxxxxxx@git.example.com'
 ```
 
-Each profile names its own `Secret` and key, so distributions that need different credentials can each have one. Give each profile its own `Secret`, or keep one `Secret` with a key per profile. Within one file, git uses the first entry for a host, so two repositories on the same host that need different tokens need different keys.
+The `Secret` is mounted only into that profile's init container (not the agent container), so the running agent cannot read the token.
 
-The operator mounts the `Secret` only into the init container of that profile, not into the agent container. Thus the running agent cannot read the token. The operator gives the credential to git through the environment and does not write a `.gitconfig`, so the token is not on the data volume. Kubernetes keeps `Secret` volumes in tmpfs, so the token is not written to the disk of the node.
+> **Note:** Distributions must be reachable over HTTPS (port 443); the [default `NetworkPolicy`](#securitynetworkpolicy) allows this, but SSH (port 22) needs an `additionalEgress` rule. The default profile cannot come from a distribution; use [`hermes.config.configMapRef`](#configmapref) instead.
 
-> **Note:** Without `ref`, the Hermes CLI runs the clone. It tries without a credential first and uses the one from `gitCredentials` when the host asks for it, as GitHub, GitLab, Codeberg, and Bitbucket all do for a private repository. That retry arrived in hermes-agent `v2026.9.21`. On an older image, or with a host that answers 404 instead of asking for credentials, set `ref` so that the operator runs the clone with the credential from the start.
+**Cron jobs.** A distribution's cron jobs arrive **paused**. Review them, then allowlist the ones to run:
 
-> **Note:** Distributions must be reachable over HTTPS (port 443). The [default `NetworkPolicy`](#securitynetworkpolicy) allows this. Git over SSH (port 22) needs an `additionalEgress` rule.
->
-> Cron jobs from a distribution arrive **paused**, by design. Review them with `hermes -p <profile> cron list` before you resume them. The default profile cannot come from a distribution, because the Hermes CLI does not install one over `~/.hermes`. For the default profile, use [`hermes.config.configMapRef`](#configmapref).
+```yaml
+        distribution:
+          source: https://github.com/you/research-bot
+          resumeCrons:
+            - daily-digest
+            - arxiv-sweep
+```
+
+`resumeCrons` is desired state: removing a name pauses its job again at the next `Pod` start. A resumed job stays resumed after an update (only new jobs arrive paused). Jobs declared in `crons` are unaffected.
+
+[↑ Back to Configuration](#configuration)
 
 ### `searxng`
 
@@ -669,6 +686,8 @@ searxng:
     - name: UWSGI_WORKERS
       value: "4"
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `camofox`
 
@@ -731,6 +750,8 @@ Every key of `credentials.secretRef` naming a provider hermes-agent knows (OpenR
 
 > **Note:** This keeps the real keys away from the agent but does not *enforce* egress — `HTTPS_PROXY` is advisory. Keys absent from the credentials Secret reach the agent unchanged.
 
+[↑ Back to Configuration](#configuration)
+
 ### `security.rbac`
 
 ServiceAccount and Role configuration. A ServiceAccount is created by default.
@@ -747,6 +768,8 @@ security:
         resources: ["secrets"]
         verbs: ["get", "list"]
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `security.networkPolicy`
 
@@ -771,6 +794,8 @@ security:
             protocol: TCP
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `networking.service`
 
 Service configuration for the agent. Ports defined by `hermes.config.apiServer` and `hermes.config.webhook` are automatically exposed — use `ports` only for additional ports beyond those.
@@ -787,6 +812,8 @@ networking:
         targetPort: 9090           # optional; defaults to port
         protocol: TCP              # optional; TCP (default) | UDP | SCTP
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `networking.ingress`
 
@@ -811,6 +838,8 @@ networking:
         secretName: agent-tls
 ```
 
+[↑ Back to Configuration](#configuration)
+
 ### `suspend`
 
 Pause the agent by scaling its StatefulSet to 0 without deleting the resource or its data.
@@ -818,6 +847,8 @@ Pause the agent by scaling its StatefulSet to 0 without deleting the resource or
 ```yaml
 suspend: true                      # optional; defaults to false
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `hostUsers`
 
@@ -831,6 +862,8 @@ Omitting the field, or setting it to `true`, leaves the pod in the host user nam
 
 User namespaces are stable as of Kubernetes v1.36, where the `UserNamespacesSupport` feature gate is locked on and ignored; they were on by default for several releases before that. What still gates the feature is the node. The pod must land on a Linux node meeting [the requirements](https://kubernetes.io/docs/concepts/workloads/pods/user-namespaces/#before-you-begin): kernel 6.3 or newer, a CRI runtime that supports user namespaces (containerd 2.0+ or CRI-O 1.25+), and idmap-capable filesystems both for the kubelet directory and for every volume the pod mounts. Where only some nodes in a cluster qualify, schedule the agent onto one that does.
 
+[↑ Back to Configuration](#configuration)
+
 ### `podAnnotations`
 
 Add custom annotations to the agent's pod template. Changing any key/value triggers a rolling restart of the StatefulSet's pods — set a key like `rotatedAt` to an RFC3339 timestamp and update it whenever a restart is needed, equivalent to `kubectl rollout restart statefulset`.
@@ -839,6 +872,8 @@ Add custom annotations to the agent's pod template. Changing any key/value trigg
 podAnnotations:                      # optional
   rotatedAt: "2026-07-06T12:00:00Z"  # any change here triggers a rolling restart
 ```
+
+[↑ Back to Configuration](#configuration)
 
 ### `podLabels`
 
@@ -852,6 +887,8 @@ podLabels:                           # optional
 
 The operator-managed `app.kubernetes.io/name`, `app.kubernetes.io/instance` and `app.kubernetes.io/managed-by` labels are applied last and always win.  An entry in `podLabels` cannot shadow one of them, and cannot break the `StatefulSet` pod selector.  The labels go on the **pod template only**; the `StatefulSet` labels do not change.  A change to any key starts a rolling restart.
 
+[↑ Back to Configuration](#configuration)
+
 ### `priorityClassName`
 
 Assign the agent `Pod` a [`PriorityClass`](https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/).  A `PriorityClass` controls the `Pod`'s scheduling order.  It also controls how early the `Pod` is evicted under node pressure.
@@ -862,6 +899,8 @@ priorityClassName: system-cluster-critical  # optional; omit to use the cluster'
 
 The `PriorityClass` must already exist in the cluster.  The operator does not create it.  A change to this value starts a rolling restart of the `StatefulSet`'s pods.
 
+[↑ Back to Configuration](#configuration)
+
 ### `runtimeClassName`
 
 Run the agent `Pod` under a named [`RuntimeClass`](https://kubernetes.io/docs/concepts/containers/runtime-class/).  This replaces the cluster's default container runtime for this `Pod`.  The agent executes model-authored shell commands, so a sandboxed runtime such as gVisor or Kata Containers is a good fit for it.
@@ -871,6 +910,8 @@ runtimeClassName: kata-qemu          # optional; omit to use the cluster default
 ```
 
 The `RuntimeClass` must already exist in the cluster.  The operator does not create it.  A change to this value starts a rolling restart of the `StatefulSet`'s pods.
+
+[↑ Back to Configuration](#configuration)
 
 ## Heartbeat
 
