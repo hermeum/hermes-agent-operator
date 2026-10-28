@@ -35,7 +35,7 @@ kubectl create secret generic my-hermes-secret \
 ### 3. Deploy a HermesAgent
 
 ```sh
-kubectl apply -f - <<EOF
+kubectl apply --server-side -f - <<EOF
 apiVersion: agents.hermeum.app/v1alpha1
 kind: HermesAgent
 metadata:
