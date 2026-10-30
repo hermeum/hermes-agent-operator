@@ -1756,8 +1756,27 @@ func TestDotEnvEgress(t *testing.T) {
 		if strings.Contains(ic.Args[0], "hermes-egress-tokens") || hasVolumeMount(ic.VolumeMounts, "hermes-egress-tokens") {
 			t.Error("expected no egress tokens without egress")
 		}
-		if strings.Contains(ic.Args[0], egressDotEnvBegin) || findInitContainer(sts, "init-egress") != nil {
-			t.Error("expected no proxy env steps without egress")
+		if findInitContainer(sts, "init-egress") != nil {
+			t.Error("expected no init-egress without egress")
+		}
+		if !strings.Contains(ic.Args[0], egressDotEnvBegin) {
+			t.Error("expected init-hermes to strip a stale proxy env even when egress is disabled")
+		}
+	})
+
+	t.Run("disabled without a dotenv source still strips", func(t *testing.T) {
+		// No user dotEnv and no sidecars: the dotenv step does not overwrite the
+		// .env, so the strip is the only thing that removes a stale egress block.
+		sts := buildStatefulSet(withProfile(minimalHA(), nil), statefulSetInputs{configHash: testConfigHash})
+		ic := findInitContainer(sts, consolidatedInitContainerName)
+		if ic == nil {
+			t.Fatal("expected init-hermes")
+		}
+		if !strings.Contains(ic.Args[0], egressDotEnvBegin) {
+			t.Error("expected init-hermes to strip a stale proxy env without a dotenv source")
+		}
+		if findInitContainer(sts, "init-egress") != nil {
+			t.Error("expected no init-egress without egress")
 		}
 	})
 }
@@ -1973,6 +1992,7 @@ func TestConsolidatedInitContainers(t *testing.T) {
 		desc   string
 	}
 	steps := []step{
+		{egressDotEnvBegin, "egress strip"},
 		{`cp "/bootstrap/profile.default.config.yaml"`, "config"},
 		{"profile.default.workspace.", "workspace"},
 		{`hermes config env-path -p "default"`, "dotenv"},

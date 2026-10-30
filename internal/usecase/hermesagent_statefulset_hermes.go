@@ -236,12 +236,13 @@ func buildHermesContainer(ha *agentsv1alpha1.HermesAgent, sts *appsv1.StatefulSe
 	var defaultSteps []string
 	var defaultMounts []corev1.VolumeMount
 
-	// egress: drop the proxy env a previous start left in the .env files. The
-	// init steps run before iron-proxy listens, and init-egress adds it back
-	// last (see buildEgressDotEnvStripScript).
-	if ha.GetEgress().IsEnabled() {
-		defaultSteps = append(defaultSteps, buildEgressDotEnvStripScript())
-	}
+	// egress: drop the proxy env a previous start left in the .env files. Run
+	// it unconditionally so disabling egress also removes a stale block. It
+	// deletes only the operator's marker-delimited range, so anything
+	// hermes-agent writes to .env at runtime survives. init-egress adds the
+	// block back last only while egress is enabled (see
+	// buildEgressDotEnvStripScript).
+	defaultSteps = append(defaultSteps, buildEgressDotEnvStripScript())
 
 	// config: copy config.yaml from the bootstrap ConfigMap to the data volume.
 	if ha.GetHermes().HasConfigDocument() {
