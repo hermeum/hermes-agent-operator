@@ -229,6 +229,7 @@ func main() {
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		Telemetry: tel,
+		Recorder:  mgr.GetEventRecorder("hermesagent"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "hermesagent")
 		os.Exit(1)

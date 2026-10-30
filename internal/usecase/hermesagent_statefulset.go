@@ -149,6 +149,9 @@ func (u *HermesAgentUseCase) reconcileStatefulSet(ctx context.Context, ha *agent
 	}
 
 	ha.Status.ManagedResources.StatefulSet = ha.Name
+	// Recorded after the `Pod` template is applied, so an `Event` means the
+	// change is on its way to the `Pod` rather than merely declared.
+	u.applyProfileStatus(ctx, ha)
 	phase, pod := u.deriveStatus(ctx, ha)
 	initFailure := initContainerFailure(pod)
 	ha.Status.Phase, ha.Status.Reason = phase, podStatusReason(pod, initFailure)

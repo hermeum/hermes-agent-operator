@@ -211,6 +211,40 @@ type ManagedResources struct {
 	StatefulSet string `json:"statefulSet,omitempty"`
 }
 
+// `ProfileDistributionStatus` reports the distribution a named profile is
+// installed from.
+type ProfileDistributionStatus struct {
+	// source is the distribution repository.
+	// +required
+	Source string `json:"source"`
+	// ref is the git ref the distribution is pinned to.  Empty when the profile
+	// tracks the repository's default branch.
+	// +optional
+	Ref string `json:"ref,omitempty"`
+}
+
+// `ProfileStatus` reports what the operator has applied for one named profile.
+//
+// It shows the operator's declaration, not the profile as the agent sees it.
+// The init containers apply the declaration when the `Pod` starts.  Thus an
+// entry here means that the `Pod` template has the change.  It does not mean
+// that the running agent has it.  For the view of the agent, use `hermes -p
+// <name> cron list` and `hermes profile info <name>`.
+type ProfileStatus struct {
+	// name is the profile name.
+	// +required
+	Name string `json:"name"`
+	// distribution reports where the profile is installed from, when it comes
+	// from a distribution.
+	// +optional
+	Distribution *ProfileDistributionStatus `json:"distribution,omitempty"`
+	// resumedCrons lists the distribution cron jobs that the operator resumes.
+	// The jobs of a distribution start paused.  A job removed from this list
+	// pauses again.
+	// +optional
+	ResumedCrons []string `json:"resumedCrons,omitempty"`
+}
+
 // HermesAgentStatus defines the observed state of HermesAgent.
 type HermesAgentStatus struct {
 	// phase is the current lifecycle phase of the HermesAgent, mirroring the underlying pod phase.
@@ -246,6 +280,13 @@ type HermesAgentStatus struct {
 	// agent data PVC.
 	// +optional
 	Snapshot SnapshotStatus `json:"snapshot,omitempty"`
+
+	// profiles reports what the operator has applied for each named profile,
+	// sorted by name.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	Profiles []ProfileStatus `json:"profiles,omitempty"`
 }
 
 // SnapshotStatus tracks periodic CSI volume snapshot scheduling for the agent data PVC.

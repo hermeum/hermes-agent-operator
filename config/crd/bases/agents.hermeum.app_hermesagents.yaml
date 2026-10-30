@@ -7983,6 +7983,54 @@ spec:
                   phase is the current lifecycle phase of the HermesAgent, mirroring the underlying pod phase.
                   One of Pending, Running, Succeeded, Failed, Unknown, or Suspended.
                 type: string
+              profiles:
+                description: |-
+                  profiles reports what the operator has applied for each named profile,
+                  sorted by name.
+                items:
+                  description: |-
+                    `ProfileStatus` reports what the operator has applied for one named profile.
+
+                    It shows the operator's declaration, not the profile as the agent sees it.
+                    The init containers apply the declaration when the `Pod` starts.  Thus an
+                    entry here means that the `Pod` template has the change.  It does not mean
+                    that the running agent has it.  For the view of the agent, use `hermes -p
+                    <name> cron list` and `hermes profile info <name>`.
+                  properties:
+                    distribution:
+                      description: |-
+                        distribution reports where the profile is installed from, when it comes
+                        from a distribution.
+                      properties:
+                        ref:
+                          description: |-
+                            ref is the git ref the distribution is pinned to.  Empty when the profile
+                            tracks the repository's default branch.
+                          type: string
+                        source:
+                          description: source is the distribution repository.
+                          type: string
+                      required:
+                      - source
+                      type: object
+                    name:
+                      description: name is the profile name.
+                      type: string
+                    resumedCrons:
+                      description: |-
+                        resumedCrons lists the distribution cron jobs that the operator resumes.
+                        The jobs of a distribution start paused.  A job removed from this list
+                        pauses again.
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               reason:
                 description: |-
                   reason is a short, CamelCase code indicating why the agent is in its current phase.

@@ -39,6 +39,8 @@ func newFakeRestoreKube() *fakeRestoreKube {
 	}
 }
 
+func (f *fakeRestoreKube) RecordEvent(param RecordEventParam) {}
+
 func (f *fakeRestoreKube) GetHermesAgent(ctx context.Context, param GetHermesAgentParam) (*agentsv1alpha1.HermesAgent, error) {
 	return nil, nil
 }
