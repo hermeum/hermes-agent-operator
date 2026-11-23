@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -41,12 +42,31 @@ var volumeSnapshotObjectGVK = schema.GroupVersionKind{
 }
 
 type KubernetesClient struct {
-	client client.Client
-	scheme *runtime.Scheme
+	client   client.Client
+	scheme   *runtime.Scheme
+	recorder events.EventRecorder
 }
 
-func NewKubernetesClient(c client.Client, scheme *runtime.Scheme) *KubernetesClient {
-	return &KubernetesClient{client: c, scheme: scheme}
+// NewKubernetesClient wraps the controller-runtime client.  recorder can be
+// nil.  Then the client drops events, because no operator behavior depends on
+// an event.
+func NewKubernetesClient(c client.Client, scheme *runtime.Scheme, recorder events.EventRecorder) *KubernetesClient {
+	return &KubernetesClient{client: c, scheme: scheme, recorder: recorder}
+}
+
+// `RecordEvent` records a Kubernetes `Event` against the `HermesAgent`, which
+// is how `kubectl describe hermesagent` shows what the operator has changed.
+func (k *KubernetesClient) RecordEvent(param usecase.RecordEventParam) {
+	if k.recorder == nil || param.HermesAgent == nil {
+		return
+	}
+	eventType := corev1.EventTypeNormal
+	if param.Type == usecase.EventTypeWarning {
+		eventType = corev1.EventTypeWarning
+	}
+	// The note is passed as an argument rather than as the format string, so
+	// that a message holding a percent sign cannot be read as a verb.
+	k.recorder.Eventf(param.HermesAgent, nil, eventType, param.Reason, param.Action, "%s", param.Message)
 }
 
 func (k *KubernetesClient) GetHermesAgent(ctx context.Context, param usecase.GetHermesAgentParam) (*agentsv1alpha1.HermesAgent, error) {

@@ -28,6 +28,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -39,6 +40,7 @@ type HermesAgentReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
 	Telemetry usecase.Telemetry
+	Recorder  events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=agents.hermeum.app,resources=hermesagents,verbs=get;list;watch;create;update;patch;delete
@@ -55,9 +57,10 @@ type HermesAgentReconciler struct {
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=snapshot.storage.k8s.io,resources=volumesnapshots,verbs=get;list;create;delete
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 func (r *HermesAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	kube := infras.NewKubernetesClient(r.Client, r.Scheme)
+	kube := infras.NewKubernetesClient(r.Client, r.Scheme, r.Recorder)
 	uc := usecase.NewHermesAgentUseCase(kube, r.Telemetry)
 	result, err := uc.Reconcile(ctx, usecase.ReconcileParam{
 		NamespacedName: req.NamespacedName,
